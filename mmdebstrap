@@ -858,7 +858,7 @@ sub main() {
 	'h|help'   => sub { pod2usage(-exitval => 0, -verbose => 2) },
 	'components=s' => \$options->{components},
 	'variant=s' => \$options->{variant},
-	'include=s' => \$options->{includes},
+	'include=s' => \$options->{include},
 	'architectures=s' => \$options->{architectures},
 	'mode=s' => \$options->{mode},
 	'dpkgopt=s@' => \$options->{dpkgopts},
