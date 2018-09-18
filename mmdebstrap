@@ -634,20 +634,14 @@ sub setup {
 	die "nothing got downloaded. used file:// uri instead of copy://?";
     }
 
-    # A fake ldconfig is needed for the installation of libc-bin
     if ($options->{mode} eq 'fakechroot') {
-	move("$options->{root}/sbin/ldconfig", "$options->{root}/sbin/ldconfig.REAL") or die "cannot move ldconfig";
-	open my $fh, '>', "$options->{root}/sbin/ldconfig" or die "cannot open ldconfig: $!";
-	print $fh "#!/bin/sh\n";
-	print $fh "echo \"Warning: Fake ldconfig called, doing nothing\">&2\n";
-	close $fh;
-	chmod 0755, "$options->{root}/sbin/ldconfig" or die "cannot chmod ldconfig: $!";
-    }
-    # make sure that ldconfig is not overwritten by dpkg
-    if ($options->{mode} eq 'fakechroot') {
-	open my $fh, '>', "$options->{root}/var/lib/dpkg/diversions" or die "cannot open /var/lib/dpkg/diversions: $!";
-	print $fh "/sbin/ldconfig\n/sbin/ldconfig.REAL\nfakechroot\n";
-	close $fh;
+	$ENV{FAKECHROOT_CMD_SUBST} = join ':', (
+	    '/bin/mount=/bin/true',
+	    '/usr/bin/env=/usr/bin/env.fakechroot',
+	    '/usr/bin/ldd=/usr/bin/ldd.fakechroot',
+	    '/usr/bin/mkfifo=/bin/true',
+	    '/usr/sbin/ldconfig=/bin/true',
+	);
     }
 
     my @chrootcmd = ('/usr/sbin/chroot', $options->{root});
@@ -812,11 +806,6 @@ sub setup {
     } else {
 	0 == system(@chrootcmd, 'apt-get', '--option', 'Dir::Etc::SourceList=/dev/null', 'update') or die "apt-get update failed: $?";
 	0 == system(@chrootcmd, 'apt-get', 'clean') or die "apt-get clean failed: $?";
-    }
-
-    if ($options->{mode} eq 'fakechroot') {
-	unlink "$options->{root}/sbin/ldconfig" or die "cannot unlink ldconfig";
-	0 == system('/usr/sbin/chroot', $options->{root}, 'dpkg-divert', '--package', 'fakechroot', '--rename', '--remove', '/sbin/ldconfig') or die "cannot remove diversion";
     }
 
     # clean up certain files to make output reproducible
