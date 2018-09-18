@@ -1,0 +1,1478 @@
+#!/usr/bin/perl
+#
+# Copyright: 2018 Johannes Schauer <josch@mister-muffin.de>
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to
+# deal in the Software without restriction, including without limitation the
+# rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+# sell copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+
+use strict;
+use warnings;
+
+use English;
+use Getopt::Long;
+use Pod::Usage;
+use File::Copy;
+use File::Path qw(make_path remove_tree);
+use File::Temp qw(tempfile tempdir);
+use Cwd qw(abs_path);
+use Dpkg::Index;
+require "syscall.ph";
+use Fcntl qw(S_IFCHR S_IFBLK);
+
+# from sched.h
+use constant {
+    CLONE_NEWNS   => 0x20000,
+    CLONE_NEWUTS  => 0x4000000,
+    CLONE_NEWIPC  => 0x8000000,
+    CLONE_NEWUSER => 0x10000000,
+    CLONE_NEWPID  => 0x20000000,
+    CLONE_NEWNET  => 0x40000000,
+};
+
+# type codes:
+#   0 -> normal file
+#   1 -> hardlink
+#   2 -> symlink
+#   3 -> character special
+#   4 -> block special
+#   5 -> directory
+my @devfiles = (
+    # filename         mode  type link target        major  minor
+    [ "./dev/",        0755, 5,   '',                undef, undef ],
+    [ "./dev/console", 0666, 3,   '',                5,     1 ],
+    [ "./dev/fd",      0777, 2,   '/proc/self/fd',   undef, undef ],
+    [ "./dev/full",    0666, 3,   '',                1,     7 ],
+    [ "./dev/null",    0666, 3,   '',                1,     3 ],
+    [ "./dev/ptmx",    0666, 3,   '',                5,     2 ],
+    [ "./dev/pts/",    0755, 5,   '',                undef, undef ],
+    [ "./dev/random",  0666, 3,   '',                1,     8 ],
+    [ "./dev/shm/",    0755, 5,   '',                undef, undef ],
+    [ "./dev/stderr",  0777, 2,   '/proc/self/fd/2', undef, undef ],
+    [ "./dev/stdin",   0777, 2,   '/proc/self/fd/0', undef, undef ],
+    [ "./dev/stdout",  0777, 2,   '/proc/self/fd/1', undef, undef ],
+    [ "./dev/tty",     0666, 3,   '',                5,     0 ],
+    [ "./dev/urandom", 0666, 3,   '',                1,     9 ],
+    [ "./dev/zero",    0666, 3,   '',                1,     5 ],
+);
+
+# tar cannot figure out the decompression program when receiving data on
+# standard input, thus we do it ourselves. This is copied from tar's
+# src/suffix.c
+sub get_tar_compress_options($) {
+    my $filename = shift;
+    if ($filename =~ /\.(gz|tgz|taz)$/) {
+	return ('--gzip');
+    } elsif ($filename =~ /\.(Z|taZ)$/) {
+	return ('--compress');
+    } elsif ($filename =~ /\.(bz2|tbz|tbz2|tz2)$/) {
+	return ('--bzip2');
+    } elsif ($filename =~ /\.lz$/) {
+	return ('--lzip');
+    } elsif ($filename =~ /\.(lzma|tlz)$/) {
+	return ('--lzma');
+    } elsif ($filename =~ /\.lzo$/) {
+	return ('--lzop');
+    } elsif ($filename =~ /\.lz4$/) {
+	return ('--use-compress-program', 'lz4');
+    } elsif ($filename =~ /\.(xz|txz)$/) {
+	return ('--xz');
+    }
+    return ();
+}
+
+sub test_unshare() {
+    # arguments to syscalls have to be stored in their own variable or
+    # otherwise we will get "Modification of a read-only value attempted"
+    my $unshare_flags = CLONE_NEWUSER;
+    # we spawn a new per process because if unshare succeeds, we would
+    # otherwise have unshared the sbuild process itself which we don't want
+    my $pid = fork() // die "fork() failed: $!";
+    if ($pid == 0) {
+	my $ret = syscall &SYS_unshare, $unshare_flags;
+	if (($ret >> 8) == 0) {
+	    exit 0;
+	} else {
+	    exit 1;
+	}
+    }
+    waitpid($pid, 0);
+    if (($? >> 8) != 0) {
+	return 0;
+    }
+    return 1;
+}
+
+sub read_subuid_subgid() {
+    my $username = getpwuid $<;
+    my ($subid, $num_subid, $fh, $n);
+    my @result = ();
+
+    if (! -e "/etc/subuid") {
+	printf STDERR "/etc/subuid doesn't exist\n";
+	return;
+    }
+    if (! -r "/etc/subuid") {
+	printf STDERR "/etc/subuid is not readable\n";
+	return;
+    }
+
+    open $fh, "<", "/etc/subuid" or die "cannot open /etc/subuid for reading: $!";
+    while (my $line = <$fh>) {
+	($n, $subid, $num_subid) = split(/:/, $line, 3);
+	last if ($n eq $username);
+    }
+    close $fh;
+    push @result, ["u", 0, $subid, $num_subid];
+
+    if (scalar(@result) < 1) {
+	printf STDERR "/etc/subuid does not contain an entry for $username\n";
+	return;
+    }
+    if (scalar(@result) > 1) {
+	printf STDERR "/etc/subuid contains multiple entries for $username\n";
+	return;
+    }
+
+    open $fh, "<", "/etc/subgid" or die "cannot open /etc/subgid for reading: $!";
+    while (my $line = <$fh>) {
+	($n, $subid, $num_subid) = split(/:/, $line, 3);
+	last if ($n eq $username);
+    }
+    close $fh;
+    push @result, ["g", 0, $subid, $num_subid];
+
+    if (scalar(@result) < 2) {
+	printf STDERR "/etc/subgid does not contain an entry for $username\n";
+	return;
+    }
+    if (scalar(@result) > 2) {
+	printf STDERR "/etc/subgid contains multiple entries for $username\n";
+	return;
+    }
+
+    return @result;
+}
+
+# This function spawns two child processes forming the following process tree
+#
+#   A
+#   |
+#  fork()
+#   |  \
+#   B   C
+#   |   |
+#   |  fork()
+#   |   |  \
+#   |   D   E
+#   |   |   |
+#   |unshare()
+#   | close()
+#   |   |   |
+#   |   | read()
+#   |   | newuidmap(D)
+#   |   | newgidmap(D)
+#   |   |  /
+#   | waitpid()
+#   |   |
+#   |  fork()
+#   |   |  \
+#   |   F   G
+#   |   |   |
+#   |   |   exec()
+#   |   |  /
+#   | waitpid()
+#   |  /
+# waitpid()
+#
+# To better refer to each individual part, we give each process a new
+# identifier after calling fork(). Process A is the main process. After
+# executing fork() we call the parent and child B and C, respectively. This
+# first fork() is done because we do not want to modify A. B then remains
+# waiting for its child C to finish. C calls fork() again, splitting into
+# the parent D and its child E. In the parent D we call unshare() and close a
+# pipe shared by D and E to signal to E that D is done with calling unshare().
+# E notices this by using read() and follows up with executing the tools
+# new[ug]idmap on D. E finishes and D continues with doing another fork().
+# This is because when unsharing the PID namespace, we need a PID 1 to be kept
+# alive or otherwise any child processes cannot fork() anymore themselves. So
+# we keep F as PID 1 and finally call exec() in G.
+sub get_unshare_cmd(&$) {
+    my $cmd = shift;
+    my $idmap = shift;
+
+    my $unshare_flags = CLONE_NEWUSER | CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWUTS | CLONE_NEWIPC;
+
+    if (0) {
+	$unshare_flags |= CLONE_NEWNET;
+    }
+
+    # fork a new process and let the child get unshare()ed
+    # we don't want to unshare the parent process
+    my $gcpid = fork() // die "fork() failed: $!";
+    if ($gcpid == 0) {
+	# Create a pipe for the parent process to signal the child process that it is
+	# done with calling unshare() so that the child can go ahead setting up
+	# uid_map and gid_map.
+	pipe my $rfh, my $wfh;
+
+	# We have to do this dance with forking a process and then modifying the
+	# parent from the child because:
+	#  - new[ug]idmap can only be called on a process id after that process has
+	#    unshared the user namespace
+	#  - a process looses its capabilities if it performs an execve() with nonzero
+	#    user ids see the capabilities(7) man page for details.
+	#  - a process that unshared the user namespace by default does not have the
+	#    privileges to call new[ug]idmap on itself
+	#
+	# this also works the other way around (the child setting up a user namespace
+	# and being modified from the parent) but that way, the parent would have to
+	# stay around until the child exited (so a pid would be wasted). Additionally,
+	# that variant would require an additional pipe to let the parent signal the
+	# child that it is done with calling new[ug]idmap. The way it is done here,
+	# this signaling can instead be done by wait()-ing for the exit of the child.
+	my $ppid = $$;
+	my $cpid = fork() // die "fork() failed: $!";
+	if ($cpid == 0) {
+	    # child
+
+	    # Close the writing descriptor at our end of the pipe so that we
+	    # see EOF when parent closes its descriptor.
+	    close $wfh;
+
+	    # Wait for the parent process to finish its unshare() call by
+	    # waiting for an EOF.
+	    0 == sysread $rfh, my $c, 1 or die "read() did not receive EOF";
+
+	    # The program's new[ug]idmap have to be used because they are
+	    # setuid root.  These privileges are needed to map the ids from
+	    # /etc/sub[ug]id to the user namespace set up by the parent.
+	    # Without these privileges, only the id of the user itself can be
+	    # mapped into the new namespace.
+	    #
+	    # Since new[ug]idmap is setuid root we also don't need to write
+	    # "deny" to /proc/$$/setgroups beforehand (this is otherwise
+	    # required for unprivileged processes trying to write to
+	    # /proc/$$/gid_map since kernel version 3.19 for security reasons)
+	    # and therefore the parent process keeps its ability to change its
+	    # own group here.
+	    #
+	    # Since /proc/$ppid/[ug]id_map can only be written to once,
+	    # respectively, instead of making multiple calls to new[ug]idmap,
+	    # we assemble a command line that makes one call each.
+	    my $uidmapcmd = "";
+	    my $gidmapcmd = "";
+	    foreach (@{$idmap}) {
+		my ($t, $hostid, $nsid, $range) = @{$_};
+		if ($t ne "u" and $t ne "g" and $t ne "b") {
+		    die "invalid idmap type: $t";
+		}
+		if ($t eq "u" or $t eq "b") {
+		    $uidmapcmd .= " $hostid $nsid $range";
+		}
+		if ($t eq "g" or $t eq "b") {
+		    $gidmapcmd .= " $hostid $nsid $range";
+		}
+	    }
+	    my $idmapcmd = '';
+	    if ($uidmapcmd ne "") {
+		0 == system "newuidmap $ppid $uidmapcmd" or die "newuidmap failed: $!";
+	    }
+	    if ($gidmapcmd ne "") {
+		0 == system "newgidmap $ppid $gidmapcmd" or die "newgidmap failed: $!";
+	    }
+	    exit 0;
+	}
+
+	# parent
+
+	# After fork()-ing, the parent immediately calls unshare...
+	0 == syscall &SYS_unshare, $unshare_flags or die "unshare() failed: $!";
+
+	# .. and then signals the child process that we are done with the
+	# unshare() call by sending an EOF.
+	close $wfh;
+
+	# Wait for the child process to finish its setup by waiting for its
+	# exit.
+	$cpid == waitpid $cpid, 0 or die "waitpid() failed: $!";
+	my $exit = $? >> 8;
+	if ($exit != 0) {
+	    die "child had a non-zero exit status: $exit";
+	}
+
+	# Currently we are nobody (uid and gid are 65534). So we become root
+	# user and group instead.
+	#
+	# We are using direct syscalls instead of setting $(, $), $< and $>
+	# because then perl would do additional stuff which we don't need or
+	# want here, like checking /proc/sys/kernel/ngroups_max (which might
+	# not exist). It would also also call setgroups() in a way that makes
+	# the root user be part of the group unknown.
+	0 == syscall &SYS_setgid, 0 or die "setgid failed: $!";
+	0 == syscall &SYS_setuid, 0 or die "setuid failed: $!";
+	0 == syscall &SYS_setgroups, 0, 0 or die "setgroups failed: $!";
+
+	if (1) {
+	    # When the pid namespace is also unshared, then processes expect a
+	    # master pid to always be alive within the namespace. To achieve
+	    # this, we fork() here instead of exec() to always have one dummy
+	    # process running as pid 1 inside the namespace. This is also what
+	    # the unshare tool does when used with the --fork option.
+	    #
+	    # Otherwise, without a pid 1, new processes cannot be forked
+	    # anymore after pid 1 finished.
+	    my $cpid = fork() // die "fork() failed: $!";
+	    if ($cpid != 0) {
+		# The parent process will stay alive as pid 1 in this
+		# namespace until the child finishes executing. This is
+		# important because pid 1 must never die or otherwise nothing
+		# new can be forked.
+		$cpid == waitpid $cpid, 0 or die "waitpid() failed: $!";
+		exit ($? >> 8);
+	    }
+	}
+
+	&{$cmd}();
+
+	exit 0;
+    }
+
+    # parent
+    return $gcpid;
+}
+
+sub havemknod($) {
+    my $root = shift;
+    my $havemknod = 0;
+    if (-e "$root/test-dev-null") {
+	die "/test-dev-null already exists";
+    }
+    while ($havemknod == 0) {
+	last unless 0 == system 'mknod', "$root/test-dev-null", 'c', '1', '3';
+	last unless -c "$root/test-dev-null";
+	last unless open my $fh, '>', "$root/test-dev-null";
+	last unless print $fh 'test';
+	$havemknod = 1;
+    }
+    if (-e "$root/test-dev-null") {
+	unlink "$root/test-dev-null" or die "cannot unlink /test-dev-null";
+    }
+    return $havemknod;
+}
+
+sub setup {
+    my $options = shift;
+
+    foreach my $key (sort keys %{$options}) {
+	my $value = $options->{$key};
+	if (!defined $value) {
+	    next;
+	}
+	if (ref $value eq '') {
+	    print STDERR "I: $key: $options->{$key}\n";
+	} elsif (ref $value eq 'ARRAY') {
+	    print STDERR "I: $key: [" . (join ', ', @{$value}) . "]\n";
+	} else {
+	    die "unknown type";
+	}
+    }
+
+    my ($conf, $tmpfile) = tempfile(UNLINK => 1) or die "cannot open apt.conf: $!";
+    print $conf "Apt::Architecture \"$options->{nativearch}\";\n";
+    # the host system might have configured additional architectures
+    # force only the native architecture
+    if (scalar @{$options->{foreignarchs}} > 0) {
+	print $conf "Apt::Architectures \"$options->{nativearch} @{$options->{foreignarchs}}\";\n";
+    } else {
+	print $conf "Apt::Architectures \"$options->{nativearch}\";\n";
+    }
+    print $conf "Dir::Etc \"$options->{root}/etc/apt\";\n";
+    print $conf "Dir::State \"$options->{root}/var/lib/apt\";\n";
+    print $conf "Dir::Cache \"$options->{root}/var/cache/apt\";\n";
+    print $conf "Apt::Install-Recommends false;\n";
+    # for retrieving the essential packages set, only download
+    print $conf "Apt::Get::Download-Only true;\n";
+    # for authentication, use the keyrings from the host
+    print $conf "Dir::Etc::Trusted \"/etc/apt/trusted.gpg\";\n";
+    print $conf "Dir::Etc::TrustedParts \"/etc/apt/trusted.gpg.d\";\n";
+    print $conf "Acquire::Languages \"none\";\n";
+    close $conf;
+
+    foreach my $dir ('/etc/apt/apt.conf.d', '/etc/apt/sources.list.d',
+	'/etc/apt/preferences.d', '/var/cache/apt',
+	'/var/lib/apt/lists/partial', '/var/lib/dpkg',
+	'/etc/dpkg/dpkg.cfg.d/') {
+	make_path("$options->{root}/$dir") or die "failed to create $dir: $!";
+    }
+
+    {
+	open my $fh, '>', "$options->{root}/var/lib/dpkg/status" or die "failed to open(): $!";
+	close $fh;
+    }
+
+    if (scalar @{$options->{foreignarchs}} > 0) {
+	open my $fh, '>', "$options->{root}/var/lib/dpkg/arch" or die "cannot open /var/lib/dpkg/arch: $!";
+	print $fh "$options->{nativearch}\n";
+	foreach my $arch ($options->{foreignarchs}) {
+	    print $fh "$arch\n";
+	}
+	close $fh;
+    }
+
+    if (scalar @{$options->{aptopts}} > 0) {
+	open my $fh, '>', "$options->{root}/etc/apt/apt.conf.d/00mmdebstrap" or die "cannot open /etc/apt/apt.conf.d/00mmdebstrap: $!";
+	foreach my $opt (@{$options->{aptopts}}) {
+	    if (-r $opt) {
+		copy $opt, $fh or die "cannot copy $opt: $!";
+	    } else {
+		print $fh $opt;
+		if ($opt !~ /;$/) {
+		    print $fh ';';
+		}
+		if ($opt !~ /\n$/) {
+		    print $fh "\n";
+		}
+	    }
+	}
+	close $fh;
+    }
+
+    if (scalar @{$options->{dpkgopts}} > 0) {
+	open my $fh, '>', "$options->{root}/etc/dpkg/dpkg.cfg.d/00mmdebstrap" or die "cannot open /etc/dpkg/dpkg.cfg.d/00mmdebstrap: $!";
+	foreach my $opt (@{$options->{dpkgopts}}) {
+	    if (-r $opt) {
+		copy $opt, $fh or die "cannot copy $opt: $!";
+	    } else {
+		print $fh $opt;
+		if ($opt !~ /\n$/) {
+		    print $fh "\n";
+		}
+	    }
+	}
+	close $fh;
+    }
+
+    # setup merged usr
+    my @amd64_dirs = ('lib32', 'lib64', 'libx32'); # only amd64 for now
+    foreach my $dir ("bin", "sbin", "lib", @amd64_dirs) {
+	symlink "usr/$dir", "$options->{root}/$dir" or die "cannot create symlink: $!";
+	make_path("$options->{root}/usr/$dir") or die "cannot create /usr/$dir: $!";
+    }
+
+    {
+	open my $fh, '>', "$options->{root}/etc/fstab" or die "cannot open fstab: $!";
+	print $fh "# UNCONFIGURED FSTAB FOR BASE SYSTEM\n";
+	close $fh;
+	chmod 0644, "$options->{root}/etc/fstab" or die "cannot chmod fstab: $!";
+    }
+
+    {
+	my $archopt = '';
+	if (scalar @{$options->{foreignarchs}} > 0) {
+	    $archopt = " [arch=$options->{nativearch}]"
+	}
+	open my $fh, '>', "$options->{root}/etc/apt/sources.list" or die "cannot open /etc/apt/sources.list: $!";
+	if (scalar(@{$options->{mirrors}}) > 0) {
+	    if( grep /^-$/, @{$options->{mirrors}} > 1 ) {
+		die "can only read from stdin once";
+	    }
+	    for my $arg (@{$options->{mirrors}}) {
+		if ($arg eq '-') {
+		    # read from stdin
+		} elsif ($arg =~ /:\/\//) {
+		    print $fh "deb$archopt $arg $options->{suite} $options->{components}\n"
+		} elsif ($arg =~ /^deb(-src)? /) {
+		    print $fh "$arg\n";
+		} elsif (-f $arg) {
+		    copy($arg, $fh) or die "cannot copy $arg: $!";
+		} else {
+		    die "invalid mirror: $arg";
+		}
+	    }
+	} else {
+	    print $fh "deb$archopt http://deb.debian.org/debian $options->{suite} $options->{components}\n";
+	    if (grep { $_ eq $options->{suite} } ('stable', 'oldstable', 'stretch') ) {
+		print $fh "deb$archopt http://deb.debian.org/debian $options->{suite}-updates $options->{components}\n";
+		print $fh "deb$archopt http://security.debian.org/debian-security $options->{suite}/updates $options->{components}\n";
+	    }
+	}
+	close $fh;
+    }
+
+    # we tell apt about the configuration via a config file passed via the
+    # APT_CONFIG environment variable instead of using the --option command
+    # line arguments because configuration settings like Dir::Etc have already
+    # been evaluated at the time that apt takes its command line arguments
+    # into account.
+    $ENV{"APT_CONFIG"} = "$tmpfile";
+    0 == system('apt-get', 'update') or die "apt-get update failed: $?";
+
+    # setting PATH for chroot, ldconfig, start-stop-daemon...
+    $ENV{"PATH"} = "/usr/sbin:/usr/bin:/sbin:/bin";
+
+    my %pkgs_to_install;
+    if (defined $options->{include}) {
+	for my $pkg (split /,/, $options->{include}) {
+	    $pkgs_to_install{$pkg} = ();
+	}
+    }
+    if ($options->{variant} eq 'buildd') {
+	$pkgs_to_install{'build-essential'} = ();
+    }
+    # To figure out the right package set for the apt variant we can use:
+    #     $ apt-get dist-upgrade -o dir::state::status=/dev/null
+    # This is because that variants only contain essential packages and
+    # apt and libapt treats apt as essential. If we want to install less
+    # (essential variant) then we have to compute the package set ourselves.
+    # Same if we want to install priority based variants.
+    if ($options->{variant} ne 'apt') {
+	my %ess_pkgs;
+	open(my $pipe_apt, '-|', 'apt-get', 'indextargets', '--format', '$(FILENAME)', 'Created-By: Packages', "Architecture: $options->{nativearch}") or die "cannot start apt-get indextargets: $!";
+	while (my $fname = <$pipe_apt>) {
+	    chomp $fname;
+	    open (my $pipe_cat, '-|', '/usr/lib/apt/apt-helper', 'cat-file', $fname) or die "cannot start apt-helper cat-file: $!";
+
+	    my $key_func = sub {
+		return $_[0]->{Package} . ' ' . $_[0]->{Version} . ' ' . $_[0]->{Architecture};
+	    };
+
+	    my $index = Dpkg::Index->new(get_key_func=>$key_func);
+
+	    $index->parse($pipe_cat, 'apt-helper cat-file') or die "failed to parse";
+
+	    foreach my $key ($index->get_keys()) {
+		my $cdata = $index->get_by_key($key);
+		my $pkgname = $cdata->{Package};
+		my $arch = $cdata->{Architecture} // '';
+		my $ess = $cdata->{Essential} // '';
+		if ($ess eq 'yes') {
+		    $ess_pkgs{$pkgname} = ();
+		}
+		my $prio = $cdata->{Priority} // 'optional';
+		if ($options->{variant} eq 'essential') {
+		    # for this variant we are only interested in the
+		    # essential packages
+		    next;
+		} elsif ($options->{variant} eq 'standard' or $options->{variant} eq 'important' or $options->{variant} eq 'required' or $options->{variant} eq 'buildd' or $options->{variant} eq 'minbase') {
+		    if ($prio eq 'optional' or $prio eq 'extra') {
+			next;
+		    } elsif ($prio eq 'standard') {
+			if ($options->{variant} eq 'important' or $options->{variant} eq 'required' or $options->{variant} eq 'buildd' or $options->{variant} eq 'minbase') {
+			    next;
+			}
+		    } elsif ($prio eq 'important') {
+			if ($options->{variant} eq 'required' or $options->{variant} eq 'buildd' or $options->{variant} eq 'minbase') {
+			    next;
+			}
+		    } elsif ($prio eq 'required' or $options->{variant} eq 'buildd' or $options->{variant} eq 'minbase') {
+			# required packages are part of all sets
+		    } else {
+			die "unknown priority: $prio";
+		    }
+		} else {
+		    die "unknown variant: $options->{variant}";
+		}
+		$pkgs_to_install{$pkgname} = ();
+	    }
+
+	    close $pipe_cat;
+	    $? == 0 or die "apt-helper cat-file failed: $?";
+	}
+	close $pipe_apt;
+	$? == 0 or die "apt-get indextargets failed: $?";
+
+	0 == system('apt-get', '--yes', 'install', keys %ess_pkgs) or die "apt-get install failed: $?";
+    } else {
+	# if we just want to install Essential:yes packages, apt and their
+	# dependencies then we can make use of libapt treating apt as
+	# implicitly essential. An upgrade with the (currently) empty status
+	# file will trigger an installation of the essential packages plus apt.
+	#
+	# 2018-09-02, #debian-dpkg on OFTC, times in UTC+2
+	# 23:39 < josch> I'll just put it in my script and if it starts
+	#                breaking some time I just say it's apt's fault. :P
+	# 23:42 < DonKult> that is how it usually works, so yes, do that :P (<-
+	#                  and please add that line next to it so you can
+	#                  remind me in 5+ years that I said that after I wrote
+	#                  in the bugreport: "Are you crazy?!? Nobody in his
+	#                  right mind would even suggest depending on it!")
+	0 == system('apt-get', '--yes', 'dist-upgrade') or die "apt-get dist-upgrade failed: $?";
+    }
+
+    # extract the downloaded packages
+    my $num_essential = 0;
+    foreach my $deb (glob "$options->{root}/var/cache/apt/archives/*.deb") {
+	$num_essential++;
+	# not using dpkg-deb --extract as that would replace the
+	# merged-usr symlinks with plain directories
+	pipe my $rfh, my $wfh;
+	my $pid1 = fork() // die "fork() failed: $!";
+	if ($pid1 == 0) {
+	    open(STDOUT, '>&', $wfh);
+	    exec 'dpkg-deb', '--fsys-tarfile', $deb;
+	}
+	my $pid2 = fork() // die "fork() failed: $!";
+	if ($pid2 == 0) {
+	    open(STDIN, '<&', $rfh);
+	    exec 'tar', '-C', $options->{root}, '--keep-directory-symlink', '--extract', '--file', '-';
+	}
+	waitpid($pid1, 0);
+	$? == 0 or die "dpkg-deb --fsys-tarfile failed: $?";
+	waitpid($pid2, 0);
+	$? == 0 or die "tar --extract failed: $?";
+    }
+    if ($num_essential == 0) {
+	die "nothing got downloaded. used file:// uri instead of copy://?";
+    }
+
+    # A fake ldconfig is needed for the installation of libc-bin
+    if ($options->{mode} eq 'fakechroot') {
+	move("$options->{root}/sbin/ldconfig", "$options->{root}/sbin/ldconfig.REAL") or die "cannot move ldconfig";
+	open my $fh, '>', "$options->{root}/sbin/ldconfig" or die "cannot open ldconfig: $!";
+	print $fh "#!/bin/sh\n";
+	print $fh "echo \"Warning: Fake ldconfig called, doing nothing\">&2\n";
+	close $fh;
+	chmod 0755, "$options->{root}/sbin/ldconfig" or die "cannot chmod ldconfig: $!";
+    }
+    # make sure that ldconfig is not overwritten by dpkg
+    if ($options->{mode} eq 'fakechroot') {
+	open my $fh, '>', "$options->{root}/var/lib/dpkg/diversions" or die "cannot open /var/lib/dpkg/diversions: $!";
+	print $fh "/sbin/ldconfig\n/sbin/ldconfig.REAL\nfakechroot\n";
+	close $fh;
+    }
+
+    my @chrootcmd = ('/usr/sbin/chroot', $options->{root});
+    if ($options->{mode} eq 'proot') {
+	# FIXME: proot currently cannot install apt because of https://github.com/proot-me/PRoot/issues/147
+	@chrootcmd = ('proot', '--root-id', '--bind=/dev', "--rootfs=$options->{root}", '--cwd=/');
+    	if (defined $options->{qemu}) {
+	    push @chrootcmd, "--qemu=qemu-$options->{qemu}";
+	}
+    }
+
+    if ($options->{havemknod}) {
+	foreach my $file (@devfiles) {
+	    my ($fname, $mode, $type, $linkname, $devmajor, $devminor) = @{$file};
+	    next if $fname eq './dev/';
+	    if ($type == 0) { # normal file
+		die "type 0 not implemented";
+	    } elsif ($type == 1) { # hardlink
+		die "type 1 not implemented";
+	    } elsif ($type == 2) { # symlink
+		# nothing to do
+	    } elsif ($type == 3) { # character special
+		0 == system('mknod', "$options->{root}/$fname", 'c', $devmajor, $devminor) or die "mknod failed: $?";
+	    } elsif ($type == 4) { # block special
+		0 == system('mknod', "$options->{root}/$fname", 'b', $devmajor, $devminor) or die "mknod failed: $?";
+	    } elsif ($type == 5) { # directory
+		make_path "$options->{root}/$fname", { error => \my $err };
+		if (@$err) {
+		    die "cannot create $fname";
+		}
+	    } else {
+		die "unsupported type: $type";
+	    }
+	    chmod $mode, "$options->{root}/$fname";
+	}
+    }
+
+    # install the extracted packages properly
+    0 == system(@chrootcmd, 'dpkg', '--install', '--force-depends', '--recursive', File::Spec->abs2rel("$options->{root}/var/cache/apt/archives/", $options->{root})) or die "dpkg --install failed: $?";
+
+    # if the path-excluded option was added to the dpkg config, reinstall all
+    # packages
+    if (-e "$options->{root}/etc/dpkg/dpkg.cfg.d/00mmdebstrap") {
+	open(my $fh, '<', "$options->{root}/etc/dpkg/dpkg.cfg.d/00mmdebstrap") or die "cannot open /etc/dpkg/dpkg.cfg.d/00mmdebstrap: $!";
+	my $num_matches = grep /^path-exclude=/, <$fh>;
+	close $fh;
+	if ($num_matches > 0) {
+	    # without --skip-same-version, dpkg will install the given
+	    # packages even though they are already installed
+	    0 == system(@chrootcmd, 'dpkg', '--install', '--recursive', File::Spec->abs2rel("$options->{root}/var/cache/apt/archives/", $options->{root})) or die "dpkg --install failed: $?";
+	}
+    }
+
+    # install apt if necessary
+    if ($options->{variant} ne 'apt' and $options->{variant} ne 'essential') {
+	0 == system('apt-get', '--yes', 'install', 'apt') or die "apt-get install failed: $?";
+	0 == system(@chrootcmd, 'dpkg',  '--install', '--skip-same-version', '--recursive', File::Spec->abs2rel("$options->{root}/var/cache/apt/archives/", $options->{root})) or die "dpkg --install failed: $?";
+    }
+
+    undef $ENV{"APT_CONFIG"};
+
+    if (%pkgs_to_install) {
+	# if more than essential should be installed, make the system look
+	# more like a real one by creating or bind-mounting the device nodes
+	foreach my $file (@devfiles) {
+	    my ($fname, $mode, $type, $linkname, $devmajor, $devminor) = @{$file};
+	    next if $fname eq './dev/';
+	    if ($type == 0) { # normal file
+		die "type 0 not implemented";
+	    } elsif ($type == 1) { # hardlink
+		die "type 1 not implemented";
+	    } elsif ($type == 2) { # symlink
+		symlink $linkname, "$options->{root}/$fname";
+	    } elsif ($type == 3 or $type == 4) { # character/block special
+		if (!$options->{havemknod}) {
+		    open my $fh, '>', "$options->{root}/$fname" or die "cannot open $options->{root}/$fname: $!";
+		    close $fh;
+		    0 == system('mount', '-o', 'bind', "/$fname", "$options->{root}/$fname") or die "mount failed: $?";
+		}
+	    } elsif ($type == 5) { # directory
+		if (!$options->{havemknod}) {
+		    make_path "$options->{root}/$fname";
+		}
+		0 == system('mount', '-o', 'bind', "/$fname", "$options->{root}/$fname") or die "mount failed: $?";
+	    } else {
+		die "unsupported type: $type";
+	    }
+	    chmod $mode, "$options->{root}/$fname";
+	}
+	# We can only mount /proc and /sys after extracting the essential
+	# set because if we mount it before, then base-files not be able
+	# to extract those
+	0 == system('mount', '-o', 'rbind', '/sys', "$options->{root}/sys") or die "mount failed: $?";
+	0 == system('mount', '-t', 'proc', 'proc', "$options->{root}/proc") or die "mount failed: $?";
+
+	# prevent daemons from starting
+	{
+	    open my $fh, '>', "$options->{root}/usr/sbin/policy-rc.d" or die "cannot open policy-rc.d: $!";
+	    print $fh "#!/bin/sh\n";
+	    print $fh "exit 101\n";
+	    close $fh;
+	    chmod 0755, "$options->{root}/usr/sbin/policy-rc.d" or die "cannot chmod policy-rc.d: $!";
+	}
+
+	{
+	    move("$options->{root}/sbin/start-stop-daemon", "$options->{root}/sbin/start-stop-daemon.REAL") or die "cannot move start-stop-daemon";
+	    open my $fh, '>', "$options->{root}/sbin/start-stop-daemon" or die "cannot open policy-rc.d: $!";
+	    print $fh "#!/bin/sh\n";
+	    print $fh "echo \"Warning: Fake start-stop-daemon called, doing nothing\">&2\n";
+	    close $fh;
+	    chmod 0755, "$options->{root}/sbin/start-stop-daemon" or die "cannot chmod start-stop-daemon: $!";
+	}
+
+	# allow network access from within
+	copy("/etc/resolv.conf", "$options->{root}/etc/resolv.conf");
+	copy("/etc/hostname", "$options->{root}/etc/hostname");
+
+	0 == system(@chrootcmd, 'apt-get',  '--yes', 'install',
+	    '--no-install-recommends',
+	    keys %pkgs_to_install) or die "apt-get install failed: $?";
+
+	# cleanup
+	move("$options->{root}/sbin/start-stop-daemon.REAL", "$options->{root}/sbin/start-stop-daemon") or die "cannot move start-stop-daemon";
+	unlink "$options->{root}/usr/sbin/policy-rc.d" or die "cannot unlink policy-rc.d";
+
+	foreach my $file (@devfiles) {
+	    my ($fname, undef, $type, $linkname, undef, undef) = @{$file};
+	    next if $fname eq './dev/';
+	    if ($type == 0) { # normal file
+		die "type 0 not implemented";
+	    } elsif ($type == 1) { # hardlink
+		die "type 1 not implemented";
+	    } elsif ($type == 2) { # symlink
+		unlink "$options->{root}/$fname" or die "cannot unlink $fname: $!";
+	    } elsif ($type == 3 or $type == 4) { # character/block special
+		if (!$options->{havemknod}) {
+		    0 == system('umount', '--no-mtab', "$options->{root}/$fname") or die "umount failed: $?";
+		    unlink "$options->{root}/$fname";
+		}
+	    } elsif ($type == 5) { # directory
+		0 == system('umount', '--no-mtab', "$options->{root}/$fname") or die "umount failed: $?";
+		if (!$options->{havemknod}) {
+		    rmdir "$options->{root}/$fname" or die "cannot rmdir $fname: $!";
+		}
+	    } else {
+		die "unsupported type: $type";
+	    }
+	}
+	# no need to umount if the mount namespace was unshared
+	if ($options->{mode} ne 'unshare') {
+	    0 == system('umount', '--no-mtab', '--recursive', '--lazy', "$options->{root}/sys") or die "umount failed: $?";
+	    0 == system('umount', '--no-mtab', "$options->{root}/proc") or die "umount failed: $?";
+	}
+    }
+
+    # if there is no apt inside the chroot, clean it from the outside
+    if ($options->{variant} eq 'essential') {
+	$ENV{"APT_CONFIG"} = "$tmpfile";
+	0 == system('apt-get', '--option', 'Dir::Etc::SourceList=/dev/null', 'update') or die "apt-get update failed: $?";
+	0 == system('apt-get', 'clean') or die "apt-get clean failed: $?";
+	undef $ENV{"APT_CONFIG"};
+    } else {
+	0 == system(@chrootcmd, 'apt-get', '--option', 'Dir::Etc::SourceList=/dev/null', 'update') or die "apt-get update failed: $?";
+	0 == system(@chrootcmd, 'apt-get', 'clean') or die "apt-get clean failed: $?";
+    }
+
+    if ($options->{mode} eq 'fakechroot') {
+	unlink "$options->{root}/sbin/ldconfig" or die "cannot unlink ldconfig";
+	0 == system('/usr/sbin/chroot', $options->{root}, 'dpkg-divert', '--package', 'fakechroot', '--rename', '--remove', '/sbin/ldconfig') or die "cannot remove diversion";
+    }
+
+    # clean up certain files to make output reproducible
+    unlink "$options->{root}/var/log/dpkg.log";
+    unlink "$options->{root}/var/log/apt/history.log";
+    unlink "$options->{root}/var/log/apt/term.log";
+    unlink "$options->{root}/var/log/alternatives.log";
+    unlink "$options->{root}/var/cache/ldconfig/aux-cache";
+}
+
+sub main() {
+    umask 022;
+
+    my $mtime = time;
+    if (exists $ENV{SOURCE_DATE_EPOCH}) {
+	$mtime = $ENV{SOURCE_DATE_EPOCH}+0;
+    }
+
+    $ENV{DEBIAN_FRONTEND} = 'noninteractive';
+    $ENV{DEBCONF_NONINTERACTIVE_SEEN} = 'true';
+    $ENV{LC_ALL} = 'C.UTF-8';
+    $ENV{LANGUAGE} = 'C.UTF-8';
+    $ENV{LANG} = 'C.UTF-8';
+
+    # copy ARGV because getopt modifies it
+    my @ARGVORIG = @ARGV;
+
+    my $options = {
+	components => "main",
+	variant => "important",
+	include => undef,
+	mode => 'auto',
+	dpkgopts => [],
+	aptopts => [],
+    };
+    chomp ($options->{architectures} = `dpkg --print-architecture`);
+    Getopt::Long::Configure ("bundling");
+    GetOptions(
+	'h|help'   => sub { pod2usage(-exitval => 0, -verbose => 2) },
+	'components=s' => \$options->{components},
+	'variant=s' => \$options->{variant},
+	'include=s' => \$options->{includes},
+	'architectures=s' => \$options->{architectures},
+	'mode=s' => \$options->{mode},
+	'dpkgopt=s@' => \$options->{dpkgopts},
+	'aptopt=s@' => \$options->{aptopts},
+    ) or pod2usage(-exitval => 2, -verbose => 1);
+
+    my @valid_variants = ('essential', 'apt', 'required', 'minbase', 'buildd',
+	'important', 'debootstrap', '-', 'standard');
+    if (!grep { $_ eq $options->{variant}} @valid_variants) {
+	die "invalid variant. Choose from " . (join ', ', @valid_variants);
+    }
+    # debootstrap and - are an alias for important
+    if (grep { $_ eq $options->{variant} } ('-', 'debootstrap')) {
+	$options->{variant} = 'important';
+    }
+
+    # fakeroot is an alias for fakechroot
+    if ($options->{mode} eq 'fakeroot') {
+	$options->{mode} = 'fakechroot';
+    }
+    # sudo is an alias for root
+    if ($options->{mode} eq 'sudo') {
+	$options->{mode} = 'root';
+    }
+    if ($options->{mode} ne 'auto' and $options->{mode} ne 'root'
+	    and $options->{mode} ne 'fakechroot'
+	    and $options->{mode} ne 'proot' and $options->{mode} ne 'unshare') {
+	die "invalid mode. Choose from auto, root, fakechroot, proot, unshare";
+    }
+
+    if (grep { $_ eq $options->{variant} } ('essential', 'required') and defined $options->{include}) {
+	die "cannot install extra packages in essential and required variants because apt is missing";
+    }
+
+    my ($nativearch, @foreignarchs) = split /,/, $options->{architectures};
+    $options->{nativearch} = $nativearch;
+    $options->{foreignarchs} = \@foreignarchs;
+
+    my $deb2qemu = {
+	alpha => 'alpha',
+	amd64 => 'x86_64',
+	arm => 'arm',
+	arm64 => 'aarch64',
+	armel => 'arm',
+	armhf => 'arm',
+	hppa => 'hppa',
+	i386 => 'i386',
+	m68k => 'm68k',
+	mips => 'mips',
+	mips64 => 'mips64',
+	mips64el => 'mips64el',
+	mipsel => 'mipsel',
+	powerpc => 'ppc',
+	ppc64 => 'ppc64',
+	ppc64el => 'ppc64le',
+	riscv64 => 'riscv64',
+	s390x => 's390x',
+	sh4 => 'sh4',
+	sparc => 'sparc',
+	sparc64 => 'sparc64',
+    };
+    my $ret = system 'arch-test', '-n', $nativearch;
+    if ($ret >> 8 != 0) {
+	if (!exists $deb2qemu->{$nativearch}) {
+	    die "no mapping from $nativearch to qemu-user binary";
+	}
+	$options->{qemu} = $deb2qemu->{$nativearch};
+    }
+
+    if (scalar @ARGV > 0) {
+	$options->{suite} = shift @ARGV;
+	if (scalar @ARGV > 0) {
+	    $options->{target} = shift @ARGV;
+	} else {
+	    $options->{target} = '-';
+	}
+	$options->{mirrors} = [@ARGV];
+    } else {
+	$options->{suite} = 'UNDEFINED';
+	$options->{target} = '-';
+	$options->{mirrors} = ['-'];
+    }
+
+    if ($options->{target} ne '-') {
+	$options->{target} = abs_path($options->{target});
+    }
+
+    if ($options->{target} eq '/') {
+	die "refusing to use the filesystem root as output directory";
+    }
+
+    # figure out the mode to use or test whether the chosen mode is legal
+    if ($options->{mode} eq 'auto') {
+	if ($EFFECTIVE_USER_ID == 0) {
+	    $options->{mode} = 'root';
+	} elsif (test_unshare()) {
+	    $options->{mode} = 'unshare';
+	} elsif (system('proot --version>/dev/null') == 0) {
+	    $options->{mode} = 'proot';
+	} elsif (system('fakechroot --version>/dev/null') == 0) {
+	    $options->{mode} = 'fakechroot';
+	} else {
+	    die "unable to pick chroot mode automatically";
+	}
+	print STDERR "I: automatically chosen mode: $options->{mode}\n";
+    } elsif ($options->{mode} eq 'root') {
+	if ($EFFECTIVE_USER_ID != 0) {
+	    die "need to be root"
+	}
+    } elsif ($options->{mode} eq 'proot') {
+	if (system('proot --version>/dev/null') != 0) {
+	    die "need working proot binary";
+	}
+    } elsif ($options->{mode} eq 'fakechroot') {
+	# test if we are inside fakechroot already
+	# We fork a child process because setting FAKECHROOT_DETECT seems to
+	# be an irreversible operation for fakechroot.
+	my $pid = open my $rfh, '-|' // die "failed to fork(): $!";
+	if ($pid == 0) {
+	    # with the FAKECHROOT_DETECT environment variable set, any program
+	    # execution will be replaced with the output "fakeroot [version]"
+	    $ENV{FAKECHROOT_DETECT} = 0;
+	    exec 'echo', 'If fakechroot is running, this will not be printed';
+	}
+	my $content = do { local $/; <$rfh> };
+	waitpid $pid, 0;
+	if ($? == 0 and $content =~ /^fakechroot \d\.\d+$/) {
+	    # fakechroot is already running
+	} elsif (system('fakechroot --version>/dev/null') != 0) {
+	    die "need working fakechroot binary";
+	} else {
+	    # exec ourselves again but within fakechroot
+	    exec 'fakechroot', 'fakeroot', $PROGRAM_NAME, @ARGVORIG;
+	}
+    } elsif ($options->{mode} eq 'unshare') {
+	if (!test_unshare()) {
+	    my $procfile = '/proc/sys/kernel/unprivileged_userns_clone';
+	    open(my $fh, '<', $procfile) or die "failed to open $procfile: $!";
+	    chomp(my $content = do { local $/; <$fh> });
+	    close($fh);
+	    if ($content ne "1") {
+		print STDERR "I: /proc/sys/kernel/unprivileged_userns_clone is set to $content\n";
+		print STDERR "I: try running: sudo sysctl -w kernel.unprivileged_userns_clone=1\n";
+		print STDERR "I: or permanently enable unprivileged usernamespaces by putting the setting into /etc/sysctl.d/\n";
+	    }
+	    exit 1;
+	}
+    } else {
+	die "unknown mode: $options->{mode}";
+    }
+
+    my @tar_compress_opts = get_tar_compress_options($options->{target});
+
+    # figure out whether a tarball has to be created in the end
+    $options->{maketar} = 0;
+    if (scalar @tar_compress_opts > 0 or $options->{target} =~ /\.tar$/ or $options->{target} eq '-') {
+	$options->{maketar} = 1;
+    }
+
+    if ($options->{maketar}) {
+	# since the output is a tarball, we create the rootfs in a temporary
+	# directory
+	$options->{root} = tempdir();
+    } else {
+	# user does not seem to have specified a tarball as output, thus work
+	# directly in the supplied directory
+	$options->{root} = $options->{target};
+	if (-e $options->{root}) {
+	    if (!-d $options->{root}) {
+		die "$options->{root} exists and is not a directory";
+	    }
+	    opendir(my $dh, $options->{root}) or die "Can't opendir($options->{root}): $!";
+	    # Attempt reading the directory thrice. If the third time succeeds,
+	    # then it has more entries than just "." and ".." and must thus not
+	    # be empty.
+	    readdir $dh;
+	    readdir $dh;
+	    # rationale for requiring an empty directory: https://bugs.debian.org/833525
+	    die "$options->{root} is not empty" if (readdir $dh);
+	} else {
+	    make_path($options->{root}) or die "cannot create root: $!";
+	}
+    }
+
+    my @idmap;
+    # for unshare mode the rootfs directory has to have appropriate
+    # permissions
+    if ($options->{mode} eq 'unshare') {
+	@idmap = read_subuid_subgid;
+	# sanity check
+	if (scalar(@idmap) != 2 || $idmap[0][0] ne 'u' || $idmap[1][0] ne 'g') {
+	    printf STDERR "invalid idmap\n";
+	    return 0;
+	}
+
+	my $outer_gid = $REAL_GROUP_ID+0;
+
+	my $pid = get_unshare_cmd { chown 1, 1, $options->{root} }
+	[
+	    ['u', '0', $REAL_USER_ID, '1'],
+	    ['g', '0', $outer_gid, '1'],
+	    ['u', '1', $idmap[0][2], '1'],
+	    ['g', '1', $idmap[1][2], '1']];
+	waitpid $pid, 0;
+    }
+
+    # figure out whether we have mknod
+    $options->{havemknod} = 0;
+    if ($options->{mode} eq 'unshare') {
+	my $pid = get_unshare_cmd {
+	    $options->{havemknod} = havemknod($options->{root});
+	} \@idmap;
+	waitpid $pid, 0;
+    } else {
+	$options->{havemknod} = havemknod($options->{root});
+    }
+
+    my $devtar = '';
+    # without real device nodes having been created, we manually craft the
+    # right entries for the final tarball
+    if ($options->{maketar} and not $options->{havemknod}) {
+	foreach my $file (@devfiles) {
+	    my ($fname, $mode, $type, $linkname, $devmajor, $devminor) = @{$file};
+	    my $entry = pack('a100 a8 a8 a8 a12 a12 A8 a1 a100 a8 a32 a32 a8 a8 a155 x12',
+		$fname,
+		sprintf('%07o', $mode),
+		sprintf('%07o', 0), # uid
+		sprintf('%07o', 0), # gid
+		sprintf('%011o', 0), # size
+		sprintf('%011o', $mtime),
+		'', # checksum
+		$type,
+		$linkname,
+		"ustar  ",
+		'', # username
+		'', # groupname
+		defined($devmajor) ? sprintf('%07o', $devmajor) : '',
+		defined($devminor) ? sprintf('%07o', $devminor) : '',
+		'', # prefix
+	    );
+	    # compute and insert checksum
+	    substr($entry,148,7) = sprintf("%06o\0", unpack("%16C*",$entry));
+	    $devtar .= $entry;
+	}
+    }
+
+    my @taropts = ('--sort=name', "--mtime=\@$mtime", '--clamp-mtime', '--numeric-owner', '--one-file-system', '-c');
+    push @taropts, @tar_compress_opts;
+    my $pid;
+    pipe my $rfh, my $wfh;
+    if ($options->{mode} eq 'unshare') {
+	$pid = get_unshare_cmd {
+	    close $rfh;
+	    open(STDOUT, '>&', STDERR);
+
+	    setup($options);
+
+	    if ($options->{maketar}) {
+		# redirect tar output to the writing end of the pipe so that the
+		# parent process can capture the output
+		open(STDOUT, '>&', $wfh);
+
+		# Add ./dev as the first entries of the tar file.
+		# We cannot add them after calling tar, because there is no way to
+		# prevent tar from writing NULL entries at the end.
+		print $devtar;
+
+		# pack everything except ./dev
+		0 == system('tar', @taropts, '--exclude=./dev', '-C', $options->{root}, '.') or die "tar failed: $?";
+
+	    }
+
+	    exit 0;
+	} \@idmap;
+    } else {
+	$pid = fork() // die "fork() failed: $!";
+	if ($pid == 0) {
+	    close $rfh;
+	    open(STDOUT, '>&', STDERR);
+
+	    setup($options);
+
+	    if ($options->{maketar}) {
+		# redirect tar output to the writing end of the pipe so that the
+		# parent process can capture the output
+		open(STDOUT, '>&', $wfh);
+
+		# Add ./dev as the first entries of the tar file.
+		# We cannot add them after calling tar, because there is no way to
+		# prevent tar from writing NULL entries at the end.
+		print $devtar;
+
+		if ($options->{mode} eq 'fakechroot') {
+		    # Fakechroot requires tar to run inside the chroot or
+		    # otherwise absolute symlinks will include the path to the
+		    # root directory
+		    0 == system('/usr/sbin/chroot', $options->{root}, 'tar', @taropts, '-C', '/', '.') or die "tar failed: $?";
+		} elsif ($options->{mode} eq 'proot') {
+		    # proot requires tar to run inside proot or otherwise
+		    # permissions will be completely off
+		    0 == system('proot', '--root-id', "--rootfs=$options->{root}", 'tar', @taropts, '-C', '/', '.') or die "tar failed: $?";
+		} else {
+		    0 == system('tar', @taropts, '-C', $options->{root}, '.') or die "tar failed: $?";
+		}
+	    }
+
+	    exit 0;
+	}
+    }
+
+    close $wfh;
+    if ($options->{maketar}) {
+	if ($options->{target} ne '-') {
+	    open(my $fh, '>', $options->{target});
+	    copy($rfh, $fh);
+	    close($fh);
+	} else {
+	    copy($rfh, *STDOUT);
+	}
+    }
+    close($rfh);
+    waitpid $pid, 0;
+
+    if ($options->{maketar} and -e $options->{root}) {
+	if ($options->{mode} eq 'unshare') {
+	    # We don't have permissions to remove the directory outside
+	    # the unshared namespace, so we remove it here.
+	    # Since this is still inside the unshared namespace, there is
+	    # no risk of removing anything important.
+	    $pid = get_unshare_cmd {
+		remove_tree($options->{root}, {error => \my $err});
+		if (@$err) {
+		    for my $diag (@$err) {
+			my ($file, $message) = %$diag;
+			if ($file eq '') {
+			    print "general error: $message\n";
+			}
+			else {
+			    print "problem unlinking $file: $message\n";
+			}
+		    }
+		}
+	    } \@idmap;
+	    waitpid $pid, 0;
+	} else {
+	    # without unshare, we use the system's rm to recursively remove the
+	    # temporary directory just to make sure that we do not accidentally
+	    # remove more than we should by using --one-file-system.
+	    0 == system('rm', '--recursive', '--preserve-root', '--one-file-system', $options->{root}) or die "rm failed: $!";
+	}
+    }
+}
+
+main();
+
+__END__
+
+=head1 NAME
+
+mmdebstrap - multi-mirror Debian chroot creation
+
+=head1 SYNOPSIS
+
+B<mmdebstrap> [B<OPTION...>] [I<SUITE> [I<TARGET> [I<MIRROR>...]]]
+
+=head1 DESCRIPTION
+
+B<mmdebstrap> creates a Debian chroot of I<SUITE> into I<TARGET> from one or
+more I<MIRROR>s. It is meant as an alternative to the debootstrap tool (see
+section B<DEBOOTSTRAP>). In contrast to debootstrap it uses apt to resolve
+dependencies and is thus able to use more than one mirror and resolve more
+complex dependencies.
+
+If no I<MIRROR> option is provided, http://deb.debian.org/debian is used. If
+I<SUITE> is a stable release name, then mirrors for updates and security are
+automatically added. If a I<MIRROR> option starts with "deb " or "deb-src "
+then it is used as a one-line-style format entry for apt's sources.list inside
+the chroot.  If a I<MIRROR> option contains a "://" then it is interpreted as
+a mirror URI and the apt line inside the chroot is assembled as "deb [arch=A]
+B C D" where A is the host's native architecture, B is the I<MIRROR>, C is the
+given I<SUITE> and D is the components given via --components (defaults to
+"main"). If a I<MIRROR> option happens to be an existing file, then its
+contents are pasted into the chroot's sources.list. This can be used to supply
+a deb822 style sources.list. If I<MIRROR> is C<-> then standard input is
+pasted into the chroot's sources.list. More than one mirror can be specified
+and are appended to the chroot's sources.list in the given order.
+
+The I<TARGET> argument can either be a directory or a tarball filename. If
+I<TARGET> is a directory, then it must not exist beforehand. A tarball
+filename is detected by the filename extension of I<TARGET>. Choosing a
+directory only makes sense with the B<sudo> mode because otherwise the
+contents of the chroot will not be owned by the superuser. If no I<TARGET> was
+specified or if I<TARGET> is C<->, then a tarball of the chroot is written to
+standard output.
+
+The I<SUITE> may be a valid release code name (eg, sid, stretch, jessie) or a
+symbolic name (eg, unstable, testing, stable, oldstable). Any suite name that
+works with apt on the given mirror will work. If no I<SUITE> was specified,
+then a single I<MIRROR> C<-> is added and thus the information of the desired
+suite has to come from standard input as part of a valid apt sources.list
+file.
+
+=head1 OPTIONS
+
+=over 8
+
+=item B<-h,--help>
+
+Print this help text and exit.
+
+=item B<--variant>
+
+Choose which package set to install. Valid variant names are B<essential>,
+B<apt>, B<required>, B<minbase>, B<buildd>, B<important>, B<debootstrap>,
+B<->, and B<standard>. The default variant is B<required>. See the section
+B<VARIANTS> for more information.
+
+=item B<--mode>
+
+Choose how to perform the chroot operation and create a filesystem with
+ownership information different from the current user. Valid modes are B<auto>,
+B<sudo>, B<root>, B<unshare>, B<fakeroot>, B<fakechroot> and B<proot>. The
+default mode is B<auto>. See the section B<MODES> for more information.
+
+=item B<--aptopt>
+
+Pass arbitrary options to apt. Will be added to
+/etc/apt/apt.conf.d/00mmdebstrap inside the chroot.  Can be specified multiple
+times. Each option with be appended to 00mmdebstrap. A semicolon will be added
+at the end of the option if necessary. If the command line argument is an
+existing file, the content of the file will be appended to 00mmdebstrap
+verbatim.
+
+Examples:
+
+    --aptopt="Acquire::Check-Valid-Until false"
+    --aptopt="Apt::Install-Recommends true"
+
+=item B<--dpkgopt>
+
+Pass arbitrary options to dpkg. Will be added to
+/etc/dpkg/dpkg.cfg.d/00mmdebstrap inside the chroot. Can be specified multiple
+times. Each option will be appended to 00mmdebstrap. If the command line
+argument is an existing file, the content of the file will be appended to
+00mmdebstrap verbatim.
+
+Example: --dpkgopt="path-exclude=/usr/share/man/*"
+
+=item B<--include>
+
+Comma separated list of packages which will be installed in addition to the
+packages installed by the specified variant. This option is incompatible with
+the essential variant because apt inside the chroot is needed to install extra
+packages.
+
+=item B<--components>
+
+Comma separated list of components like main, contrib and non-free.
+
+=item B<--architectures>
+
+Comma separated list of architectures. The first architecture is the native
+architecture inside the chroot. The remaining architectures will be added to
+the foreign architectures. This defaults to the native architecture of the
+system running this program.
+
+=back
+
+=head1 MODES
+
+Creating a Debian chroot requires not only permissions for running chroot but
+also the ability to create files owned by the superuser. The selected mode
+decides which way this is achieved.
+
+=over 8
+
+=item B<auto>
+
+This mode automatically selects a fitting mode. If the effective user id is the
+one of the superuser, then the B<sudo> mode is chosen. Otherwise, the
+B<unshare> mode is picked if the system has the sysctl
+C<kernel.unprivileged_userns_clone> set to C<1>. Should that not be the case
+and if the proot binary exists, the B<proot> mode is chosen. Lastly, the
+B<fakechroot> is used if the fakechroot binary exists.
+
+=item B<sudo>, B<root>
+
+This mode directly executes chroot and is the same mode of operation as is used
+by debootstrap. It is the only mode that can directly create a directory chroot
+with the right permissions.
+
+=item B<unshare>
+
+This mode uses Linux user namespaces to allow unpriviliged use of chroot and
+creation of files that appear to be owned by the superuser inside the unshared
+namespace. A directory chroot created with this mode will end up with wrong
+permissions. Choose to create a tarball instead.
+
+=item B<fakeroot>, B<fakechroot>
+
+This mode will exec this program again under C<fakechroot fakeroot>. A
+directory chroot created with this mode will end up with wrong permissions.
+Choose to create a tarball instead.
+
+=item B<proot>
+
+This mode will carry out all calls to chroot with proot instead. Since
+permissions are only retained while proot is still running, this will lead to
+wrong permissions in the final directory and tarball. This mode is useful if
+you plan to use the chroot with proot.
+
+=back
+
+=head1 VARIANTS
+
+All package sets also include the hard dependencies (but not recommends) of
+the selected package sets. The variants B<minbase>, B<buildd> and B<->,
+resemble the package sets that debootstrap would install with the same
+I<--variant> argument.
+
+=over 8
+
+=item B<essential>
+
+Essential:yes packages.
+
+=item B<apt>
+
+The B<essential> set plus apt.
+
+=item B<required>, B<minbase>
+
+The B<essential> set plus all packages with Priority:required and apt.
+
+=item B<buildd>
+
+The B<minbase> set plus build-essential.
+
+=item B<important>, B<debootstrap>, B<->
+
+The B<required> set plus all packages with Priority:important. This is the default of debootstrap.
+
+=item B<standard>
+
+The B<important> set plus all packages with Priority:standard.
+
+=back
+
+=head1 EXAMPLES
+
+Use like debootstrap:
+
+    sudo mmdebstrap unstable ./unstable-chroot
+
+Without superuser privileges:
+
+    mmdebstrap unstable unstable-chroot.tar
+
+With complex apt options:
+
+    mmdebstrap < /etc/apt/sources.list > unstable-chroot.tar
+
+Drop locales (but not the symlink to the locale name alias database),
+translated manual packages (but not the untranslated ones), and documentation
+(but not copyright and Debian changelog).
+
+    mmdebstrap --variant=essential \
+        --dpkgopt='path-exclude=/usr/share/man/*' \
+        --dpkgopt='path-include=/usr/share/man/man[1-9]/*' \
+        --dpkgopt='path-exclude=/usr/share/locale/*' \
+        --dpkgopt='path-include=/usr/share/locale/locale.alias' \
+        --dpkgopt='path-exclude=/usr/share/doc/*' \
+        --dpkgopt='path-include=/usr/share/doc/*/copyright' \
+        --dpkgopt='path-include=/usr/share/doc/*/changelog.Debian.*' \
+        unstable debian-unstable.tar
+
+=head1 DEBOOTSTRAP
+
+This section lists some differences to debootstrap.
+
+=over 8
+
+=item * More than one mirror possible
+
+=item * Default mirrors for stable releases include updates and security mirror
+
+=item * Multiple ways to operate as non-root: fakechroot, proot, unshare
+
+=item * 2-3 times faster
+
+=item * Can create a chroot with only Essential:yes packages and their dependencies
+
+=item * Reproducible output by default if $SOURCE_DATE_EPOCH is set
+
+=item * Can create output on filesystems with nodev set
+
+=item * apt cache and lists are cleaned at the end
+
+=item * foreign architecture chroots using qemu-user
+
+=back
+
+Limitations in comparison to debootstrap:
+
+=over 8
+
+=item * Only runs on systems with apt installed
+
+=item * No I<SCRIPT> argument
+
+=item * No I<--second-stage> option.
+
+=back
+
+=head1 SEE ALSO
+
+    debootstrap(8)
+
+=cut
