@@ -56,10 +56,10 @@ END
 	APT_CONFIG="$rootdir/etc/apt/apt.conf" apt-get --yes install $pkgs
 
 	# to be able to also test gpg verification, we need to create a mirror
-	mkdir -p "$mirrordir/dists/$dist/" "$mirrordir/dists/$dist/main/binary-amd64/"
+	mkdir -p "$mirrordir/dists/$dist/" "$mirrordir/dists/$dist/main/binary-$nativearch/"
 	curl --location "$mirror/dists/$dist/Release" > "$mirrordir/dists/$dist/Release"
 	curl --location "$mirror/dists/$dist/Release.gpg" > "$mirrordir/dists/$dist/Release.gpg"
-	curl --location "$mirror/dists/$dist/main/binary-amd64/Packages.gz" > "$mirrordir/dists/$dist/main/binary-amd64/Packages.gz"
+	curl --location "$mirror/dists/$dist/main/binary-$nativearch/Packages.gz" > "$mirrordir/dists/$dist/main/binary-$nativearch/Packages.gz"
 
 	# the deb files downloaded by apt must be moved to their right locations in the
 	# pool directory
@@ -69,7 +69,7 @@ END
 	# requires re-creating the heuristic by which the directory is chosen, requires
 	# stripping the epoch from the filename and will break once mirrors change.
 	# This way, it doesn't matter where the mirror ends up storing the package.
-	gzip -dc "$mirrordir/dists/$dist/main/binary-amd64/Packages.gz" \
+	gzip -dc "$mirrordir/dists/$dist/main/binary-$nativearch/Packages.gz" \
 		| grep-dctrl --no-field-names --show-field=Package,Version,Architecture,Filename,MD5sum '' \
 		| paste -sd "     \n" \
 		| while read name ver arch fname md5; do
