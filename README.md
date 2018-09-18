@@ -64,20 +64,21 @@ stripped from the chroot. This also makes the result **bit-by-bit
 reproducible** if the `$SOURCE_DATE_EPOCH` environment variable is set.
 
 The author believes, that it should not be necessary to have superuser
-privileges to create a file (the chroot tarball) in one's home directory. If
-mmdebstrap is run by an unprivileged user, either Linux user namespaces,
-fakechroot or proot are used to create a chroot tarball. Debootstrap supports
-fakechroot but will not create a tarball with the right permissions by itself.
-Support for Linux user namespaces and proot is missing (see bugs #829134 and
-#698347, respectively).
+privileges to create a file (the chroot tarball) in one's home directory.
+Thus, mmdebstrap provides multiple options to create a chroot tarball with the
+right permissions **without superuser privileges**.  Depending on what is
+available, it uses either Linux user namespaces, fakechroot or proot.
+Debootstrap supports fakechroot but will not create a tarball with the right
+permissions by itself. Support for Linux user namespaces and proot is missing
+(see bugs #829134 and #698347, respectively).
 
 When creating a chroot tarball with debootstrap, the temporary chroot directory
 cannot be on a filesystem that has been mounted with nodev. In unprivileged
-mode, mknod is never used, which means that /tmp can be used as a temporary
+mode, **mknod is never used**, which means that /tmp can be used as a temporary
 directory location even if if it's mounted with nodev as a security measure.
 
 If the chroot architecture cannot be executed by the current machine, qemu-user
-is used to allow one to create a foreign architecture chroot.
+is used to allow one to create a **foreign architecture chroot**.
 
 Limitations in comparison to debootstrap
 ----------------------------------------
