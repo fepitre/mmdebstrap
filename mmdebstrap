@@ -920,8 +920,10 @@ sub main() {
 	sparc => 'sparc',
 	sparc64 => 'sparc64',
     };
-    my $ret = system 'arch-test', '-n', $nativearch;
-    if ($ret >> 8 != 0) {
+    open my $fh, '-|', 'arch-test', '-n', $nativearch // die "failed to fork(): $!";
+    my $content = do { local $/; <$fh> };
+    close $fh;
+    if ($? != 0 or $content ne "$nativearch: ok") {
 	if (!exists $deb2qemu->{$nativearch}) {
 	    die "no mapping from $nativearch to qemu-user binary";
 	}
