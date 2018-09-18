@@ -946,7 +946,11 @@ sub main() {
     }
 
     if ($options->{target} ne '-') {
-	$options->{target} = abs_path($options->{target});
+	my $abs_path = abs_path($options->{target});
+	if (!defined $abs_path) {
+	    die "unable to get absolute path of target directory $options->{target}"
+	}
+	$options->{target} = $abs_path;
     }
 
     if ($options->{target} eq '/') {
