@@ -648,8 +648,43 @@ sub setup {
     if ($options->{mode} eq 'proot') {
 	# FIXME: proot currently cannot install apt because of https://github.com/proot-me/PRoot/issues/147
 	@chrootcmd = ('proot', '--root-id', '--bind=/dev', "--rootfs=$options->{root}", '--cwd=/');
-    	if (defined $options->{qemu}) {
+    }
+
+    # copy qemu-user-static binary into chroot or setup proot with --qemu
+    if (defined $options->{qemu}) {
+	if ($options->{mode} eq 'proot') {
 	    push @chrootcmd, "--qemu=qemu-$options->{qemu}";
+	} elsif ($options->{mode} eq 'fakechroot') {
+	    # The binfmt support on the outside is used, so qemu needs to know
+	    # where it has to look for shared libraries
+	    $ENV{QEMU_LD_PREFIX} = $options->{root};
+	    # Make sure that the fakeroot and fakechroot shared libraries
+	    # exist for the right architecture
+	    open my $fh, '-|', 'dpkg-architecture', '-a', $options->{nativearch}, '-qDEB_HOST_MULTIARCH' // die "failed to fork(): $!";
+	    chomp (my $deb_host_multiarch = do { local $/; <$fh> });
+	    close $fh;
+	    if ($? != 0 or !$deb_host_multiarch) {
+		die "dpkg-architecture failed: $?";
+	    }
+	    my $fakechrootdir = "/usr/lib/$deb_host_multiarch/fakechroot";
+	    if (!-e "$fakechrootdir/libfakechroot.so") {
+		die "$fakechrootdir/libfakechroot.so doesn't exist. Install libfakechroot:$options->{nativearch}"
+	    }
+	    my $fakerootdir = "/usr/lib/$deb_host_multiarch/libfakeroot";
+	    if (!-e "$fakerootdir/libfakeroot-sysv.so") {
+		die "$fakerootdir/libfakeroot-sysv.so doesn't exist. Install libfakeroot:$options->{nativearch}"
+	    }
+	    # fakechroot only fills LD_LIBRARY_PATH with the directories of
+	    # the host's architecture. We append the directories of the chroot
+	    # architecture.
+	    $ENV{LD_LIBRARY_PATH} .= ":$fakechrootdir:$fakerootdir";
+	} else {
+	    # other modes require a static qemu-user binary
+	    my $qemubin = "/usr/bin/qemu-$options->{qemu}-static";
+	    if (!-e $qemubin) {
+		die "cannot find $qemubin";
+	    }
+	    copy $qemubin, "$options->{root}/$qemubin";
 	}
     }
 
@@ -806,6 +841,10 @@ sub setup {
     } else {
 	0 == system(@chrootcmd, 'apt-get', '--option', 'Dir::Etc::SourceList=/dev/null', 'update') or die "apt-get update failed: $?";
 	0 == system(@chrootcmd, 'apt-get', 'clean') or die "apt-get clean failed: $?";
+    }
+
+    if (defined $options->{qemu} and $options->{mode} ne 'proot' and $options->{mode} ne 'fakechroot') {
+	unlink "$options->{root}/usr/bin/qemu-$options->{qemu}-static" or die "cannot unlink /usr/bin/qemu-$options->{qemu}-static";
     }
 
     # clean up certain files to make output reproducible
