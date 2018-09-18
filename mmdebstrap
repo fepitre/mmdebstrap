@@ -486,6 +486,8 @@ sub setup {
 	    for my $arg (@{$options->{mirrors}}) {
 		if ($arg eq '-') {
 		    # read from stdin
+		    print STDERR "I: Reading sources.list from standard input...\n";
+		    copy *STDIN, $fh or die "cannot copy stdin: $!";
 		} elsif ($arg =~ /:\/\//) {
 		    print $fh "deb$archopt $arg $options->{suite} $options->{components}\n"
 		} elsif ($arg =~ /^deb(-src)? /) {
@@ -935,6 +937,7 @@ sub main() {
 	}
 	$options->{mirrors} = [@ARGV];
     } else {
+	print STDERR "I: No SUITE specified, expecting sources.list on standard input\n";
 	$options->{suite} = 'UNDEFINED';
 	$options->{target} = '-';
 	$options->{mirrors} = ['-'];
