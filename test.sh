@@ -106,10 +106,6 @@ for dist in stable testing unstable; do
 		diff -u status1 status2
 		rm status1 status2
 		sudo rm debian-$dist-debootstrap/var/lib/dpkg/status debian-$dist-mm/var/lib/dpkg/status
-		# since we installed using apt, we have to remove some leftovers
-		sudo rm debian-$dist-mm/var/cache/apt/archives/lock \
-			debian-$dist-mm/var/lib/apt/extended_states \
-			debian-$dist-mm/var/lib/apt/lists/lock
 		sudo rmdir debian-$dist-mm/var/lib/apt/lists/auxfiles
 		# debootstrap exposes the hosts's kernel version
 		sudo rm debian-$dist-debootstrap/etc/apt/apt.conf.d/01autoremove-kernels \

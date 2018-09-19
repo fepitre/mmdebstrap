@@ -853,6 +853,12 @@ sub setup {
     unlink "$options->{root}/var/log/apt/term.log";
     unlink "$options->{root}/var/log/alternatives.log";
     unlink "$options->{root}/var/cache/ldconfig/aux-cache";
+
+    # clean up leftover lock files
+    unlink "$options->{root}/var/cache/apt/archives/lock";
+    unlink "$options->{root}/var/lib/apt/extended_states";
+    unlink "$options->{root}/var/lib/apt/lists/lock";
+    unlink "$options->{root}/var/lib/dpkg/lock-frontend";
 }
 
 sub main() {
