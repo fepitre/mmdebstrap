@@ -730,15 +730,38 @@ sub setup {
 	}
     }
 
-    # install apt if necessary
-    if ($options->{variant} ne 'apt' and $options->{variant} ne 'essential') {
-	0 == system('apt-get', '--yes', 'install', 'apt') or die "apt-get install failed: $?";
-	0 == system(@chrootcmd, 'dpkg',  '--install', '--skip-same-version', '--recursive', File::Spec->abs2rel("$options->{root}/var/cache/apt/archives/", $options->{root})) or die "dpkg --install failed: $?";
-    }
-
-    undef $ENV{"APT_CONFIG"};
-
     if (%pkgs_to_install) {
+	# some packages have to be installed from the outside before anything
+	# can be installed from the inside.
+	my %pkgs_to_install_from_outside;
+
+	# install apt if necessary
+	if ($options->{variant} ne 'apt') {
+	    $pkgs_to_install_from_outside{apt} = ();
+	}
+
+	# since apt will be run inside the chroot, make sure that
+	# apt-transport-https and ca-certificates gets installed first if any
+	# mirror is a https URI
+	open(my $pipe_apt, '-|', 'apt-get', 'indextargets', '--format', '$(URI)', 'Created-By: Packages') or die "cannot start apt-get indextargets: $!";
+	while (my $uri = <$pipe_apt>) {
+	    if ($uri =~ /^https:\/\//) {
+		$pkgs_to_install_from_outside{'apt-transport-https'} = ();
+		$pkgs_to_install_from_outside{'ca-certificates'} = ();
+		last;
+	    }
+	}
+	close $pipe_apt;
+	$? == 0 or die "apt-get indextargets failed";
+
+	if (%pkgs_to_install_from_outside) {
+	    0 == system('apt-get', '--yes', 'install', (keys %pkgs_to_install_from_outside)) or die "apt-get install failed: $?";
+	    0 == system(@chrootcmd, 'dpkg',  '--install', '--skip-same-version', '--recursive', File::Spec->abs2rel("$options->{root}/var/cache/apt/archives/", $options->{root})) or die "dpkg --install failed: $?";
+	}
+
+	# from now on, apt will be executed inside the chroot
+	undef $ENV{"APT_CONFIG"};
+
 	# if more than essential should be installed, make the system look
 	# more like a real one by creating or bind-mounting the device nodes
 	foreach my $file (@devfiles) {
@@ -1285,7 +1308,9 @@ given I<SUITE> and D is the components given via --components (defaults to
 contents are pasted into the chroot's sources.list. This can be used to supply
 a deb822 style sources.list. If I<MIRROR> is C<-> then standard input is
 pasted into the chroot's sources.list. More than one mirror can be specified
-and are appended to the chroot's sources.list in the given order.
+and are appended to the chroot's sources.list in the given order. If any
+mirror contains a https URI, then the packages apt-transport-https and
+ca-certificates will be installed inside the chroot.
 
 The I<TARGET> argument can either be a directory or a tarball filename. If
 I<TARGET> is a directory, then it must not exist beforehand. A tarball
