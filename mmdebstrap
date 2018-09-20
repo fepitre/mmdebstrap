@@ -668,11 +668,11 @@ sub setup {
 	    }
 	    my $fakechrootdir = "/usr/lib/$deb_host_multiarch/fakechroot";
 	    if (!-e "$fakechrootdir/libfakechroot.so") {
-		die "$fakechrootdir/libfakechroot.so doesn't exist. Install libfakechroot:$options->{nativearch}"
+		die "$fakechrootdir/libfakechroot.so doesn't exist. Install libfakechroot:$options->{nativearch} outside the chroot"
 	    }
 	    my $fakerootdir = "/usr/lib/$deb_host_multiarch/libfakeroot";
 	    if (!-e "$fakerootdir/libfakeroot-sysv.so") {
-		die "$fakerootdir/libfakeroot-sysv.so doesn't exist. Install libfakeroot:$options->{nativearch}"
+		die "$fakerootdir/libfakeroot-sysv.so doesn't exist. Install libfakeroot:$options->{nativearch} outside the chroot"
 	    }
 	    # fakechroot only fills LD_LIBRARY_PATH with the directories of
 	    # the host's architecture. We append the directories of the chroot
