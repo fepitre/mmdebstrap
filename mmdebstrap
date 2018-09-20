@@ -923,7 +923,7 @@ sub main() {
 	die "invalid mode. Choose from auto, root, fakechroot, proot, unshare";
     }
 
-    if (grep { $_ eq $options->{variant} } ('essential', 'required') and defined $options->{include}) {
+    if ($options->{variant} eq 'essential' and defined $options->{include}) {
 	die "cannot install extra packages in essential and required variants because apt is missing";
     }
 
