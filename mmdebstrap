@@ -1151,6 +1151,12 @@ sub main() {
 	# since the output is a tarball, we create the rootfs in a temporary
 	# directory
 	$options->{root} = tempdir();
+	# in unshare and root mode, other users than the current user need to
+	# access the rootfs, most prominently, the _apt user. Thus, make the
+	# temporary directory world readable.
+	if (grep { $_ eq $options->{mode} } ('unshare', 'root')) {
+	    chmod 0755, $options->{root} or die "cannot chmod root: $!";
+	}
     } else {
 	# user does not seem to have specified a tarball as output, thus work
 	# directly in the supplied directory
