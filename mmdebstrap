@@ -788,8 +788,14 @@ sub setup {
 	open(my $pipe_apt, '-|', 'apt-get', 'indextargets', '--format', '$(URI)', 'Created-By: Packages') or die "cannot start apt-get indextargets: $!";
 	while (my $uri = <$pipe_apt>) {
 	    if ($uri =~ /^https:\/\//) {
+		# FIXME: support for https is part of apt >= 1.5
 		$pkgs_to_install_from_outside{'apt-transport-https'} = ();
 		$pkgs_to_install_from_outside{'ca-certificates'} = ();
+		last;
+	    } elsif ($uri =~ /^tor(\+[a-z]+)*:\/\//) {
+		# tor URIs can be tor+http://, tor+https:// or even
+		# tor+mirror+file://
+		$pkgs_to_install_from_outside{'apt-transport-tor'} = ();
 		last;
 	    }
 	}
