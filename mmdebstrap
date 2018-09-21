@@ -644,9 +644,33 @@ sub setup {
     }
 
     # extract the downloaded packages
-    my $num_essential = 0;
-    foreach my $deb (glob "$options->{root}/var/cache/apt/archives/*.deb") {
-	$num_essential++;
+    my $apt_archives = "$options->{root}/var/cache/apt/archives/";
+    my @essential_pkgs;
+    opendir my $dh, $apt_archives or die "cannot read $apt_archives";
+    while (my $deb = readdir $dh) {
+	if ($deb !~ /\.deb$/) {
+	    next;
+	}
+	$deb = "$apt_archives/$deb";
+	if (!-f $deb) {
+	    next;
+	}
+	push @essential_pkgs, $deb;
+    }
+    close $dh;
+
+    if (scalar @essential_pkgs == 0) {
+	# check if a file:// URI was used
+	open(my $pipe_apt, '-|', 'apt-get', 'indextargets', '--format', '$(URI)', 'Created-By: Packages') or die "cannot start apt-get indextargets: $!";
+	while (my $uri = <$pipe_apt>) {
+	    if ($uri =~ /^file:\/\//) {
+		die "nothing got downloaded -- use copy:// instead of file://";
+	    }
+	}
+	die "nothing got downloaded";
+    }
+
+    foreach my $deb (@essential_pkgs) {
 	# not using dpkg-deb --extract as that would replace the
 	# merged-usr symlinks with plain directories
 	pipe my $rfh, my $wfh;
@@ -664,16 +688,6 @@ sub setup {
 	$? == 0 or die "dpkg-deb --fsys-tarfile failed: $?";
 	waitpid($pid2, 0);
 	$? == 0 or die "tar --extract failed: $?";
-    }
-    if ($num_essential == 0) {
-	# check if a file:// URI was used
-	open(my $pipe_apt, '-|', 'apt-get', 'indextargets', '--format', '$(URI)', 'Created-By: Packages') or die "cannot start apt-get indextargets: $!";
-	while (my $uri = <$pipe_apt>) {
-	    if ($uri =~ /^file:\/\//) {
-		die "nothing got downloaded -- use copy:// instead of file://";
-	    }
-	}
-	die "nothing got downloaded";
     }
 
     if ($options->{mode} eq 'fakechroot') {
