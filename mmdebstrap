@@ -666,7 +666,14 @@ sub setup {
 	$? == 0 or die "tar --extract failed: $?";
     }
     if ($num_essential == 0) {
-	die "nothing got downloaded. used file:// uri instead of copy://?";
+	# check if a file:// URI was used
+	open(my $pipe_apt, '-|', 'apt-get', 'indextargets', '--format', '$(URI)', 'Created-By: Packages') or die "cannot start apt-get indextargets: $!";
+	while (my $uri = <$pipe_apt>) {
+	    if ($uri =~ /^file:\/\//) {
+		die "nothing got downloaded -- use copy:// instead of file://";
+	    }
+	}
+	die "nothing got downloaded";
     }
 
     if ($options->{mode} eq 'fakechroot') {
