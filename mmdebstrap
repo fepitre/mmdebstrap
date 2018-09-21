@@ -514,7 +514,42 @@ sub setup {
     # been evaluated at the time that apt takes its command line arguments
     # into account.
     $ENV{"APT_CONFIG"} = "$tmpfile";
-    0 == system('apt-get', 'update') or die "apt-get update failed: $?";
+
+    # apt-get doesn't report a non-zero exit if the update failed. Thus, we
+    # have to parse its output. See #778357, #776152, #696335 and #745735
+    {
+	my $pid = open(my $pipe_apt, '-|') // die "failed to fork(): $!";
+	if ($pid == 0) {
+	    # redirect apt's stderr to stdout so that we can capture it
+	    open(STDERR, '>&', STDOUT);
+	    exec('apt-get', 'update');
+	    die "cannot exec apt-get update: $!";
+	}
+	my $has_error = 0;
+	while (my $line = <$pipe_apt>) {
+	    if ($line =~ '^W: ') {
+		$has_error = 1;
+	    } elsif ($line =~ '^Err:') {
+		$has_error = 1;
+	    }
+	    # forward captured apt output
+	    print STDERR $line;
+	}
+	close($pipe_apt);
+	if ($? != 0 or $has_error) {
+	    die "apt-get update failed to download some indexes";
+	}
+    }
+
+    # check if anything was downloaded at all
+    {
+	open my $fh, '-|', 'apt-get', 'indextargets' // die "failed to fork(): $!";
+	chomp (my $indextargets = do { local $/; <$fh> });
+	close $fh;
+	if ($indextargets eq '') {
+	    die "apt-get update didn't download anything";
+	}
+    }
 
     # setting PATH for chroot, ldconfig, start-stop-daemon...
     $ENV{"PATH"} = "/usr/sbin:/usr/bin:/sbin:/bin";
