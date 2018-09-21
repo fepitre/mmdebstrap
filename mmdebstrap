@@ -644,20 +644,22 @@ sub setup {
     }
 
     # extract the downloaded packages
-    my $apt_archives = "$options->{root}/var/cache/apt/archives/";
     my @essential_pkgs;
-    opendir my $dh, $apt_archives or die "cannot read $apt_archives";
-    while (my $deb = readdir $dh) {
-	if ($deb !~ /\.deb$/) {
-	    next;
+    {
+	my $apt_archives = "/var/cache/apt/archives/";
+	opendir my $dh, "$options->{root}/$apt_archives" or die "cannot read $apt_archives";
+	while (my $deb = readdir $dh) {
+	    if ($deb !~ /\.deb$/) {
+		next;
+	    }
+	    $deb = "$apt_archives/$deb";
+	    if (!-f "$options->{root}/$deb") {
+		next;
+	    }
+	    push @essential_pkgs, $deb;
 	}
-	$deb = "$apt_archives/$deb";
-	if (!-f $deb) {
-	    next;
-	}
-	push @essential_pkgs, $deb;
+	close $dh;
     }
-    close $dh;
 
     if (scalar @essential_pkgs == 0) {
 	# check if a file:// URI was used
@@ -677,7 +679,7 @@ sub setup {
 	my $pid1 = fork() // die "fork() failed: $!";
 	if ($pid1 == 0) {
 	    open(STDOUT, '>&', $wfh);
-	    exec 'dpkg-deb', '--fsys-tarfile', $deb;
+	    exec 'dpkg-deb', '--fsys-tarfile', "$options->{root}/$deb";
 	}
 	my $pid2 = fork() // die "fork() failed: $!";
 	if ($pid2 == 0) {
@@ -771,7 +773,7 @@ sub setup {
     }
 
     # install the extracted packages properly
-    0 == system(@chrootcmd, 'dpkg', '--install', '--force-depends', '--recursive', File::Spec->abs2rel("$options->{root}/var/cache/apt/archives/", $options->{root})) or die "dpkg --install failed: $?";
+    0 == system(@chrootcmd, 'dpkg', '--install', '--force-depends', @essential_pkgs) or die "dpkg --install failed: $?";
 
     # if the path-excluded option was added to the dpkg config, reinstall all
     # packages
@@ -782,8 +784,12 @@ sub setup {
 	if ($num_matches > 0) {
 	    # without --skip-same-version, dpkg will install the given
 	    # packages even though they are already installed
-	    0 == system(@chrootcmd, 'dpkg', '--install', '--recursive', File::Spec->abs2rel("$options->{root}/var/cache/apt/archives/", $options->{root})) or die "dpkg --install failed: $?";
+	    0 == system(@chrootcmd, 'dpkg', '--install', @essential_pkgs) or die "dpkg --install failed: $?";
 	}
+    }
+
+    foreach my $deb (@essential_pkgs) {
+	unlink "$options->{root}/$deb" or die "cannot unlink $deb";
     }
 
     if (%pkgs_to_install) {
@@ -818,7 +824,29 @@ sub setup {
 
 	if (%pkgs_to_install_from_outside) {
 	    0 == system('apt-get', '--yes', 'install', (keys %pkgs_to_install_from_outside)) or die "apt-get install failed: $?";
-	    0 == system(@chrootcmd, 'dpkg',  '--install', '--skip-same-version', '--recursive', File::Spec->abs2rel("$options->{root}/var/cache/apt/archives/", $options->{root})) or die "dpkg --install failed: $?";
+	    my @debs_to_install;
+	    my $apt_archives = "/var/cache/apt/archives/";
+	    opendir my $dh, "$options->{root}/$apt_archives" or die "cannot read $apt_archives";
+	    while (my $deb = readdir $dh) {
+		if ($deb !~ /\.deb$/) {
+		    next;
+		}
+		$deb = "$apt_archives/$deb";
+		if (!-f "$options->{root}/$deb") {
+		    next;
+		}
+		push @debs_to_install, $deb;
+	    }
+	    close $dh;
+	    if (scalar @debs_to_install == 0) {
+		die "nothing got downloaded";
+	    }
+	    # we need --force-depends because dpkg does not take Pre-Depends
+	    # into account and thus doesn't install them in the right order
+	    0 == system(@chrootcmd, 'dpkg',  '--install', '--force-depends', @debs_to_install) or die "dpkg --install failed: $?";
+	    foreach my $deb (@debs_to_install) {
+		unlink "$options->{root}/$deb" or die "cannot unlink $deb";
+	    }
 	}
 
 	# from now on, apt will be executed inside the chroot
