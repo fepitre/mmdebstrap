@@ -1198,6 +1198,7 @@ sub main() {
 	    ['u', '1', $idmap[0][2], '1'],
 	    ['g', '1', $idmap[1][2], '1']];
 	waitpid $pid, 0;
+	$? == 0 or die "chown failed";
     }
 
     # figure out whether we have mknod
@@ -1207,6 +1208,7 @@ sub main() {
 	    $options->{havemknod} = havemknod($options->{root});
 	} \@idmap;
 	waitpid $pid, 0;
+	$? == 0 or die "havemknod failed";
     } else {
 	$options->{havemknod} = havemknod($options->{root});
     }
@@ -1342,6 +1344,7 @@ sub main() {
 		}
 	    } \@idmap;
 	    waitpid $pid, 0;
+	    $? == 0 or die "remove_tree failed";
 	} else {
 	    # without unshare, we use the system's rm to recursively remove the
 	    # temporary directory just to make sure that we do not accidentally
