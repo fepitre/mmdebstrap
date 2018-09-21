@@ -988,10 +988,9 @@ sub main() {
     if ($options->{mode} eq 'sudo') {
 	$options->{mode} = 'root';
     }
-    if ($options->{mode} ne 'auto' and $options->{mode} ne 'root'
-	    and $options->{mode} ne 'fakechroot'
-	    and $options->{mode} ne 'proot' and $options->{mode} ne 'unshare') {
-	die "invalid mode. Choose from auto, root, fakechroot, proot, unshare";
+    my @valid_modes = ('auto', 'root', 'unshare', 'fakechroot', 'proot');
+    if (!grep { $_ eq $options->{mode} } @valid_modes) {
+	die "invalid mode. Choose from " . (join ', ', @valid_modes);
     }
 
     if ($options->{variant} eq 'essential' and defined $options->{include}) {
