@@ -1240,6 +1240,7 @@ sub main() {
 	}
     }
 
+    my $exitstatus = 0;
     my @taropts = ('--sort=name', "--mtime=\@$mtime", '--clamp-mtime', '--numeric-owner', '--one-file-system', '-c');
     push @taropts, @tar_compress_opts;
     my $pid;
@@ -1316,6 +1317,9 @@ sub main() {
     }
     close($rfh);
     waitpid $pid, 0;
+    if ($? != 0) {
+	$exitstatus = 1;
+    }
 
     if ($options->{maketar} and -e $options->{root}) {
 	if ($options->{mode} eq 'unshare') {
@@ -1345,6 +1349,8 @@ sub main() {
 	    0 == system('rm', '--recursive', '--preserve-root', '--one-file-system', $options->{root}) or die "rm failed: $!";
 	}
     }
+
+    exit $exitstatus;
 }
 
 main();
