@@ -476,7 +476,7 @@ sub setup {
     {
 	my $archopt = '';
 	if (scalar @{$options->{foreignarchs}} > 0) {
-	    $archopt = " [arch=$options->{nativearch}]"
+	    $archopt = " [arch=$options->{nativearch}]";
 	}
 	open my $fh, '>', "$options->{root}/etc/apt/sources.list" or die "cannot open /etc/apt/sources.list: $!";
 	if (scalar(@{$options->{mirrors}}) > 0) {
@@ -489,7 +489,7 @@ sub setup {
 		    print STDERR "I: Reading sources.list from standard input...\n";
 		    copy *STDIN, $fh or die "cannot copy stdin: $!";
 		} elsif ($arg =~ /:\/\//) {
-		    print $fh "deb$archopt $arg $options->{suite} $options->{components}\n"
+		    print $fh "deb$archopt $arg $options->{suite} $options->{components}\n";
 		} elsif ($arg =~ /^deb(-src)? /) {
 		    print $fh "$arg\n";
 		} elsif (-f $arg) {
@@ -668,11 +668,11 @@ sub setup {
 	    }
 	    my $fakechrootdir = "/usr/lib/$deb_host_multiarch/fakechroot";
 	    if (!-e "$fakechrootdir/libfakechroot.so") {
-		die "$fakechrootdir/libfakechroot.so doesn't exist. Install libfakechroot:$options->{nativearch} outside the chroot"
+		die "$fakechrootdir/libfakechroot.so doesn't exist. Install libfakechroot:$options->{nativearch} outside the chroot";
 	    }
 	    my $fakerootdir = "/usr/lib/$deb_host_multiarch/libfakeroot";
 	    if (!-e "$fakerootdir/libfakeroot-sysv.so") {
-		die "$fakerootdir/libfakeroot-sysv.so doesn't exist. Install libfakeroot:$options->{nativearch} outside the chroot"
+		die "$fakerootdir/libfakeroot-sysv.so doesn't exist. Install libfakeroot:$options->{nativearch} outside the chroot";
 	    }
 	    # fakechroot only fills LD_LIBRARY_PATH with the directories of
 	    # the host's architecture. We append the directories of the chroot
@@ -1005,7 +1005,7 @@ sub main() {
     if ($options->{target} ne '-') {
 	my $abs_path = abs_path($options->{target});
 	if (!defined $abs_path) {
-	    die "unable to get absolute path of target directory $options->{target}"
+	    die "unable to get absolute path of target directory $options->{target}";
 	}
 	$options->{target} = $abs_path;
     }
@@ -1030,7 +1030,7 @@ sub main() {
 	print STDERR "I: automatically chosen mode: $options->{mode}\n";
     } elsif ($options->{mode} eq 'root') {
 	if ($EFFECTIVE_USER_ID != 0) {
-	    die "need to be root"
+	    die "need to be root";
 	}
     } elsif ($options->{mode} eq 'proot') {
 	if (system('proot --version>/dev/null') != 0) {
