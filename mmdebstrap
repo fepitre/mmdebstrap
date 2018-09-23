@@ -25,6 +25,7 @@ use Cwd qw(abs_path);
 use Dpkg::Index;
 require "syscall.ph";
 use Fcntl qw(S_IFCHR S_IFBLK);
+use List::Util qw(any none);
 
 # from sched.h
 use constant {
@@ -512,7 +513,7 @@ sub setup {
 	    }
 	} else {
 	    print $fh "deb$archopt http://deb.debian.org/debian $options->{suite} $options->{components}\n";
-	    if (grep { $_ eq $options->{suite} } ('stable', 'oldstable', 'stretch') ) {
+	    if (any { $_ eq $options->{suite} } ('stable', 'oldstable', 'stretch') ) {
 		print $fh "deb$archopt http://deb.debian.org/debian $options->{suite}-updates $options->{components}\n";
 		print $fh "deb$archopt http://security.debian.org/debian-security $options->{suite}/updates $options->{components}\n";
 	    }
@@ -609,19 +610,21 @@ sub setup {
 		    # for this variant we are only interested in the
 		    # essential packages
 		    next;
-		} elsif ($options->{variant} eq 'standard' or $options->{variant} eq 'important' or $options->{variant} eq 'required' or $options->{variant} eq 'buildd' or $options->{variant} eq 'minbase') {
+		} elsif (any { $_ eq $options->{variant} } ('standard', 'important', 'required', 'buildd', 'minbase')) {
 		    if ($prio eq 'optional' or $prio eq 'extra') {
+			# always ignore packages of priority optional and extra
 			next;
 		    } elsif ($prio eq 'standard') {
-			if ($options->{variant} eq 'important' or $options->{variant} eq 'required' or $options->{variant} eq 'buildd' or $options->{variant} eq 'minbase') {
+			if (any { $_ eq $options->{variant} } ('important', 'required', 'buildd', 'minbase')) {
 			    next;
 			}
 		    } elsif ($prio eq 'important') {
-			if ($options->{variant} eq 'required' or $options->{variant} eq 'buildd' or $options->{variant} eq 'minbase') {
+			if (any { $_ eq $options->{variant} } ('required', 'buildd', 'minbase')) {
 			    next;
 			}
-		    } elsif ($prio eq 'required' or $options->{variant} eq 'buildd' or $options->{variant} eq 'minbase') {
-			# required packages are part of all sets
+		    } elsif ($prio eq 'required') {
+			# required packages are part of all sets except
+			# essential and apt
 		    } else {
 			die "unknown priority: $prio";
 		    }
@@ -1026,11 +1029,11 @@ sub main() {
 
     my @valid_variants = ('essential', 'apt', 'required', 'minbase', 'buildd',
 	'important', 'debootstrap', '-', 'standard');
-    if (!grep { $_ eq $options->{variant}} @valid_variants) {
+    if (none { $_ eq $options->{variant}} @valid_variants) {
 	die "invalid variant. Choose from " . (join ', ', @valid_variants);
     }
     # debootstrap and - are an alias for important
-    if (grep { $_ eq $options->{variant} } ('-', 'debootstrap')) {
+    if (any { $_ eq $options->{variant} } ('-', 'debootstrap')) {
 	$options->{variant} = 'important';
     }
 
@@ -1043,7 +1046,7 @@ sub main() {
 	$options->{mode} = 'root';
     }
     my @valid_modes = ('auto', 'root', 'unshare', 'fakechroot', 'proot');
-    if (!grep { $_ eq $options->{mode} } @valid_modes) {
+    if (none { $_ eq $options->{mode} } @valid_modes) {
 	die "invalid mode. Choose from " . (join ', ', @valid_modes);
     }
 
@@ -1208,7 +1211,7 @@ sub main() {
 	# in unshare and root mode, other users than the current user need to
 	# access the rootfs, most prominently, the _apt user. Thus, make the
 	# temporary directory world readable.
-	if (grep { $_ eq $options->{mode} } ('unshare', 'root')) {
+	if (any { $_ eq $options->{mode} } ('unshare', 'root')) {
 	    chmod 0755, $options->{root} or die "cannot chmod root: $!";
 	}
     } else {
