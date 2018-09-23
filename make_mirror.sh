@@ -49,7 +49,8 @@ END
 		| xargs --delimiter='\n' /usr/lib/apt/apt-helper cat-file \
 		| grep-dctrl --no-field-names --show-field=Package --exact-match \
 			\( --field=Essential yes --or --field=Priority required \
-			--or --field=Priority important --or --field=Priority standard \))
+			--or --field=Priority important --or --field=Priority standard \
+			--or --field=Package build-essential \) )
 
 	pkgs="$(echo $pkgs) build-essential"
 
