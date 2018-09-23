@@ -29,7 +29,7 @@ fi
 trap 'kill $pid' INT QUIT TERM EXIT
 
 cd mirror
-python3 -m http.server 8000 & pid=$!
+python3 -m http.server 8000 2>/dev/null & pid=$!
 cd -
 
 # wait for the server to start
