@@ -22,7 +22,6 @@ use File::Copy;
 use File::Path qw(make_path remove_tree);
 use File::Temp qw(tempfile tempdir);
 use Cwd qw(abs_path);
-use Dpkg::Index;
 require "syscall.ph";
 use Fcntl qw(S_IFCHR S_IFBLK FD_CLOEXEC F_GETFD F_SETFD);
 use List::Util qw(any none);
@@ -732,49 +731,56 @@ sub setup {
 	    chomp $fname;
 	    open (my $pipe_cat, '-|', '/usr/lib/apt/apt-helper', 'cat-file', $fname) or die "cannot start apt-helper cat-file: $!";
 
-	    my $key_func = sub {
-		return $_[0]->{Package} . ' ' . $_[0]->{Version} . ' ' . $_[0]->{Architecture};
-	    };
-
-	    my $index = Dpkg::Index->new(get_key_func=>$key_func);
-
-	    $index->parse($pipe_cat, 'apt-helper cat-file') or die "failed to parse";
-
-	    foreach my $key ($index->get_keys()) {
-		my $cdata = $index->get_by_key($key);
-		my $pkgname = $cdata->{Package};
-		my $arch = $cdata->{Architecture} // '';
-		my $ess = $cdata->{Essential} // '';
+	    my $pkgname;
+	    my $ess = '';
+	    my $prio = 'optional';
+	    while (my $line = <$pipe_cat>) {
+		chomp $line;
+		# Dpkg::Index takes 10 seconds to parse a typical Packages
+		# file. Thus we instead use a simple parser that just retrieve
+		# the information we need.
+		if ($line ne "") {
+		    if ($line =~ /^Package: (.*)/) {
+			$pkgname = $1;
+		    } elsif ($line =~ /^Essential: yes$/) {
+			$ess = 'yes'
+		    } elsif ($line =~ /^Priority: (.*)/) {
+			$prio = $1;
+		    }
+		    next;
+		}
+		# the line is empty, thus a package stanza just finished
+		# processing and we can handle it now
 		if ($ess eq 'yes') {
 		    $ess_pkgs{$pkgname} = ();
-		}
-		my $prio = $cdata->{Priority} // 'optional';
-		if ($options->{variant} eq 'essential') {
+		} elsif ($options->{variant} eq 'essential') {
 		    # for this variant we are only interested in the
 		    # essential packages
-		    next;
 		} elsif (any { $_ eq $options->{variant} } ('standard', 'important', 'required', 'buildd', 'minbase')) {
 		    if ($prio eq 'optional' or $prio eq 'extra') {
 			# always ignore packages of priority optional and extra
-			next;
 		    } elsif ($prio eq 'standard') {
-			if (any { $_ eq $options->{variant} } ('important', 'required', 'buildd', 'minbase')) {
-			    next;
+			if (none { $_ eq $options->{variant} } ('important', 'required', 'buildd', 'minbase')) {
+			    $pkgs_to_install{$pkgname} = ();
 			}
 		    } elsif ($prio eq 'important') {
-			if (any { $_ eq $options->{variant} } ('required', 'buildd', 'minbase')) {
-			    next;
+			if (none { $_ eq $options->{variant} } ('required', 'buildd', 'minbase')) {
+			    $pkgs_to_install{$pkgname} = ();
 			}
 		    } elsif ($prio eq 'required') {
 			# required packages are part of all sets except
 			# essential and apt
+			$pkgs_to_install{$pkgname} = ();
 		    } else {
 			die "unknown priority: $prio";
 		    }
 		} else {
 		    die "unknown variant: $options->{variant}";
 		}
-		$pkgs_to_install{$pkgname} = ();
+		# reset values
+		undef $pkgname;
+		$ess = '';
+		$prio = 'optional';
 	    }
 
 	    close $pipe_cat;
@@ -1805,7 +1811,7 @@ This section lists some differences to debootstrap.
 
 =item * Multiple ways to operate as non-root: fakechroot, proot, unshare
 
-=item * 2-3 times faster
+=item * 3-6 times faster
 
 =item * Can create a chroot with only Essential:yes packages and their dependencies
 
