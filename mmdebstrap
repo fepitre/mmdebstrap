@@ -973,6 +973,9 @@ sub setup {
     # clean up temporary configuration file
     unlink "$options->{root}/etc/apt/apt.conf.d/00mmdebstrap" or die "failed to unlink /etc/apt/apt.conf.d/00mmdebstrap: $!";
 
+    # apt since 1.6 creates the auxfiles directory. If apt inside the chroot
+    # is older than that, then it will not know how to clean it.
+    rmdir "$options->{root}/var/lib/apt/lists/auxfiles" or die "cannot rmdir /var/lib/apt/lists/auxfiles: $!";
     # if there is no apt inside the chroot, clean it from the outside
     if ($options->{variant} eq 'essential') {
 	$ENV{"APT_CONFIG"} = "$tmpfile";
