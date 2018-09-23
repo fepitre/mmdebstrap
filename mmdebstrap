@@ -694,6 +694,7 @@ sub setup {
     # into account.
     $ENV{"APT_CONFIG"} = "$tmpfile";
 
+    print STDERR "I: running apt-get update...\n";
     run_apt_progress 'apt-get', 'update';
 
     # check if anything was downloaded at all
@@ -789,6 +790,7 @@ sub setup {
 	close $pipe_apt;
 	$? == 0 or die "apt-get indextargets failed: $?";
 
+	print STDERR "I: downloading packages with apt...\n";
 	run_apt_progress 'apt-get', '--yes', 'install', keys %ess_pkgs;
     } else {
 	# if we just want to install Essential:yes packages, apt and their
@@ -804,6 +806,7 @@ sub setup {
 	#                  remind me in 5+ years that I said that after I wrote
 	#                  in the bugreport: "Are you crazy?!? Nobody in his
 	#                  right mind would even suggest depending on it!")
+	print STDERR "I: downloading packages with apt...\n";
 	run_apt_progress 'apt-get', '--yes', 'dist-upgrade';
     }
 
@@ -836,6 +839,7 @@ sub setup {
 	die "nothing got downloaded";
     }
 
+    print STDERR "I: extracting archives...\n";
     print_progress 0.0;
     my $counter = 0;
     my $total = scalar @essential_pkgs;
@@ -949,6 +953,7 @@ sub setup {
     # install the extracted packages properly
     # we need --force-depends because dpkg does not take Pre-Depends into
     # account and thus doesn't install them in the right order
+    print STDERR "I: installing packages...\n";
     run_dpkg_progress [@essential_pkgs], @chrootcmd, 'dpkg', '--install', '--force-depends';
 
     # if the path-excluded option was added to the dpkg config, reinstall all
@@ -960,6 +965,7 @@ sub setup {
 	if ($num_matches > 0) {
 	    # without --skip-same-version, dpkg will install the given
 	    # packages even though they are already installed
+	    print STDERR "I: re-installing packages because of path-exclude...\n";
 	    run_dpkg_progress [@essential_pkgs], @chrootcmd, 'dpkg', '--install';
 	}
     }
@@ -999,6 +1005,7 @@ sub setup {
 	$? == 0 or die "apt-get indextargets failed";
 
 	if (%pkgs_to_install_from_outside) {
+	    print STDERR 'I: downloading ' . (join ', ', keys %pkgs_to_install_from_outside) . "...\n";
 	    run_apt_progress 'apt-get', '--yes', 'install', (keys %pkgs_to_install_from_outside);
 	    my @debs_to_install;
 	    my $apt_archives = "/var/cache/apt/archives/";
@@ -1019,6 +1026,7 @@ sub setup {
 	    }
 	    # we need --force-depends because dpkg does not take Pre-Depends
 	    # into account and thus doesn't install them in the right order
+	    print STDERR 'I: installing ' . (join ', ', keys %pkgs_to_install_from_outside) . "...\n";
 	    run_dpkg_progress [@debs_to_install], @chrootcmd, 'dpkg',  '--install', '--force-depends';
 	    foreach my $deb (@debs_to_install) {
 		unlink "$options->{root}/$deb" or die "cannot unlink $deb";
@@ -1080,6 +1088,7 @@ sub setup {
 	copy("/etc/resolv.conf", "$options->{root}/etc/resolv.conf");
 	copy("/etc/hostname", "$options->{root}/etc/hostname");
 
+	print STDERR "I: installing remaining packages inside the chroot...\n";
 	run_apt_progress @chrootcmd, 'apt-get',  '--yes', 'install', keys %pkgs_to_install;
 
 	# cleanup
@@ -1123,6 +1132,7 @@ sub setup {
     # is older than that, then it will not know how to clean it.
     rmdir "$options->{root}/var/lib/apt/lists/auxfiles" or die "cannot rmdir /var/lib/apt/lists/auxfiles: $!";
     # if there is no apt inside the chroot, clean it from the outside
+    print STDERR "I: cleaning package lists and apt cache...\n";
     if ($options->{variant} eq 'essential') {
 	run_apt_progress 'apt-get', '--option', 'Dir::Etc::SourceList=/dev/null', 'update';
 	run_apt_progress 'apt-get', 'clean';
@@ -1472,6 +1482,8 @@ sub main() {
 	    setup($options);
 
 	    if ($options->{maketar}) {
+		print STDERR "I: creating tarball...\n";
+
 		# redirect tar output to the writing end of the pipe so that the
 		# parent process can capture the output
 		open(STDOUT, '>&', $wfh);
@@ -1484,6 +1496,7 @@ sub main() {
 		# pack everything except ./dev
 		0 == system('tar', @taropts, '--exclude=./dev', '-C', $options->{root}, '.') or die "tar failed: $?";
 
+		print STDERR "done\n";
 	    }
 
 	    exit 0;
@@ -1497,6 +1510,8 @@ sub main() {
 	    setup($options);
 
 	    if ($options->{maketar}) {
+		print STDERR "I: creating tarball...\n";
+
 		# redirect tar output to the writing end of the pipe so that the
 		# parent process can capture the output
 		open(STDOUT, '>&', $wfh);
@@ -1518,6 +1533,8 @@ sub main() {
 		} else {
 		    0 == system('tar', @taropts, '-C', $options->{root}, '.') or die "tar failed: $?";
 		}
+
+		print STDERR "done\n";
 	    }
 
 	    exit 0;
