@@ -50,6 +50,7 @@ for dist in stable testing unstable; do
 		echo                   $dist $variant
 		echo =========================================================
 
+		echo running ./mmdebstrap --variant=$variant --mode=unshare $dist debian-$dist-mm.tar "http://localhost:8000"
 		/usr/bin/time --output=timings --append --format=%e ./mmdebstrap --variant=$variant --mode=unshare $dist debian-$dist-mm.tar "http://localhost:8000"
 
 		stat --format=%s debian-$dist-mm.tar >> sizes
@@ -58,6 +59,7 @@ for dist in stable testing unstable; do
 		sudo tar -xf ../debian-$dist-mm.tar
 		cd -
 
+		echo running debootstrap --merged-usr --variant=$variant $dist ./debian-$dist-debootstrap "http://localhost:8000/"
 		/usr/bin/time --output=timings --append --format=%e sudo debootstrap --merged-usr --variant=$variant $dist ./debian-$dist-debootstrap "http://localhost:8000/"
 		sudo tar --sort=name --mtime=@$SOURCE_DATE_EPOCH --clamp-mtime --numeric-owner --one-file-system -C ./debian-$dist-debootstrap -cf debian-$dist-debootstrap.tar .
 		sudo rm -r ./debian-$dist-debootstrap
