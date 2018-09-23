@@ -866,10 +866,14 @@ sub setup {
 	);
     }
 
-    my @chrootcmd = ('/usr/sbin/chroot', $options->{root});
+    # make sure that APT_CONFIG is not set when executing anything inside the
+    # chroot
+    my @chrootcmd = ('env', '--unset=APT_CONFIG');
     if ($options->{mode} eq 'proot') {
 	# FIXME: proot currently cannot install apt because of https://github.com/proot-me/PRoot/issues/147
-	@chrootcmd = ('proot', '--root-id', '--bind=/dev', "--rootfs=$options->{root}", '--cwd=/');
+	push @chrootcmd, ('proot', '--root-id', '--bind=/dev', "--rootfs=$options->{root}", '--cwd=/');
+    } else {
+	push @chrootcmd, ('/usr/sbin/chroot', $options->{root});
     }
 
     # copy qemu-user-static binary into chroot or setup proot with --qemu
@@ -1015,9 +1019,6 @@ sub setup {
 	    }
 	}
 
-	# from now on, apt will be executed inside the chroot
-	undef $ENV{"APT_CONFIG"};
-
 	# if more than essential should be installed, make the system look
 	# more like a real one by creating or bind-mounting the device nodes
 	foreach my $file (@devfiles) {
@@ -1117,10 +1118,8 @@ sub setup {
     rmdir "$options->{root}/var/lib/apt/lists/auxfiles" or die "cannot rmdir /var/lib/apt/lists/auxfiles: $!";
     # if there is no apt inside the chroot, clean it from the outside
     if ($options->{variant} eq 'essential') {
-	$ENV{"APT_CONFIG"} = "$tmpfile";
 	run_apt_progress 'apt-get', '--option', 'Dir::Etc::SourceList=/dev/null', 'update';
 	run_apt_progress 'apt-get', 'clean';
-	undef $ENV{"APT_CONFIG"};
     } else {
 	run_apt_progress @chrootcmd, 'apt-get', '--option', 'Dir::Etc::SourceList=/dev/null', 'update';
 	run_apt_progress @chrootcmd, 'apt-get', 'clean';
