@@ -355,10 +355,22 @@ sub havemknod($) {
 	die "/test-dev-null already exists";
     }
     while ($havemknod == 0) {
-	last unless 0 == system 'mknod', "$root/test-dev-null", 'c', '1', '3';
-	last unless -c "$root/test-dev-null";
-	last unless open my $fh, '>', "$root/test-dev-null";
-	last unless print $fh 'test';
+	# we fork so that we can read STDERR
+	my $pid = open my $fh, '-|' // die "failed to fork(): $!";
+	if ($pid == 0) {
+	    open(STDERR, '>&', STDOUT);
+	    # we use mknod(1) instead of the system call because creating the
+	    # right dev_t argument requires makedev(3)
+	    exec 'mknod', "$root/test-dev-null", 'c', '1', '3';
+	}
+	chomp (my $content = do { local $/; <$fh> });
+	close $fh;
+	{
+	    last unless $? == 0 and $content eq '';
+	    last unless -c "$root/test-dev-null";
+	    last unless open my $fh, '>', "$root/test-dev-null";
+	    last unless print $fh 'test';
+	}
 	$havemknod = 1;
     }
     if (-e "$root/test-dev-null") {
@@ -480,7 +492,7 @@ sub setup {
 	}
 	open my $fh, '>', "$options->{root}/etc/apt/sources.list" or die "cannot open /etc/apt/sources.list: $!";
 	if (scalar(@{$options->{mirrors}}) > 0) {
-	    if( grep /^-$/, @{$options->{mirrors}} > 1 ) {
+	    if((grep /^-$/, @{$options->{mirrors}}) > 1 ) {
 		die "can only read from stdin once";
 	    }
 	    for my $arg (@{$options->{mirrors}}) {
