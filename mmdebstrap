@@ -409,13 +409,11 @@ sub setup {
     print $conf "Dir::Etc \"$options->{root}/etc/apt\";\n";
     print $conf "Dir::State \"$options->{root}/var/lib/apt\";\n";
     print $conf "Dir::Cache \"$options->{root}/var/cache/apt\";\n";
-    print $conf "Apt::Install-Recommends false;\n";
     # for retrieving the essential packages set, only download
     print $conf "Apt::Get::Download-Only true;\n";
     # for authentication, use the keyrings from the host
     print $conf "Dir::Etc::Trusted \"/etc/apt/trusted.gpg\";\n";
     print $conf "Dir::Etc::TrustedParts \"/etc/apt/trusted.gpg.d\";\n";
-    print $conf "Acquire::Languages \"none\";\n";
     close $conf;
 
     foreach my $dir ('/etc/apt/apt.conf.d', '/etc/apt/sources.list.d',
@@ -423,6 +421,18 @@ sub setup {
 	'/var/lib/apt/lists/partial', '/var/lib/dpkg',
 	'/etc/dpkg/dpkg.cfg.d/') {
 	make_path("$options->{root}/$dir") or die "failed to create $dir: $!";
+    }
+
+    # We put certain configuration items in their own configuration file
+    # because they have to be valid for apt invocation from outside as well as
+    # from inside the chroot.
+    # The config filename is chosen such that any settings in it will be
+    # overridden by what the user specified with --aptopt.
+    {
+	open my $fh, '>', "$options->{root}/etc/apt/apt.conf.d/00mmdebstrap" or die "cannot open /etc/apt/apt.conf.d/00mmdebstrap: $!";
+	print $fh "Apt::Install-Recommends false;\n";
+	print $fh "Acquire::Languages \"none\";\n";
+	close $fh;
     }
 
     {
@@ -440,7 +450,7 @@ sub setup {
     }
 
     if (scalar @{$options->{aptopts}} > 0) {
-	open my $fh, '>', "$options->{root}/etc/apt/apt.conf.d/00mmdebstrap" or die "cannot open /etc/apt/apt.conf.d/00mmdebstrap: $!";
+	open my $fh, '>', "$options->{root}/etc/apt/apt.conf.d/99mmdebstrap" or die "cannot open /etc/apt/apt.conf.d/99mmdebstrap: $!";
 	foreach my $opt (@{$options->{aptopts}}) {
 	    if (-r $opt) {
 		copy $opt, $fh or die "cannot copy $opt: $!";
@@ -458,7 +468,7 @@ sub setup {
     }
 
     if (scalar @{$options->{dpkgopts}} > 0) {
-	open my $fh, '>', "$options->{root}/etc/dpkg/dpkg.cfg.d/00mmdebstrap" or die "cannot open /etc/dpkg/dpkg.cfg.d/00mmdebstrap: $!";
+	open my $fh, '>', "$options->{root}/etc/dpkg/dpkg.cfg.d/99mmdebstrap" or die "cannot open /etc/dpkg/dpkg.cfg.d/99mmdebstrap: $!";
 	foreach my $opt (@{$options->{dpkgopts}}) {
 	    if (-r $opt) {
 		copy $opt, $fh or die "cannot copy $opt: $!";
@@ -792,8 +802,8 @@ sub setup {
 
     # if the path-excluded option was added to the dpkg config, reinstall all
     # packages
-    if (-e "$options->{root}/etc/dpkg/dpkg.cfg.d/00mmdebstrap") {
-	open(my $fh, '<', "$options->{root}/etc/dpkg/dpkg.cfg.d/00mmdebstrap") or die "cannot open /etc/dpkg/dpkg.cfg.d/00mmdebstrap: $!";
+    if (-e "$options->{root}/etc/dpkg/dpkg.cfg.d/99mmdebstrap") {
+	open(my $fh, '<', "$options->{root}/etc/dpkg/dpkg.cfg.d/99mmdebstrap") or die "cannot open /etc/dpkg/dpkg.cfg.d/99mmdebstrap: $!";
 	my $num_matches = grep /^path-exclude=/, <$fh>;
 	close $fh;
 	if ($num_matches > 0) {
@@ -959,6 +969,9 @@ sub setup {
 	    0 == system('umount', '--no-mtab', "$options->{root}/proc") or die "umount failed: $?";
 	}
     }
+
+    # clean up temporary configuration file
+    unlink "$options->{root}/etc/apt/apt.conf.d/00mmdebstrap" or die "failed to unlink /etc/apt/apt.conf.d/00mmdebstrap: $!";
 
     # if there is no apt inside the chroot, clean it from the outside
     if ($options->{variant} eq 'essential') {
@@ -1489,24 +1502,25 @@ default mode is B<auto>. See the section B<MODES> for more information.
 =item B<--aptopt>
 
 Pass arbitrary options to apt. Will be added to
-/etc/apt/apt.conf.d/00mmdebstrap inside the chroot.  Can be specified multiple
-times. Each option with be appended to 00mmdebstrap. A semicolon will be added
+/etc/apt/apt.conf.d/99mmdebstrap inside the chroot.  Can be specified multiple
+times. Each option with be appended to 99mmdebstrap. A semicolon will be added
 at the end of the option if necessary. If the command line argument is an
-existing file, the content of the file will be appended to 00mmdebstrap
+existing file, the content of the file will be appended to 99mmdebstrap
 verbatim.
 
 Examples:
 
     --aptopt="Acquire::Check-Valid-Until false"
+    --aptopt="Acquire::Languages { \"environment\"; \"en\"; }"
     --aptopt="Apt::Install-Recommends true"
 
 =item B<--dpkgopt>
 
 Pass arbitrary options to dpkg. Will be added to
-/etc/dpkg/dpkg.cfg.d/00mmdebstrap inside the chroot. Can be specified multiple
-times. Each option will be appended to 00mmdebstrap. If the command line
+/etc/dpkg/dpkg.cfg.d/99mmdebstrap inside the chroot. Can be specified multiple
+times. Each option will be appended to 99mmdebstrap. If the command line
 argument is an existing file, the content of the file will be appended to
-00mmdebstrap verbatim.
+99mmdebstrap verbatim.
 
 Example: --dpkgopt="path-exclude=/usr/share/man/*"
 
