@@ -24,7 +24,7 @@ use File::Temp qw(tempfile tempdir);
 use Cwd qw(abs_path);
 use Dpkg::Index;
 require "syscall.ph";
-use Fcntl qw(S_IFCHR S_IFBLK);
+use Fcntl qw(S_IFCHR S_IFBLK FD_CLOEXEC F_GETFD F_SETFD);
 use List::Util qw(any none);
 
 # from sched.h
@@ -380,6 +380,163 @@ sub havemknod($) {
     return $havemknod;
 }
 
+sub print_progress {
+    my $perc = shift;
+    if (!-t STDERR) {
+	return;
+    }
+    if ($perc eq "done") {
+	# \e[2K clears everything on the current line (i.e. the progress bar)
+	print STDERR "\e[2Kdone\n";
+	return;
+    }
+    if ($perc >= 100) {
+	$perc = 100;
+    }
+    my $width = 50;
+    my $num_x = int($perc*$width/100);
+    my $bar = '=' x $num_x;
+    if ($num_x != $width) {
+	$bar .= '>';
+	$bar .= ' ' x ($width - $num_x - 1);
+    }
+    printf STDERR "%6.2f [%s]\r", $perc, $bar;
+}
+
+sub run_dpkg_progress {
+    my $debs = shift;
+    my @args = @_;
+    pipe my $rfh, my $wfh;
+    my $dpkgpid = open (my $pipe_dpkg, '-|') // die "failed to fork(): $!";
+    if ($dpkgpid == 0) {
+	close $rfh;
+	# Unset the close-on-exec flag, so that the file descriptor does not
+	# get closed when we exec dpkg
+	my $flags = fcntl( $wfh, F_GETFD, 0 ) or die "fcntl F_GETFD: $!";
+	fcntl($wfh, F_SETFD, $flags & ~FD_CLOEXEC ) or die "fcntl F_SETFD: $!";
+	my $fd = fileno $wfh;
+	# redirect dpkg's stderr to stdout so that we can capture it
+	open(STDERR, '>&', STDOUT);
+	exec { $args[0] } @args, "--status-fd=$fd", @{$debs};
+	die "cannot exec() dpkg";
+    }
+    close $wfh;
+
+    # spawn two processes:
+    #   parent will parse stdout
+    #   child will parse $rfh for the progress meter
+    my $pid = fork() // die "failed to fork(): $!";
+    if ($pid == 0) {
+	# child
+	print_progress 0.0;
+	my $num = 0;
+	# each package has one install and one configure step, thus the total
+	# number is twice the number of packages
+	my $total = (scalar @{$debs}) * 2;
+	while (my $line = <$rfh>) {
+	    if ($line =~ /^processing: (install|configure): /) {
+		$num += 1;
+	    }
+	    my $perc = $num/$total*100;
+	    print_progress $perc;
+	}
+	print_progress "done";
+
+	exit 0;
+    }
+
+    # parent
+    my $dpkg_output;
+    while (my $line = <$pipe_dpkg>) {
+	# forward captured apt output
+	#print STDERR $line;
+	$dpkg_output .= $line;
+    }
+    close $pipe_dpkg;
+    my $fail = 0;
+    if ($? != 0) {
+	$fail = 1;
+    }
+
+    waitpid $pid, 0;
+    $? == 0 or die "progress parsing failed";
+
+    # only print apt failure after progress output finished or otherwise it
+    # might interfere
+    if ($fail) {
+	print STDERR $dpkg_output;
+	die ((join ' ', @args) . ' failed');
+    }
+}
+
+sub run_apt_progress {
+    my @args = @_;
+    pipe my $rfh, my $wfh;
+    my $aptpid = open(my $pipe_apt, '-|') // die "failed to fork(): $!";
+    if ($aptpid == 0) {
+	close $rfh;
+	# Unset the close-on-exec flag, so that the file descriptor does not
+	# get closed when we exec apt-get
+	my $flags = fcntl( $wfh, F_GETFD, 0 ) or die "fcntl F_GETFD: $!";
+	fcntl($wfh, F_SETFD, $flags & ~FD_CLOEXEC ) or die "fcntl F_SETFD: $!";
+	my $fd = fileno $wfh;
+	# redirect apt's stderr to stdout so that we can capture it
+	open(STDERR, '>&', STDOUT);
+	exec { $args[0] } @args, "-oAPT::Status-Fd=$fd";
+	die "cannot exec apt-get update: $!";
+    }
+    close $wfh;
+
+    # spawn two processes:
+    #   parent will parse stdout to look for errors
+    #   child will parse $rfh for the progress meter
+    my $pid = fork() // die "failed to fork(): $!";
+    if ($pid == 0) {
+	# child
+	print_progress 0.0;
+	while (my $line = <$rfh>) {
+	    if ($line =~ /(pmstatus|dlstatus):[^:]+:(\d+\.\d+):.*/) {
+		print_progress $2;
+	    }
+	    #print STDERR "apt: $line";
+	}
+	print_progress "done";
+
+	exit 0;
+    }
+
+    # parent
+    my $has_error = 0;
+    # apt-get doesn't report a non-zero exit if the update failed. Thus, we
+    # have to parse its output. See #778357, #776152, #696335 and #745735
+    my $apt_output = '';
+    while (my $line = <$pipe_apt>) {
+	if ($line =~ '^W: ') {
+	    $has_error = 1;
+	} elsif ($line =~ '^Err:') {
+	    $has_error = 1;
+	}
+	# forward captured apt output
+	#print STDERR $line;
+	$apt_output .= $line;
+    }
+    close($pipe_apt);
+    my $fail = 0;
+    if ($? != 0 or $has_error) {
+	$fail = 1;
+    }
+
+    waitpid $pid, 0;
+    $? == 0 or die "progress parsing failed";
+
+    # only print apt failure after progress output finished or otherwise it
+    # might interfere
+    if ($fail) {
+	print STDERR $apt_output;
+	die ((join ' ', @args) . ' failed');
+    }
+}
+
 sub setup {
     my $options = shift;
 
@@ -538,31 +695,7 @@ sub setup {
     # into account.
     $ENV{"APT_CONFIG"} = "$tmpfile";
 
-    # apt-get doesn't report a non-zero exit if the update failed. Thus, we
-    # have to parse its output. See #778357, #776152, #696335 and #745735
-    {
-	my $pid = open(my $pipe_apt, '-|') // die "failed to fork(): $!";
-	if ($pid == 0) {
-	    # redirect apt's stderr to stdout so that we can capture it
-	    open(STDERR, '>&', STDOUT);
-	    exec('apt-get', 'update');
-	    die "cannot exec apt-get update: $!";
-	}
-	my $has_error = 0;
-	while (my $line = <$pipe_apt>) {
-	    if ($line =~ '^W: ') {
-		$has_error = 1;
-	    } elsif ($line =~ '^Err:') {
-		$has_error = 1;
-	    }
-	    # forward captured apt output
-	    print STDERR $line;
-	}
-	close($pipe_apt);
-	if ($? != 0 or $has_error) {
-	    die "apt-get update failed to download some indexes";
-	}
-    }
+    run_apt_progress 'apt-get', 'update';
 
     # check if anything was downloaded at all
     {
@@ -650,7 +783,7 @@ sub setup {
 	close $pipe_apt;
 	$? == 0 or die "apt-get indextargets failed: $?";
 
-	0 == system('apt-get', '--yes', 'install', keys %ess_pkgs) or die "apt-get install failed: $?";
+	run_apt_progress 'apt-get', '--yes', 'install', keys %ess_pkgs;
     } else {
 	# if we just want to install Essential:yes packages, apt and their
 	# dependencies then we can make use of libapt treating apt as
@@ -665,7 +798,7 @@ sub setup {
 	#                  remind me in 5+ years that I said that after I wrote
 	#                  in the bugreport: "Are you crazy?!? Nobody in his
 	#                  right mind would even suggest depending on it!")
-	0 == system('apt-get', '--yes', 'dist-upgrade') or die "apt-get dist-upgrade failed: $?";
+	run_apt_progress 'apt-get', '--yes', 'dist-upgrade';
     }
 
     # extract the downloaded packages
@@ -697,7 +830,11 @@ sub setup {
 	die "nothing got downloaded";
     }
 
+    print_progress 0.0;
+    my $counter = 0;
+    my $total = scalar @essential_pkgs;
     foreach my $deb (@essential_pkgs) {
+	$counter += 1;
 	# not using dpkg-deb --extract as that would replace the
 	# merged-usr symlinks with plain directories
 	pipe my $rfh, my $wfh;
@@ -715,7 +852,9 @@ sub setup {
 	$? == 0 or die "dpkg-deb --fsys-tarfile failed: $?";
 	waitpid($pid2, 0);
 	$? == 0 or die "tar --extract failed: $?";
+	print_progress ($counter/$total*100);
     }
+    print_progress "done";
 
     if ($options->{mode} eq 'fakechroot') {
 	$ENV{FAKECHROOT_CMD_SUBST} = join ':', (
@@ -798,7 +937,9 @@ sub setup {
     }
 
     # install the extracted packages properly
-    0 == system(@chrootcmd, 'dpkg', '--install', '--force-depends', @essential_pkgs) or die "dpkg --install failed: $?";
+    # we need --force-depends because dpkg does not take Pre-Depends into
+    # account and thus doesn't install them in the right order
+    run_dpkg_progress [@essential_pkgs], @chrootcmd, 'dpkg', '--install', '--force-depends';
 
     # if the path-excluded option was added to the dpkg config, reinstall all
     # packages
@@ -809,7 +950,7 @@ sub setup {
 	if ($num_matches > 0) {
 	    # without --skip-same-version, dpkg will install the given
 	    # packages even though they are already installed
-	    0 == system(@chrootcmd, 'dpkg', '--install', @essential_pkgs) or die "dpkg --install failed: $?";
+	    run_dpkg_progress [@essential_pkgs], @chrootcmd, 'dpkg', '--install';
 	}
     }
 
@@ -848,7 +989,7 @@ sub setup {
 	$? == 0 or die "apt-get indextargets failed";
 
 	if (%pkgs_to_install_from_outside) {
-	    0 == system('apt-get', '--yes', 'install', (keys %pkgs_to_install_from_outside)) or die "apt-get install failed: $?";
+	    run_apt_progress 'apt-get', '--yes', 'install', (keys %pkgs_to_install_from_outside);
 	    my @debs_to_install;
 	    my $apt_archives = "/var/cache/apt/archives/";
 	    opendir my $dh, "$options->{root}/$apt_archives" or die "cannot read $apt_archives";
@@ -868,7 +1009,7 @@ sub setup {
 	    }
 	    # we need --force-depends because dpkg does not take Pre-Depends
 	    # into account and thus doesn't install them in the right order
-	    0 == system(@chrootcmd, 'dpkg',  '--install', '--force-depends', @debs_to_install) or die "dpkg --install failed: $?";
+	    run_dpkg_progress [@debs_to_install], @chrootcmd, 'dpkg',  '--install', '--force-depends';
 	    foreach my $deb (@debs_to_install) {
 		unlink "$options->{root}/$deb" or die "cannot unlink $deb";
 	    }
@@ -932,9 +1073,7 @@ sub setup {
 	copy("/etc/resolv.conf", "$options->{root}/etc/resolv.conf");
 	copy("/etc/hostname", "$options->{root}/etc/hostname");
 
-	0 == system(@chrootcmd, 'apt-get',  '--yes', 'install',
-	    '--no-install-recommends',
-	    keys %pkgs_to_install) or die "apt-get install failed: $?";
+	run_apt_progress @chrootcmd, 'apt-get',  '--yes', 'install', keys %pkgs_to_install;
 
 	# cleanup
 	move("$options->{root}/sbin/start-stop-daemon.REAL", "$options->{root}/sbin/start-stop-daemon") or die "cannot move start-stop-daemon";
@@ -979,12 +1118,12 @@ sub setup {
     # if there is no apt inside the chroot, clean it from the outside
     if ($options->{variant} eq 'essential') {
 	$ENV{"APT_CONFIG"} = "$tmpfile";
-	0 == system('apt-get', '--option', 'Dir::Etc::SourceList=/dev/null', 'update') or die "apt-get update failed: $?";
-	0 == system('apt-get', 'clean') or die "apt-get clean failed: $?";
+	run_apt_progress 'apt-get', '--option', 'Dir::Etc::SourceList=/dev/null', 'update';
+	run_apt_progress 'apt-get', 'clean';
 	undef $ENV{"APT_CONFIG"};
     } else {
-	0 == system(@chrootcmd, 'apt-get', '--option', 'Dir::Etc::SourceList=/dev/null', 'update') or die "apt-get update failed: $?";
-	0 == system(@chrootcmd, 'apt-get', 'clean') or die "apt-get clean failed: $?";
+	run_apt_progress @chrootcmd, 'apt-get', '--option', 'Dir::Etc::SourceList=/dev/null', 'update';
+	run_apt_progress @chrootcmd, 'apt-get', 'clean';
     }
 
     if (defined $options->{qemu} and $options->{mode} ne 'proot' and $options->{mode} ne 'fakechroot') {
