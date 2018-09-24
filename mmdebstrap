@@ -552,17 +552,19 @@ sub run_apt_progress {
 sub setup {
     my $options = shift;
 
-    foreach my $key (sort keys %{$options}) {
-	my $value = $options->{$key};
-	if (!defined $value) {
-	    next;
-	}
-	if (ref $value eq '') {
-	    print STDERR "I: $key: $options->{$key}\n";
-	} elsif (ref $value eq 'ARRAY') {
-	    print STDERR "I: $key: [" . (join ', ', @{$value}) . "]\n";
-	} else {
-	    die "unknown type";
+    if (0) {
+	foreach my $key (sort keys %{$options}) {
+	    my $value = $options->{$key};
+	    if (!defined $value) {
+		next;
+	    }
+	    if (ref $value eq '') {
+		print STDERR "I: $key: $options->{$key}\n";
+	    } elsif (ref $value eq 'ARRAY') {
+		print STDERR "I: $key: [" . (join ', ', @{$value}) . "]\n";
+	    } else {
+		die "unknown type";
+	    }
 	}
     }
 
