@@ -109,6 +109,16 @@ sub test_unshare() {
     if (($? >> 8) != 0) {
 	return 0;
     }
+    # if newuidmap and newgidmap exist, the exit status will be 1 when
+    # executed without parameters
+    system "newuidmap 2>/dev/null";
+    if (($? >> 8) != 1) {
+	return 0;
+    }
+    system "newgidmap 2>/dev/null";
+    if (($? >> 8) != 1) {
+	return 0;
+    }
     return 1;
 }
 
@@ -1356,6 +1366,22 @@ sub main() {
 	if (!test_unshare()) {
 	    if ($EFFECTIVE_USER_ID == 0) {
 		print STDERR "I: cannot use unshare mode when executing as root\n";
+	    }
+	    system "newuidmap 2>/dev/null";
+	    if (($? >> 8) != 1) {
+		if (($? >> 8) == 127) {
+		    print STDERR "I: cannot find newuidmap\n";
+		} else {
+		    print STDERR "I: newuidmap returned unknown exit status\n";
+		}
+	    }
+	    system "newgidmap 2>/dev/null";
+	    if (($? >> 8) != 1) {
+		if (($? >> 8) == 127) {
+		    print STDERR "I: cannot find newgidmap\n";
+		} else {
+		    print STDERR "I: newgidmap returned unknown exit status\n";
+		}
 	    }
 	    my $procfile = '/proc/sys/kernel/unprivileged_userns_clone';
 	    open(my $fh, '<', $procfile) or die "failed to open $procfile: $!";
