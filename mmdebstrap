@@ -88,6 +88,9 @@ sub get_tar_compress_options($) {
 }
 
 sub test_unshare() {
+    if ($EFFECTIVE_USER_ID == 0) {
+	return 0;
+    }
     # arguments to syscalls have to be stored in their own variable or
     # otherwise we will get "Modification of a read-only value attempted"
     my $unshare_flags = CLONE_NEWUSER;
@@ -1351,6 +1354,9 @@ sub main() {
 	}
     } elsif ($options->{mode} eq 'unshare') {
 	if (!test_unshare()) {
+	    if ($EFFECTIVE_USER_ID == 0) {
+		print STDERR "I: cannot use unshare mode when executing as root\n";
+	    }
 	    my $procfile = '/proc/sys/kernel/unprivileged_userns_clone';
 	    open(my $fh, '<', $procfile) or die "failed to open $procfile: $!";
 	    chomp(my $content = do { local $/; <$fh> });
