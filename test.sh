@@ -4,6 +4,10 @@ set -eu
 
 mirrordir="./mirror"
 
+# by default, use the mmdebstrap executable in the current directory but allow
+# overwriting the location
+: "${mmdebstrap:=./mmdebstrap}"
+
 mirror="http://deb.debian.org/debian"
 rootdir=$(mktemp --directory)
 nativearch=$(dpkg --print-architecture)
@@ -50,8 +54,8 @@ for dist in stable testing unstable; do
 		echo                   $dist $variant
 		echo =========================================================
 
-		echo running ./mmdebstrap --variant=$variant --mode=unshare $dist debian-$dist-mm.tar "http://localhost:8000"
-		/usr/bin/time --output=timings --append --format=%e ./mmdebstrap --variant=$variant --mode=unshare $dist debian-$dist-mm.tar "http://localhost:8000"
+		echo running $mmdebstrap --variant=$variant --mode=unshare $dist debian-$dist-mm.tar "http://localhost:8000"
+		/usr/bin/time --output=timings --append --format=%e $mmdebstrap --variant=$variant --mode=unshare $dist debian-$dist-mm.tar "http://localhost:8000"
 
 		stat --format=%s debian-$dist-mm.tar >> sizes
 		mkdir ./debian-$dist-mm
