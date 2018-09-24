@@ -295,10 +295,10 @@ sub get_unshare_cmd(&$) {
 	    }
 	    my $idmapcmd = '';
 	    if ($uidmapcmd ne "") {
-		0 == system "newuidmap $ppid $uidmapcmd" or die "newuidmap failed: $!";
+		0 == system "newuidmap $ppid $uidmapcmd" or die "newuidmap $ppid $uidmapcmd failed: $!";
 	    }
 	    if ($gidmapcmd ne "") {
-		0 == system "newgidmap $ppid $gidmapcmd" or die "newgidmap failed: $!";
+		0 == system "newgidmap $ppid $gidmapcmd" or die "newgidmap $ppid $gidmapcmd failed: $!";
 	    }
 	    exit 0;
 	}
