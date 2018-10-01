@@ -1179,6 +1179,7 @@ sub setup {
     unlink "$options->{root}/var/lib/apt/extended_states";
     unlink "$options->{root}/var/lib/apt/lists/lock";
     unlink "$options->{root}/var/lib/dpkg/lock-frontend";
+    unlink "$options->{root}/var/lib/dpkg/lock";
 }
 
 sub main() {

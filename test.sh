@@ -139,6 +139,11 @@ for dist in stable testing unstable; do
 			sudo rm debian-$dist-debootstrap/var/lib/systemd/catalog/database
 			sudo rm debian-$dist-mm/var/lib/systemd/catalog/database
 		fi
+		sudo rm debian-$dist-debootstrap/var/lib/dpkg/lock
+		# introduced in dpkg 1.19.1
+		if [ "$dist" = "unstable" ]; then
+			sudo rm debian-$dist-debootstrap/var/lib/dpkg/lock-frontend
+		fi
 
 		# check if the file content differs
 		sudo diff --no-dereference --brief --recursive debian-$dist-debootstrap debian-$dist-mm
