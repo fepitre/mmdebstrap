@@ -95,7 +95,7 @@ sub test_unshare() {
     # otherwise we will get "Modification of a read-only value attempted"
     my $unshare_flags = CLONE_NEWUSER;
     # we spawn a new per process because if unshare succeeds, we would
-    # otherwise have unshared the sbuild process itself which we don't want
+    # otherwise have unshared the mmdebstrap process itself which we don't want
     my $pid = fork() // die "fork() failed: $!";
     if ($pid == 0) {
 	my $ret = syscall &SYS_unshare, $unshare_flags;
