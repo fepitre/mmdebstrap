@@ -30,14 +30,20 @@ fi
 
 ./make_mirror.sh
 
-trap 'kill $pid' INT QUIT TERM EXIT
-
 cd mirror
 python3 -m http.server 8000 2>/dev/null & pid=$!
 cd -
 
 # wait for the server to start
 sleep 1
+
+if ! kill -0 $pid; then
+	echo "failed to start http server"
+	exit 1
+fi
+
+trap 'kill $pid' INT QUIT TERM EXIT
+
 echo "running http server with pid $pid"
 
 export SOURCE_DATE_EPOCH=$(date +%s)
