@@ -935,7 +935,7 @@ sub setup {
 	    if (!-e $qemubin) {
 		die "cannot find $qemubin";
 	    }
-	    copy $qemubin, "$options->{root}/$qemubin";
+	    copy $qemubin, "$options->{root}/$qemubin" or die "cannot copy $qemubin: $!";
 	}
     }
 
@@ -1106,8 +1106,8 @@ sub setup {
 	}
 
 	# allow network access from within
-	copy("/etc/resolv.conf", "$options->{root}/etc/resolv.conf");
-	copy("/etc/hostname", "$options->{root}/etc/hostname");
+	copy("/etc/resolv.conf", "$options->{root}/etc/resolv.conf") or die "cannot copy /etc/resolv.conf: $!";
+	copy("/etc/hostname", "$options->{root}/etc/hostname") or die "cannot copy /etc/hostname: $!";
 
 	print STDERR "I: installing remaining packages inside the chroot...\n";
 	run_apt_progress @chrootcmd, 'apt-get',  '--yes', 'install', keys %pkgs_to_install;
@@ -1584,11 +1584,9 @@ sub main() {
     close $wfh;
     if ($options->{maketar}) {
 	if ($options->{target} ne '-') {
-	    open(my $fh, '>', $options->{target});
-	    copy($rfh, $fh);
-	    close($fh);
+	    copy($rfh, $options->{target}) or die "cannot copy to $options->{target}: $!";
 	} else {
-	    copy($rfh, *STDOUT);
+	    copy($rfh, *STDOUT) or die "cannot copy to standard output: $!";
 	}
     }
     close($rfh);
