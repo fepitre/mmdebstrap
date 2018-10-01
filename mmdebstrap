@@ -1059,6 +1059,7 @@ sub setup {
 		die "type 1 not implemented";
 	    } elsif ($type == 2) { # symlink
 		symlink $linkname, "$options->{root}/$fname";
+		chmod $mode, "$options->{root}/$fname";
 	    } elsif ($type == 3 or $type == 4) { # character/block special
 		if (!$options->{havemknod}) {
 		    open my $fh, '>', "$options->{root}/$fname" or die "cannot open $options->{root}/$fname: $!";
@@ -1068,12 +1069,12 @@ sub setup {
 	    } elsif ($type == 5) { # directory
 		if (!$options->{havemknod}) {
 		    make_path "$options->{root}/$fname";
+		    chmod $mode, "$options->{root}/$fname";
 		}
 		0 == system('mount', '-o', 'bind', "/$fname", "$options->{root}/$fname") or die "mount failed: $?";
 	    } else {
 		die "unsupported type: $type";
 	    }
-	    chmod $mode, "$options->{root}/$fname";
 	}
 	# We can only mount /proc and /sys after extracting the essential
 	# set because if we mount it before, then base-files will not be able
