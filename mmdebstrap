@@ -1076,9 +1076,15 @@ sub setup {
 	    chmod $mode, "$options->{root}/$fname";
 	}
 	# We can only mount /proc and /sys after extracting the essential
-	# set because if we mount it before, then base-files not be able
+	# set because if we mount it before, then base-files will not be able
 	# to extract those
-	0 == system('mount', '-o', 'rbind', '/sys', "$options->{root}/sys") or die "mount failed: $?";
+	if ($options->{mode} eq 'unshare') {
+	    # without the network namespace unshared, we cannot mount a new
+	    # sysfs. Since we need network, we just bind-mount.
+	    0 == system('mount', '-o', 'rbind', '/sys', "$options->{root}/sys") or die "mount failed: $?";
+	} else {
+	    0 == system('mount', '-t', 'sysfs', '-o', 'nosuid,nodev,noexec', 'sys', "$options->{root}/sys") or die "mount failed: $?";
+	}
 	0 == system('mount', '-t', 'proc', 'proc', "$options->{root}/proc") or die "mount failed: $?";
 
 	# prevent daemons from starting
@@ -1135,7 +1141,7 @@ sub setup {
 	}
 	# no need to umount if the mount namespace was unshared
 	if ($options->{mode} ne 'unshare') {
-	    0 == system('umount', '--no-mtab', '--recursive', '--lazy', "$options->{root}/sys") or die "umount failed: $?";
+	    0 == system('umount', '--no-mtab', "$options->{root}/sys") or die "umount failed: $?";
 	    0 == system('umount', '--no-mtab', "$options->{root}/proc") or die "umount failed: $?";
 	}
     }
