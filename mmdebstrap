@@ -682,10 +682,10 @@ sub setup {
 		    # read from stdin
 		    print STDERR "I: Reading sources.list from standard input...\n";
 		    copy *STDIN, $fh or die "cannot copy stdin: $!";
-		} elsif ($arg =~ /:\/\//) {
-		    print $fh "deb$archopt $arg $options->{suite} $options->{components}\n";
 		} elsif ($arg =~ /^deb(-src)? /) {
 		    print $fh "$arg\n";
+		} elsif ($arg =~ /:\/\//) {
+		    print $fh "deb$archopt $arg $options->{suite} $options->{components}\n";
 		} elsif (-f $arg) {
 		    copy($arg, $fh) or die "cannot copy $arg: $!";
 		} else {
