@@ -718,6 +718,8 @@ sub setup {
 	chomp (my $indextargets = do { local $/; <$fh> });
 	close $fh;
 	if ($indextargets eq '') {
+	    print STDERR "content of /etc/apt/sources.list:\n";
+	    copy("$options->{root}/etc/apt/sources.list", *STDERR);
 	    die "apt-get update didn't download anything";
 	}
     }
