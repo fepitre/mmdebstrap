@@ -1282,7 +1282,10 @@ sub main() {
 	if ($hostarch ne $nativearch) {
 	    my $pid = open my $fh, '-|' // die "failed to fork(): $!";
 	    if ($pid == 0) {
-		{ exec 'arch-test', '-n', $nativearch; }
+		{
+		    no warnings; # don't print a warning if the following fails
+		    exec 'arch-test', '-n', $nativearch;
+		}
 		# if exec didn't work (for example because the arch-test program is
 		# missing) prepare for the worst and assume that the architecture
 		# cannot be executed
