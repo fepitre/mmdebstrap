@@ -667,38 +667,10 @@ sub setup {
 	chmod 0644, "$options->{root}/etc/fstab" or die "cannot chmod fstab: $!";
     }
 
+    # write /etc/apt/sources.list
     {
-	my $archopt = '';
-	if (scalar @{$options->{foreignarchs}} > 0) {
-	    $archopt = " [arch=$options->{nativearch}]";
-	}
 	open my $fh, '>', "$options->{root}/etc/apt/sources.list" or die "cannot open /etc/apt/sources.list: $!";
-	if (scalar(@{$options->{mirrors}}) > 0) {
-	    if((grep /^-$/, @{$options->{mirrors}}) > 1 ) {
-		die "can only read from stdin once";
-	    }
-	    for my $arg (@{$options->{mirrors}}) {
-		if ($arg eq '-') {
-		    # read from stdin
-		    print STDERR "I: Reading sources.list from standard input...\n";
-		    copy *STDIN, $fh or die "cannot copy stdin: $!";
-		} elsif ($arg =~ /^deb(-src)? /) {
-		    print $fh "$arg\n";
-		} elsif ($arg =~ /:\/\//) {
-		    print $fh "deb$archopt $arg $options->{suite} $options->{components}\n";
-		} elsif (-f $arg) {
-		    copy($arg, $fh) or die "cannot copy $arg: $!";
-		} else {
-		    die "invalid mirror: $arg";
-		}
-	    }
-	} else {
-	    print $fh "deb$archopt http://deb.debian.org/debian $options->{suite} $options->{components}\n";
-	    if (any { $_ eq $options->{suite} } ('stable', 'oldstable', 'stretch') ) {
-		print $fh "deb$archopt http://deb.debian.org/debian $options->{suite}-updates $options->{components}\n";
-		print $fh "deb$archopt http://security.debian.org/debian-security $options->{suite}/updates $options->{components}\n";
-	    }
-	}
+	print $fh $options->{sourceslist};
 	close $fh;
     }
 
@@ -1308,19 +1280,77 @@ sub main() {
 	}
     }
 
-    if (scalar @ARGV > 0) {
-	$options->{suite} = shift @ARGV;
+    {
+	my $suite;
 	if (scalar @ARGV > 0) {
-	    $options->{target} = shift @ARGV;
+	    $suite = shift @ARGV;
+	    if (scalar @ARGV > 0) {
+		$options->{target} = shift @ARGV;
+	    } else {
+		$options->{target} = '-';
+	    }
 	} else {
+	    print STDERR "I: No SUITE specified, expecting sources.list on standard input\n";
 	    $options->{target} = '-';
 	}
-	$options->{mirrors} = [@ARGV];
-    } else {
-	print STDERR "I: No SUITE specified, expecting sources.list on standard input\n";
-	$options->{suite} = 'UNDEFINED';
-	$options->{target} = '-';
-	$options->{mirrors} = ['-'];
+
+	my $sourceslist = '';
+	my $stdindata = '';
+	# make sure that we only attempt to read from STDIN if it's *not*
+	# connected to the terminal (because we don't expect the user to type
+	# the sources.list file
+	if (! -t STDIN) {
+	    print STDERR "I: Reading sources.list from standard input...\n";
+	    $stdindata = do { local $/; <STDIN> };
+	}
+	if (! defined $suite) {
+	    # If no suite was specified, then the whole sources.list has to
+	    # come from standard input
+	    $sourceslist .= $stdindata;
+	} else {
+	    my $archopt = '';
+	    if (scalar @{$options->{foreignarchs}} > 0) {
+		$archopt = " [arch=$options->{nativearch}]";
+	    }
+	    if (scalar @ARGV > 0) {
+		for my $arg (@ARGV) {
+		    if ($arg eq '-') {
+			$sourceslist .= $stdindata;
+		    } elsif ($arg =~ /^deb(-src)? /) {
+			$sourceslist .= "$arg\n";
+		    } elsif ($arg =~ /:\/\//) {
+			$sourceslist .= "deb$archopt $arg $suite $options->{components}\n";
+		    } elsif (-f $arg) {
+			open my $fh, '<', $arg or die "cannot open $arg: $!";
+			while (my $line = <$fh>) {
+			    $sourceslist .= $line;
+			}
+			close $fh;
+		    } else {
+			die "invalid mirror: $arg";
+		    }
+		}
+		# if there was no explicit '-' mirror listed and something was
+		# read on standard input, then just append it to the end
+		if (none { $_ eq '-' } @ARGV) {
+		    # if nothing was read on standard input then nothing will
+		    # be appended
+		    $sourceslist .= $stdindata;
+		}
+	    } elsif ($stdindata ne '') {
+		$sourceslist .= $stdindata;
+	    } else {
+		$sourceslist .= "deb$archopt http://deb.debian.org/debian $suite $options->{components}\n";
+		if (any { $_ eq $suite } ('stable', 'oldstable', 'stretch') ) {
+		    $sourceslist .= "deb$archopt http://deb.debian.org/debian $suite-updates $options->{components}\n";
+		    $sourceslist .= "deb$archopt http://security.debian.org/debian-security $suite/updates $options->{components}\n";
+		}
+	    }
+	}
+	if ($sourceslist eq '') {
+	    die "empty apt sources.list";
+	}
+	$options->{sourceslist} = $sourceslist;
     }
 
     if ($options->{target} ne '-') {
@@ -1656,7 +1686,9 @@ section B<DEBOOTSTRAP>). In contrast to debootstrap it uses apt to resolve
 dependencies and is thus able to use more than one mirror and resolve more
 complex dependencies.
 
-If no I<MIRROR> option is provided, http://deb.debian.org/debian is used. If
+If no I<MIRROR> option is provided, http://deb.debian.org/debian is used,
+except if data was given on standard input in which case the lines read from
+there are used as the content of the chroot's sources.list file. If
 I<SUITE> is a stable release name, then mirrors for updates and security are
 automatically added. If a I<MIRROR> option starts with "deb " or "deb-src "
 then it is used as a one-line-style format entry for apt's sources.list inside
@@ -1665,11 +1697,13 @@ a mirror URI and the apt line inside the chroot is assembled as "deb [arch=A]
 B C D" where A is the host's native architecture, B is the I<MIRROR>, C is the
 given I<SUITE> and D is the components given via --components (defaults to
 "main"). If a I<MIRROR> option happens to be an existing file, then its
-contents are pasted into the chroot's sources.list. This can be used to supply
-a deb822 style sources.list. If I<MIRROR> is C<-> then standard input is
-pasted into the chroot's sources.list. More than one mirror can be specified
-and are appended to the chroot's sources.list in the given order. If any
-mirror contains a https URI, then the packages apt-transport-https and
+contents are pasted into the chroot's sources.list.  This can be used to
+supply a deb822 style sources.list. If I<MIRROR> is C<-> then standard input
+is pasted into the chroot's sources.list. If there was data on standard input
+but no C<-> mirror was listed, the lines read from standard input will be
+appended to the end of the chroot's sources.list. More than one mirror can be
+specified and are appended to the chroot's sources.list in the given order. If
+any mirror contains a https URI, then the packages apt-transport-https and
 ca-certificates will be installed inside the chroot.
 
 The I<TARGET> argument can either be a directory or a tarball filename. If
