@@ -1254,6 +1254,7 @@ sub main() {
     $options->{foreignarchs} = \@foreignarchs;
 
     {
+	# FIXME: autogenerate this list
 	my $deb2qemu = {
 	    alpha => 'alpha',
 	    amd64 => 'x86_64',
