@@ -3,6 +3,7 @@
 set -eu
 
 mirrordir="./mirror"
+cachedir="./cache"
 
 mirror="http://deb.debian.org/debian"
 nativearch=$(dpkg --print-architecture)
@@ -16,6 +17,12 @@ if [ -e "$mirrordir/dists/unstable/Release" ]; then
 		*) echo unexpected status: $http_code; exit 1;;
 	esac
 fi
+
+for dist in stable testing unstable; do
+	for variant in minbase buildd -; do
+		rm -f "$cachedir/debian-$dist-$variant.tar"
+	done
+done
 
 for dist in stable testing unstable; do
 	rootdir=$(mktemp --directory)

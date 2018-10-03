@@ -3,10 +3,14 @@
 set -eu
 
 mirrordir="./mirror"
+cachedir="./cache"
 
 # by default, use the mmdebstrap executable in the current directory but allow
 # overwriting the location
 : "${mmdebstrap:=./mmdebstrap}"
+
+# by default a cache of debootstrap results is maintained
+: "${docache:=true}"
 
 mirror="http://deb.debian.org/debian"
 rootdir=$(mktemp --directory)
@@ -46,7 +50,11 @@ trap 'kill $pid' INT QUIT TERM EXIT
 
 echo "running http server with pid $pid"
 
-export SOURCE_DATE_EPOCH=$(date +%s)
+# choose the timestamp of the unstable Release file, so that we get
+# reproducible results for the same mirror timestamp
+export SOURCE_DATE_EPOCH=$(date --date="$(grep-dctrl -s Date -n '' mirror/dists/unstable/Release)" +%s)
+
+mkdir -p "$cachedir"
 
 for dist in stable testing unstable; do
 	> timings
@@ -65,20 +73,20 @@ for dist in stable testing unstable; do
 
 		stat --format=%s debian-$dist-mm.tar >> sizes
 		mkdir ./debian-$dist-mm
-		cd ./debian-$dist-mm
-		sudo tar -xf ../debian-$dist-mm.tar
-		cd -
+		sudo tar -C ./debian-$dist-mm -xf ./debian-$dist-mm.tar
 
-		echo running debootstrap --merged-usr --variant=$variant $dist ./debian-$dist-debootstrap "http://localhost:8000/"
-		/usr/bin/time --output=timings --append --format=%e sudo debootstrap --merged-usr --variant=$variant $dist ./debian-$dist-debootstrap "http://localhost:8000/"
-		sudo tar --sort=name --mtime=@$SOURCE_DATE_EPOCH --clamp-mtime --numeric-owner --one-file-system -C ./debian-$dist-debootstrap -cf debian-$dist-debootstrap.tar .
-		sudo rm -r ./debian-$dist-debootstrap
+		if [ "$docache" != "true" ] || [ ! -e "$cachedir/debian-$dist-$variant.tar" ]; then
+			echo running debootstrap --merged-usr --variant=$variant $dist ./debian-$dist-debootstrap "http://localhost:8000/"
+			/usr/bin/time --output=timings --append --format=%e sudo debootstrap --merged-usr --variant=$variant $dist ./debian-$dist-debootstrap "http://localhost:8000/"
+			sudo tar --sort=name --mtime=@$SOURCE_DATE_EPOCH --clamp-mtime --numeric-owner --one-file-system -C ./debian-$dist-debootstrap -c . > "$cachedir/debian-$dist-$variant.tar"
+			sudo rm -r ./debian-$dist-debootstrap
+		else
+			echo cached >> timings
+		fi
 
-		stat --format=%s debian-$dist-debootstrap.tar >> sizes
+		stat --format=%s "$cachedir/debian-$dist-$variant.tar" >> sizes
 		mkdir ./debian-$dist-debootstrap
-		cd ./debian-$dist-debootstrap
-		sudo tar -xf ../debian-$dist-debootstrap.tar
-		cd -
+		sudo tar -C ./debian-$dist-debootstrap -xf "$cachedir/debian-$dist-$variant.tar"
 
 		# diff cannot compare device nodes, so we use tar to do that for us and then
 		# delete the directory
@@ -149,7 +157,10 @@ for dist in stable testing unstable; do
 		sudo diff --no-dereference --brief --recursive debian-$dist-debootstrap debian-$dist-mm
 
 		sudo rm -rf ./debian-$dist-debootstrap ./debian-$dist-mm \
-			./debian-$dist-debootstrap.tar ./debian-$dist-mm.tar
+			./debian-$dist-mm.tar
+		if [ "$docache" != "true" ]; then
+			rm "$cachedir/debian-$dist-$variant.tar"
+		fi
 	done
 
 	eval $(awk '{print "var"NR"="$1}' timings)
