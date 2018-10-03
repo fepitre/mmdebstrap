@@ -367,7 +367,7 @@ sub havemknod($) {
     if (-e "$root/test-dev-null") {
 	die "/test-dev-null already exists";
     }
-    while ($havemknod == 0) {
+    TEST: {
 	# we fork so that we can read STDERR
 	my $pid = open my $fh, '-|' // die "failed to fork(): $!";
 	if ($pid == 0) {
@@ -379,10 +379,10 @@ sub havemknod($) {
 	chomp (my $content = do { local $/; <$fh> });
 	close $fh;
 	{
-	    last unless $? == 0 and $content eq '';
-	    last unless -c "$root/test-dev-null";
-	    last unless open my $fh, '>', "$root/test-dev-null";
-	    last unless print $fh 'test';
+	    last TEST unless $? == 0 and $content eq '';
+	    last TEST unless -c "$root/test-dev-null";
+	    last TEST unless open my $fh, '>', "$root/test-dev-null";
+	    last TEST unless print $fh 'test';
 	}
 	$havemknod = 1;
     }
