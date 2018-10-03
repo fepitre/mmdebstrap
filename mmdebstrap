@@ -923,6 +923,7 @@ sub setup {
 		die "type 1 not implemented";
 	    } elsif ($type == 2) { # symlink
 		# nothing to do
+		next;
 	    } elsif ($type == 3) { # character special
 		0 == system('mknod', "$options->{root}/$fname", 'c', $devmajor, $devminor) or die "mknod failed: $?";
 	    } elsif ($type == 4) { # block special
