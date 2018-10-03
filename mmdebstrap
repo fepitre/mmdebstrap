@@ -1044,7 +1044,6 @@ sub setup {
 		die "type 1 not implemented";
 	    } elsif ($type == 2) { # symlink
 		symlink $linkname, "$options->{root}/$fname";
-		chmod $mode, "$options->{root}/$fname";
 	    } elsif ($type == 3 or $type == 4) { # character/block special
 		if (!$options->{havemknod}) {
 		    open my $fh, '>', "$options->{root}/$fname" or die "cannot open $options->{root}/$fname: $!";
