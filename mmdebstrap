@@ -935,7 +935,7 @@ sub setup {
 	    } else {
 		die "unsupported type: $type";
 	    }
-	    chmod $mode, "$options->{root}/$fname";
+	    chmod $mode, "$options->{root}/$fname" or die "cannot chmod $fname: $!";
 	}
     }
 
@@ -1043,7 +1043,7 @@ sub setup {
 	    } elsif ($type == 5) { # directory
 		if (!$options->{havemknod}) {
 		    make_path "$options->{root}/$fname";
-		    chmod $mode, "$options->{root}/$fname";
+		    chmod $mode, "$options->{root}/$fname" or die "cannot chmod $fname: $!";
 		}
 		0 == system('mount', '-o', 'bind', "/$fname", "$options->{root}/$fname") or die "mount failed: $?";
 	    } else {
