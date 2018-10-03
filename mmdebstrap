@@ -966,6 +966,16 @@ sub setup {
     if (%pkgs_to_install) {
 	# some packages have to be installed from the outside before anything
 	# can be installed from the inside.
+	#
+	# we do not need to install any *-archive-keyring packages inside the
+	# chroot prior to installing the packages, because the keyring is only
+	# used when doing "apt-get update" and that was already done at the
+	# beginning using key material from the outside. Since the apt cache
+	# is already filled and we are not calling "apt-get update" again, the
+	# keyring can be installed later during installation. But: if it's not
+	# installed during installation, then we might end up with a fully
+	# installed system without keyrings that are valid for its
+	# sources.list.
 	my %pkgs_to_install_from_outside;
 
 	# install apt if necessary
