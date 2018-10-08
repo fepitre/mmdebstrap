@@ -1135,10 +1135,19 @@ sub setup {
 		die "unsupported type: $type";
 	    }
 	}
-	# no need to umount if the mount namespace was unshared
-	if ($options->{mode} ne 'unshare') {
-	    0 == system('umount', '--no-mtab', "$options->{root}/sys") or die "umount failed: $?";
+	# naturally we have to clean up after ourselves in sudo mode where we
+	# do a real mount. But we also need to unmount in unshare mode because
+	# otherwise, even with the --one-file-system tar option, the
+	# permissions of the mount source will be stored and not the mount
+	# target (the directory)
+	if ($options->{mode} eq 'unshare') {
+	    # since we cannot write to /etc/mtab we need --no-mtab
+	    # unmounting /sys only seems to be successful with --lazy
+	    0 == system('umount', '--no-mtab', '--lazy', "$options->{root}/sys") or die "umount failed: $?";
 	    0 == system('umount', '--no-mtab', "$options->{root}/proc") or die "umount failed: $?";
+	} else {
+	    0 == system('umount', "$options->{root}/sys") or die "umount failed: $?";
+	    0 == system('umount', "$options->{root}/proc") or die "umount failed: $?";
 	}
     }
 
