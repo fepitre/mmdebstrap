@@ -1066,6 +1066,9 @@ sub setup {
 	if ($options->{mode} eq 'unshare') {
 	    # without the network namespace unshared, we cannot mount a new
 	    # sysfs. Since we need network, we just bind-mount.
+	    #
+	    # we have to rbind because just using bind results in "wrong fs
+	    # type, bad option, bad superblock" error
 	    0 == system('mount', '-o', 'rbind', '/sys', "$options->{root}/sys") or die "mount failed: $?";
 	} else {
 	    0 == system('mount', '-t', 'sysfs', '-o', 'nosuid,nodev,noexec', 'sys', "$options->{root}/sys") or die "mount failed: $?";
