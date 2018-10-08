@@ -1115,11 +1115,19 @@ sub setup {
 		unlink "$options->{root}/$fname" or die "cannot unlink $fname: $!";
 	    } elsif ($type == 3 or $type == 4) { # character/block special
 		if (!$options->{havemknod}) {
-		    0 == system('umount', '--no-mtab', "$options->{root}/$fname") or die "umount failed: $?";
+		    if ($options->{mode} eq 'unshare') {
+			0 == system('umount', '--no-mtab', "$options->{root}/$fname") or die "umount failed: $?";
+		    } else {
+			0 == system('umount', "$options->{root}/$fname") or die "umount failed: $?";
+		    }
 		    unlink "$options->{root}/$fname";
 		}
 	    } elsif ($type == 5) { # directory
-		0 == system('umount', '--no-mtab', "$options->{root}/$fname") or die "umount failed: $?";
+		if ($options->{mode} eq 'unshare') {
+		    0 == system('umount', '--no-mtab', "$options->{root}/$fname") or die "umount failed: $?";
+		} else {
+		    0 == system('umount', "$options->{root}/$fname") or die "umount failed: $?";
+		}
 		if (!$options->{havemknod}) {
 		    rmdir "$options->{root}/$fname" or die "cannot rmdir $fname: $!";
 		}
