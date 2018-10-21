@@ -111,7 +111,6 @@ END
 		| paste -sd "     \n" \
 		| while read name ver arch fname md5; do
 			dir="${fname%/*}"
-			basename="${fname##*/}"
 			# apt stores deb files with the colon encoded as %3a while
 			# mirrors do not contain the epoch at all #645895
 			case "$ver" in *:*) ver="${ver%%:*}%3a${ver#*:}";; esac
