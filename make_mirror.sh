@@ -27,7 +27,7 @@ done
 for dist in stable testing unstable; do
 	rootdir=$(mktemp --directory)
 
-	for p in /etc/apt/apt.conf.d /etc/apt/sources.list.d /etc/apt/preferences.d /var/cache/apt /var/lib/apt/lists/partial /var/lib/dpkg; do
+	for p in /etc/apt/apt.conf.d /etc/apt/sources.list.d /etc/apt/preferences.d /var/cache/apt/archives /var/lib/apt/lists/partial /var/lib/dpkg; do
 		mkdir -p "$rootdir/$p"
 	done
 
@@ -50,6 +50,34 @@ END
 
 
 	APT_CONFIG="$rootdir/etc/apt/apt.conf" apt-get update
+
+	> "$rootdir/oldaptnames"
+	# before downloading packages and before replacing the old Packages
+	# file, copy all old *.deb packages from the mirror to
+	# /var/cache/apt/archives so that apt will not re-download *.deb
+	# packages that we already have
+	if [ -e "$mirrordir/dists/$dist/main/binary-$nativearch/Packages.gz" ]; then
+		gzip -dc "$mirrordir/dists/$dist/main/binary-$nativearch/Packages.gz" \
+			| grep-dctrl --no-field-names --show-field=Package,Version,Architecture,Filename '' \
+			| paste -sd "    \n" \
+			| while read name ver arch fname; do
+				if [ ! -e "$mirrordir/$fname" ]; then
+					continue
+				fi
+				# apt stores deb files with the colon encoded as %3a while
+				# mirrors do not contain the epoch at all #645895
+				case "$ver" in *:*) ver="${ver%%:*}%3a${ver#*:}";; esac
+				aptname="$rootdir/var/cache/apt/archives/${name}_${ver}_${arch}.deb"
+				# we have to cp and not mv because other
+				# distributions might still need this file
+				# we have to cp and not symlink because apt
+				# doesn't recognize symlinks
+				# we cannot do a hardlink because the two
+				# directories might be on different devices
+				cp -a "$mirrordir/$fname" "$aptname"
+				echo "$aptname" >> "$rootdir/oldaptnames"
+			done
+	fi
 
 	pkgs=$(APT_CONFIG="$rootdir/etc/apt/apt.conf" apt-get indextargets \
 		--format '$(FILENAME)' 'Created-By: Packages' "Architecture: $nativearch" \
@@ -77,6 +105,7 @@ END
 	# requires re-creating the heuristic by which the directory is chosen, requires
 	# stripping the epoch from the filename and will break once mirrors change.
 	# This way, it doesn't matter where the mirror ends up storing the package.
+	> "$rootdir/newaptnames"
 	gzip -dc "$mirrordir/dists/$dist/main/binary-$nativearch/Packages.gz" \
 		| grep-dctrl --no-field-names --show-field=Package,Version,Architecture,Filename,MD5sum '' \
 		| paste -sd "     \n" \
@@ -92,11 +121,19 @@ END
 				echo "$md5  $aptname" | md5sum --check
 				mkdir -p "$mirrordir/$dir"
 				mv "$aptname" "$mirrordir/$fname"
+				echo "$aptname" >> "$rootdir/newaptnames"
 			fi
 		done
 
 	rm "$rootdir/var/cache/apt/archives/lock"
 	rmdir "$rootdir/var/cache/apt/archives/partial"
+	# remove all packages that were in the old Packages file but not in the
+	# new one anymore
+	sort "$rootdir/oldaptnames" > "$rootdir/tmp"
+	mv "$rootdir/tmp" "$rootdir/oldaptnames"
+	sort "$rootdir/newaptnames" > "$rootdir/tmp"
+	mv "$rootdir/tmp" "$rootdir/newaptnames"
+	comm -23 "$rootdir/oldaptnames" "$rootdir/newaptnames" | xargs --delimiter="\n" --no-run-if-empty rm
 	# now the apt cache should be empty
 	if [ ! -z "$(ls -1qA "$rootdir/var/cache/apt/archives/")" ]; then
 		echo "/var/cache/apt/archives not empty"
