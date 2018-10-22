@@ -713,7 +713,7 @@ sub setup {
     # apt and libapt treats apt as essential. If we want to install less
     # (essential variant) then we have to compute the package set ourselves.
     # Same if we want to install priority based variants.
-    if ($options->{variant} ne 'apt') {
+    if (any { $_ eq $options->{variant} } ('essential', 'standard', 'important', 'required', 'buildd', 'minbase')) {
 	my %ess_pkgs;
 	open(my $pipe_apt, '-|', 'apt-get', 'indextargets', '--format', '$(FILENAME)', 'Created-By: Packages') or die "cannot start apt-get indextargets: $!";
 	while (my $fname = <$pipe_apt>) {
@@ -790,7 +790,7 @@ sub setup {
 	run_apt_progress ('apt-get', '--yes',
 	    '-oApt::Get::Download-Only=true',
 	    'install', keys %ess_pkgs);
-    } else {
+    } elsif ($options->{variant} eq 'apt') {
 	# if we just want to install Essential:yes packages, apt and their
 	# dependencies then we can make use of libapt treating apt as
 	# implicitly essential. An upgrade with the (currently) empty status
@@ -808,6 +808,8 @@ sub setup {
 	run_apt_progress ('apt-get', '--yes',
 	    '-oApt::Get::Download-Only=true',
 	    'dist-upgrade');
+    } else {
+	die "unknown variant: $options->{variant}";
     }
 
     # extract the downloaded packages
@@ -883,8 +885,10 @@ sub setup {
     if ($options->{mode} eq 'proot') {
 	# FIXME: proot currently cannot install apt because of https://github.com/proot-me/PRoot/issues/147
 	push @chrootcmd, ('proot', '--root-id', '--bind=/dev', "--rootfs=$options->{root}", '--cwd=/');
-    } else {
+    } elsif (any { $_ eq $options->{mode} } ('root', 'unshare', 'fakechroot')) {
 	push @chrootcmd, ('/usr/sbin/chroot', $options->{root});
+    } else {
+	die "unknown mode: $options->{mode}";
     }
 
     # copy qemu-user-static binary into chroot or setup proot with --qemu
@@ -915,13 +919,15 @@ sub setup {
 	    # the host's architecture. We append the directories of the chroot
 	    # architecture.
 	    $ENV{LD_LIBRARY_PATH} .= ":$fakechrootdir:$fakerootdir";
-	} else {
+	} elsif (any { $_ eq $options->{mode} } ('root', 'unshare')) {
 	    # other modes require a static qemu-user binary
 	    my $qemubin = "/usr/bin/qemu-$options->{qemu}-static";
 	    if (!-e $qemubin) {
 		die "cannot find $qemubin";
 	    }
 	    copy $qemubin, "$options->{root}/$qemubin" or die "cannot copy $qemubin: $!";
+	} else {
+	    die "unknown mode: $options->{mode}";
 	}
     }
 
@@ -1085,8 +1091,10 @@ sub setup {
 	    # we have to rbind because just using bind results in "wrong fs
 	    # type, bad option, bad superblock" error
 	    0 == system('mount', '-o', 'rbind', '/sys', "$options->{root}/sys") or die "mount failed: $?";
-	} else {
+	} elsif (any { $_ eq $options->{mode} } ('root', 'fakechroot', 'proot')) {
 	    0 == system('mount', '-t', 'sysfs', '-o', 'nosuid,nodev,noexec', 'sys', "$options->{root}/sys") or die "mount failed: $?";
+	} else {
+	    die "unknown mode: $options->{mode}";
 	}
 	0 == system('mount', '-t', 'proc', 'proc', "$options->{root}/proc") or die "mount failed: $?";
 
@@ -1134,16 +1142,20 @@ sub setup {
 		if (!$options->{havemknod}) {
 		    if ($options->{mode} eq 'unshare') {
 			0 == system('umount', '--no-mtab', "$options->{root}/$fname") or die "umount failed: $?";
-		    } else {
+		    } elsif (any { $_ eq $options->{mode} } ('root', 'fakechroot', 'proot')) {
 			0 == system('umount', "$options->{root}/$fname") or die "umount failed: $?";
+		    } else {
+			die "unknown mode: $options->{mode}";
 		    }
 		    unlink "$options->{root}/$fname";
 		}
 	    } elsif ($type == 5) { # directory
 		if ($options->{mode} eq 'unshare') {
 		    0 == system('umount', '--no-mtab', "$options->{root}/$fname") or die "umount failed: $?";
-		} else {
+		} elsif (any { $_ eq $options->{mode} } ('root', 'fakechroot', 'proot')) {
 		    0 == system('umount', "$options->{root}/$fname") or die "umount failed: $?";
+		} else {
+		    die "unknown mode: $options->{mode}";
 		}
 		if (!$options->{havemknod}) {
 		    rmdir "$options->{root}/$fname" or die "cannot rmdir $fname: $!";
@@ -1162,9 +1174,11 @@ sub setup {
 	    # unmounting /sys only seems to be successful with --lazy
 	    0 == system('umount', '--no-mtab', '--lazy', "$options->{root}/sys") or die "umount failed: $?";
 	    0 == system('umount', '--no-mtab', "$options->{root}/proc") or die "umount failed: $?";
-	} else {
+	} elsif (any { $_ eq $options->{mode} } ('root', 'fakechroot', 'proot')) {
 	    0 == system('umount', "$options->{root}/sys") or die "umount failed: $?";
 	    0 == system('umount', "$options->{root}/proc") or die "umount failed: $?";
+	} else {
+	    die "unknown mode: $options->{mode}";
 	}
     }
 
@@ -1558,8 +1572,10 @@ sub main() {
 	} \@idmap;
 	waitpid $pid, 0;
 	$? == 0 or die "havemknod failed";
-    } else {
+    } elsif (any { $_ eq $options->{mode} } ('root', 'fakechroot', 'proot')) {
 	$options->{havemknod} = havemknod($options->{root});
+    } else {
+	die "unknown mode: $options->{mode}";
     }
 
     my $devtar = '';
@@ -1623,7 +1639,7 @@ sub main() {
 
 	    exit 0;
 	} \@idmap;
-    } else {
+    } elsif (any { $_ eq $options->{mode} } ('root', 'fakechroot', 'proot')) {
 	$pid = fork() // die "fork() failed: $!";
 	if ($pid == 0) {
 	    close $rfh;
@@ -1652,8 +1668,10 @@ sub main() {
 		    # proot requires tar to run inside proot or otherwise
 		    # permissions will be completely off
 		    0 == system('proot', '--root-id', "--rootfs=$options->{root}", 'tar', @taropts, '-C', '/', '.') or die "tar failed: $?";
-		} else {
+		} elsif (any { $_ eq $options->{mode} } ('root')) {
 		    0 == system('tar', @taropts, '-C', $options->{root}, '.') or die "tar failed: $?";
+		} else {
+		    die "unknown mode: $options->{mode}";
 		}
 
 		print STDERR "done\n";
@@ -1661,6 +1679,8 @@ sub main() {
 
 	    exit 0;
 	}
+    } else {
+	die "unknown mode: $options->{mode}";
     }
 
     close $wfh;
@@ -1699,11 +1719,13 @@ sub main() {
 	    } \@idmap;
 	    waitpid $pid, 0;
 	    $? == 0 or die "remove_tree failed";
-	} else {
+	} elsif (any { $_ eq $options->{mode} } ('root', 'fakechroot', 'proot')) {
 	    # without unshare, we use the system's rm to recursively remove the
 	    # temporary directory just to make sure that we do not accidentally
 	    # remove more than we should by using --one-file-system.
 	    0 == system('rm', '--recursive', '--preserve-root', '--one-file-system', $options->{root}) or die "rm failed: $!";
+	} else {
+	    die "unknown mode: $options->{mode}";
 	}
     }
 
