@@ -1752,7 +1752,7 @@ section B<DEBOOTSTRAP>). In contrast to debootstrap it uses apt to resolve
 dependencies and is thus able to use more than one mirror and resolve more
 complex dependencies.
 
-If no I<MIRROR> option is provided, http://deb.debian.org/debian is used,
+If no I<MIRROR> option is provided, L<http://deb.debian.org/debian> is used,
 except if data was given on standard input in which case the lines read from
 there are used as the content of the chroot's sources.list file. If
 I<SUITE> is a stable release name, then mirrors for updates and security are
@@ -1812,10 +1812,10 @@ default mode is B<auto>. See the section B<MODES> for more information.
 =item B<--aptopt>
 
 Pass arbitrary options to apt. Will be added to
-/etc/apt/apt.conf.d/99mmdebstrap inside the chroot.  Can be specified multiple
-times. Each option with be appended to 99mmdebstrap. A semicolon will be added
-at the end of the option if necessary. If the command line argument is an
-existing file, the content of the file will be appended to 99mmdebstrap
+F</etc/apt/apt.conf.d/99mmdebstrap> inside the chroot.  Can be specified
+multiple times. Each option with be appended to 99mmdebstrap. A semicolon will
+be added at the end of the option if necessary. If the command line argument
+is an existing file, the content of the file will be appended to 99mmdebstrap
 verbatim.
 
 Examples:
@@ -1827,9 +1827,9 @@ Examples:
 =item B<--dpkgopt>
 
 Pass arbitrary options to dpkg. Will be added to
-/etc/dpkg/dpkg.cfg.d/99mmdebstrap inside the chroot. Can be specified multiple
-times. Each option will be appended to 99mmdebstrap. If the command line
-argument is an existing file, the content of the file will be appended to
+F</etc/dpkg/dpkg.cfg.d/99mmdebstrap> inside the chroot. Can be specified
+multiple times. Each option will be appended to 99mmdebstrap. If the command
+line argument is an existing file, the content of the file will be appended to
 99mmdebstrap verbatim.
 
 Example: --dpkgopt="path-exclude=/usr/share/man/*"
@@ -1910,7 +1910,7 @@ I<--variant> argument.
 
 =item B<essential>
 
-Essential:yes packages.
+C<Essential:yes> packages.
 
 =item B<apt>
 
@@ -1976,7 +1976,7 @@ This section lists some differences to debootstrap.
 
 =item * 3-6 times faster
 
-=item * Can create a chroot with only Essential:yes packages and their dependencies
+=item * Can create a chroot with only C<Essential:yes> packages and their dependencies
 
 =item * Reproducible output by default if $SOURCE_DATE_EPOCH is set
 
