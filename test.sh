@@ -153,6 +153,11 @@ for dist in stable testing unstable; do
 		# check if the file content differs
 		sudo diff --no-dereference --brief --recursive debian-$dist-debootstrap debian-$dist-mm
 
+		# check if file properties (permissions, ownership, symlink names, modification time) differ
+		#
+		# we cannot use this (yet) because it cannot copy with paths that have [ or @ in them
+		#sudo fmtree -c -p ./debian-$dist-debootstrap -k flags,gid,link,mode,size,time,uid | sudo fmtree -p ./debian-$dist-mm
+
 		sudo rm -rf ./debian-$dist-debootstrap ./debian-$dist-mm \
 			./debian-$dist-mm.tar
 		if [ "$docache" != "true" ]; then
