@@ -582,6 +582,7 @@ sub setup {
     print $conf "Dir::Cache \"$options->{root}/var/cache/apt\";\n";
     # for retrieving the essential packages set, only download
     print $conf "Apt::Get::Download-Only true;\n";
+    print $conf "Dir::Log \"$options->{root}/var/log/apt\";\n";
     # for authentication, use the keyrings from the host
     print $conf "Dir::Etc::Trusted \"/etc/apt/trusted.gpg\";\n";
     print $conf "Dir::Etc::TrustedParts \"/etc/apt/trusted.gpg.d\";\n";
