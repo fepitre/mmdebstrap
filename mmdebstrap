@@ -867,9 +867,10 @@ sub setup {
     print_progress "done";
 
     if ($options->{mode} eq 'fakechroot') {
+	# FIXME: if trouble arises, look into /etc/fakechroot/*.env for
+	#        more interesting variables to set
 	$ENV{FAKECHROOT_CMD_SUBST} = join ':', (
 	    '/bin/mount=/bin/true',
-	    '/usr/bin/env=/usr/bin/env.fakechroot',
 	    '/usr/bin/ldd=/usr/bin/ldd.fakechroot',
 	    '/usr/bin/mkfifo=/bin/true',
 	    '/usr/sbin/ldconfig=/bin/true',
