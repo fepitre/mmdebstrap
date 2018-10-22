@@ -61,7 +61,7 @@ for dist in stable testing unstable; do
 	> sizes
 	for variant in minbase buildd -; do
 		# skip because of different userids for apt/systemd
-		if [ "$dist" = 'stable' -a "$variant" = '-' ]; then
+		if [ "$dist" = 'stable' ] && [ "$variant" = '-' ]; then
 			continue
 		fi
 		echo =========================================================
