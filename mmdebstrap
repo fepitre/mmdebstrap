@@ -1270,7 +1270,7 @@ sub main() {
     }
 
     if ($options->{variant} eq 'essential' and defined $options->{include}) {
-	die "cannot install extra packages in essential and required variants because apt is missing";
+	die "cannot install extra packages with variant essential because apt is missing";
     }
 
     my ($nativearch, @foreignarchs) = split /,/, $options->{architectures};
