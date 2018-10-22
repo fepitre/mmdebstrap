@@ -126,10 +126,7 @@ for dist in stable testing unstable; do
 		diff -u status1 status2
 		rm status1 status2
 		sudo rm debian-$dist-debootstrap/var/lib/dpkg/status debian-$dist-mm/var/lib/dpkg/status
-		# this file is only created by apt 1.6 or newer
-		if [ "$dist" != "stable" ]; then
-			sudo rmdir debian-$dist-mm/var/lib/apt/lists/auxfiles
-		fi
+		sudo rmdir debian-$dist-mm/var/lib/apt/lists/auxfiles
 		# debootstrap exposes the hosts's kernel version
 		sudo rm debian-$dist-debootstrap/etc/apt/apt.conf.d/01autoremove-kernels \
 			debian-$dist-mm/etc/apt/apt.conf.d/01autoremove-kernels
