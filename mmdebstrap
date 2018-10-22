@@ -1962,6 +1962,11 @@ translated manual packages (but not the untranslated ones), and documentation
         --dpkgopt='path-include=/usr/share/doc/*/changelog.Debian.*' \
         unstable debian-unstable.tar
 
+=head1 ENVIRONMENT VARIABLES
+
+By setting C<SOURCE_DATE_EPOCH> the result will be reproducible over multiple
+runs with the same options and mirror content.
+
 =head1 DEBOOTSTRAP
 
 This section lists some differences to debootstrap.
