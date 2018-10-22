@@ -1185,15 +1185,9 @@ sub setup {
     # clean up temporary configuration file
     unlink "$options->{root}/etc/apt/apt.conf.d/00mmdebstrap" or die "failed to unlink /etc/apt/apt.conf.d/00mmdebstrap: $!";
 
-    # if there is no apt inside the chroot, clean it from the outside
     print STDERR "I: cleaning package lists and apt cache...\n";
-    if ($options->{variant} eq 'essential') {
-	run_apt_progress 'apt-get', '--option', 'Dir::Etc::SourceList=/dev/null', 'update';
-	run_apt_progress 'apt-get', 'clean';
-    } else {
-	run_apt_progress @chrootcmd, 'apt-get', '--option', 'Dir::Etc::SourceList=/dev/null', 'update';
-	run_apt_progress @chrootcmd, 'apt-get', 'clean';
-    }
+    run_apt_progress 'apt-get', '--option', 'Dir::Etc::SourceList=/dev/null', 'update';
+    run_apt_progress 'apt-get', 'clean';
 
     if (defined $options->{qemu} and $options->{mode} ne 'proot' and $options->{mode} ne 'fakechroot') {
 	unlink "$options->{root}/usr/bin/qemu-$options->{qemu}-static" or die "cannot unlink /usr/bin/qemu-$options->{qemu}-static";
