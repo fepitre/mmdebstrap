@@ -116,7 +116,7 @@ for dist in stable testing unstable; do
 		sudo rm debian-$dist-debootstrap/var/lib/dpkg/available \
 			debian-$dist-debootstrap/var/lib/dpkg/cmethopt
 		# since we installed packages directly from the .deb files, Priorities differ
-		# this we first check for equality and then remove the files
+		# thus we first check for equality and then remove the files
 		sudo chroot debian-$dist-debootstrap dpkg --list > dpkg1
 		sudo chroot debian-$dist-mm dpkg --list > dpkg2
 		diff -u dpkg1 dpkg2
