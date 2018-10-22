@@ -715,7 +715,7 @@ sub setup {
     # Same if we want to install priority based variants.
     if ($options->{variant} ne 'apt') {
 	my %ess_pkgs;
-	open(my $pipe_apt, '-|', 'apt-get', 'indextargets', '--format', '$(FILENAME)', 'Created-By: Packages', "Architecture: $options->{nativearch}") or die "cannot start apt-get indextargets: $!";
+	open(my $pipe_apt, '-|', 'apt-get', 'indextargets', '--format', '$(FILENAME)', 'Created-By: Packages') or die "cannot start apt-get indextargets: $!";
 	while (my $fname = <$pipe_apt>) {
 	    chomp $fname;
 	    open (my $pipe_cat, '-|', '/usr/lib/apt/apt-helper', 'cat-file', $fname) or die "cannot start apt-helper cat-file: $!";
@@ -723,6 +723,7 @@ sub setup {
 	    my $pkgname;
 	    my $ess = '';
 	    my $prio = 'optional';
+	    my $arch = '';
 	    while (my $line = <$pipe_cat>) {
 		chomp $line;
 		# Dpkg::Index takes 10 seconds to parse a typical Packages
@@ -735,41 +736,48 @@ sub setup {
 			$ess = 'yes'
 		    } elsif ($line =~ /^Priority: (.*)/) {
 			$prio = $1;
+		    } elsif ($line =~ /^Architecture: (.*)/) {
+			$arch = $1;
 		    }
 		    next;
 		}
-		# the line is empty, thus a package stanza just finished
-		# processing and we can handle it now
-		if ($ess eq 'yes') {
-		    $ess_pkgs{$pkgname} = ();
-		} elsif ($options->{variant} eq 'essential') {
-		    # for this variant we are only interested in the
-		    # essential packages
-		} elsif (any { $_ eq $options->{variant} } ('standard', 'important', 'required', 'buildd', 'minbase')) {
-		    if ($prio eq 'optional' or $prio eq 'extra') {
-			# always ignore packages of priority optional and extra
-		    } elsif ($prio eq 'standard') {
-			if (none { $_ eq $options->{variant} } ('important', 'required', 'buildd', 'minbase')) {
+		# we are only interested of packages of native architecture or
+		# Architecture:all
+		if ($arch eq $options->{nativearch} or $arch eq 'all') {
+		    # the line is empty, thus a package stanza just finished
+		    # processing and we can handle it now
+		    if ($ess eq 'yes') {
+			$ess_pkgs{$pkgname} = ();
+		    } elsif ($options->{variant} eq 'essential') {
+			# for this variant we are only interested in the
+			# essential packages
+		    } elsif (any { $_ eq $options->{variant} } ('standard', 'important', 'required', 'buildd', 'minbase')) {
+			if ($prio eq 'optional' or $prio eq 'extra') {
+			    # always ignore packages of priority optional and extra
+			} elsif ($prio eq 'standard') {
+			    if (none { $_ eq $options->{variant} } ('important', 'required', 'buildd', 'minbase')) {
+				$pkgs_to_install{$pkgname} = ();
+			    }
+			} elsif ($prio eq 'important') {
+			    if (none { $_ eq $options->{variant} } ('required', 'buildd', 'minbase')) {
+				$pkgs_to_install{$pkgname} = ();
+			    }
+			} elsif ($prio eq 'required') {
+			    # required packages are part of all sets except
+			    # essential and apt
 			    $pkgs_to_install{$pkgname} = ();
+			} else {
+			    die "unknown priority: $prio";
 			}
-		    } elsif ($prio eq 'important') {
-			if (none { $_ eq $options->{variant} } ('required', 'buildd', 'minbase')) {
-			    $pkgs_to_install{$pkgname} = ();
-			}
-		    } elsif ($prio eq 'required') {
-			# required packages are part of all sets except
-			# essential and apt
-			$pkgs_to_install{$pkgname} = ();
 		    } else {
-			die "unknown priority: $prio";
+			die "unknown variant: $options->{variant}";
 		    }
-		} else {
-		    die "unknown variant: $options->{variant}";
 		}
 		# reset values
 		undef $pkgname;
 		$ess = '';
 		$prio = 'optional';
+		$arch = '';
 	    }
 
 	    close $pipe_cat;
