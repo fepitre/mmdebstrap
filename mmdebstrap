@@ -1057,7 +1057,9 @@ sub setup {
 	    } elsif ($type == 1) { # hardlink
 		die "type 1 not implemented";
 	    } elsif ($type == 2) { # symlink
-		symlink $linkname, "$options->{root}/$fname";
+		if (!$options->{havemknod}) {
+		    symlink $linkname, "$options->{root}/$fname" or die "cannot create symlink $fname";
+		}
 	    } elsif ($type == 3 or $type == 4) { # character/block special
 		if (!$options->{havemknod}) {
 		    open my $fh, '>', "$options->{root}/$fname" or die "cannot open $options->{root}/$fname: $!";
@@ -1126,7 +1128,9 @@ sub setup {
 	    } elsif ($type == 1) { # hardlink
 		die "type 1 not implemented";
 	    } elsif ($type == 2) { # symlink
-		unlink "$options->{root}/$fname" or die "cannot unlink $fname: $!";
+		if (!$options->{havemknod}) {
+		    unlink "$options->{root}/$fname" or die "cannot unlink $fname: $!";
+		}
 	    } elsif ($type == 3 or $type == 4) { # character/block special
 		if (!$options->{havemknod}) {
 		    if ($options->{mode} eq 'unshare') {
