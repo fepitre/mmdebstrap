@@ -580,8 +580,6 @@ sub setup {
     print $conf "Dir::Etc \"$options->{root}/etc/apt\";\n";
     print $conf "Dir::State \"$options->{root}/var/lib/apt\";\n";
     print $conf "Dir::Cache \"$options->{root}/var/cache/apt\";\n";
-    # for retrieving the essential packages set, only download
-    print $conf "Apt::Get::Download-Only true;\n";
     print $conf "Dir::Log \"$options->{root}/var/log/apt\";\n";
     # for authentication, use the keyrings from the host
     print $conf "Dir::Etc::Trusted \"/etc/apt/trusted.gpg\";\n";
@@ -781,7 +779,9 @@ sub setup {
 	$? == 0 or die "apt-get indextargets failed: $?";
 
 	print STDERR "I: downloading packages with apt...\n";
-	run_apt_progress 'apt-get', '--yes', 'install', keys %ess_pkgs;
+	run_apt_progress ('apt-get', '--yes',
+	    '-oApt::Get::Download-Only=true',
+	    'install', keys %ess_pkgs);
     } else {
 	# if we just want to install Essential:yes packages, apt and their
 	# dependencies then we can make use of libapt treating apt as
@@ -797,7 +797,9 @@ sub setup {
 	#                  in the bugreport: "Are you crazy?!? Nobody in his
 	#                  right mind would even suggest depending on it!")
 	print STDERR "I: downloading packages with apt...\n";
-	run_apt_progress 'apt-get', '--yes', 'dist-upgrade';
+	run_apt_progress ('apt-get', '--yes',
+	    '-oApt::Get::Download-Only=true',
+	    'dist-upgrade');
     }
 
     # extract the downloaded packages
@@ -1007,7 +1009,9 @@ sub setup {
 
 	if (%pkgs_to_install_from_outside) {
 	    print STDERR 'I: downloading ' . (join ', ', keys %pkgs_to_install_from_outside) . "...\n";
-	    run_apt_progress 'apt-get', '--yes', 'install', (keys %pkgs_to_install_from_outside);
+	    run_apt_progress ('apt-get', '--yes',
+		'-oApt::Get::Download-Only=true',
+		'install', (keys %pkgs_to_install_from_outside));
 	    my @debs_to_install;
 	    my $apt_archives = "/var/cache/apt/archives/";
 	    opendir my $dh, "$options->{root}/$apt_archives" or die "cannot read $apt_archives";
