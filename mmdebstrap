@@ -1667,7 +1667,7 @@ sub main() {
 		} elsif ($options->{mode} eq 'proot') {
 		    # proot requires tar to run inside proot or otherwise
 		    # permissions will be completely off
-		    0 == system('proot', '--root-id', "--rootfs=$options->{root}", 'tar', @taropts, '-C', '/', '.') or die "tar failed: $?";
+		    0 == system('proot', '--root-id', "--rootfs=$options->{root}", '--cwd=/', 'tar', @taropts, '--exclude=./dev', '-C', '/', '.') or die "tar failed: $?";
 		} elsif (any { $_ eq $options->{mode} } ('root')) {
 		    0 == system('tar', @taropts, '-C', $options->{root}, '.') or die "tar failed: $?";
 		} else {
