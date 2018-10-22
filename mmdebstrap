@@ -928,7 +928,6 @@ sub setup {
     if ($options->{havemknod}) {
 	foreach my $file (@devfiles) {
 	    my ($fname, $mode, $type, $linkname, $devmajor, $devminor) = @{$file};
-	    next if $fname eq './dev/';
 	    if ($type == 0) { # normal file
 		die "type 0 not implemented";
 	    } elsif ($type == 1) { # hardlink
