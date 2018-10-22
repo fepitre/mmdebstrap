@@ -586,11 +586,22 @@ sub setup {
     print $conf "Dir::Etc::TrustedParts \"/etc/apt/trusted.gpg.d\";\n";
     close $conf;
 
-    foreach my $dir ('/etc/apt/apt.conf.d', '/etc/apt/sources.list.d',
-	'/etc/apt/preferences.d', '/var/cache/apt',
-	'/var/lib/apt/lists/partial', '/var/lib/dpkg',
-	'/etc/dpkg/dpkg.cfg.d/') {
-	make_path("$options->{root}/$dir") or die "failed to create $dir: $!";
+    {
+	my @directories = ('/etc/apt/apt.conf.d', '/etc/apt/sources.list.d',
+	    '/etc/apt/preferences.d', '/var/cache/apt',
+	    '/var/lib/apt/lists/partial', '/var/lib/dpkg',
+	    '/etc/dpkg/dpkg.cfg.d/');
+	# if dpkg and apt operate from the outside we need some more
+	# directories because dpkg and apt might not even be installed inside
+	# the chroot
+	if ($options->{mode} eq 'chrootless') {
+	    push @directories, ('/var/log/apt', '/var/lib/dpkg/triggers',
+		'/var/lib/dpkg/info', '/var/lib/dpkg/alternatives',
+		'/var/lib/dpkg/updates');
+	}
+	foreach my $dir (@directories) {
+	    make_path("$options->{root}/$dir") or die "failed to create $dir: $!";
+	}
     }
 
     # We put certain configuration items in their own configuration file
@@ -638,6 +649,8 @@ sub setup {
     }
 
     if (scalar @{$options->{dpkgopts}} > 0) {
+	# FIXME: in chrootless mode, dpkg will only read the configuration
+	# from the host
 	open my $fh, '>', "$options->{root}/etc/dpkg/dpkg.cfg.d/99mmdebstrap" or die "cannot open /etc/dpkg/dpkg.cfg.d/99mmdebstrap: $!";
 	foreach my $opt (@{$options->{dpkgopts}}) {
 	    if (-r $opt) {
@@ -671,6 +684,36 @@ sub setup {
 	open my $fh, '>', "$options->{root}/etc/apt/sources.list" or die "cannot open /etc/apt/sources.list: $!";
 	print $fh $options->{sourceslist};
 	close $fh;
+    }
+
+    # allow network access from within
+    copy("/etc/resolv.conf", "$options->{root}/etc/resolv.conf") or die "cannot copy /etc/resolv.conf: $!";
+    copy("/etc/hostname", "$options->{root}/etc/hostname") or die "cannot copy /etc/hostname: $!";
+
+    if ($options->{havemknod}) {
+	foreach my $file (@devfiles) {
+	    my ($fname, $mode, $type, $linkname, $devmajor, $devminor) = @{$file};
+	    if ($type == 0) { # normal file
+		die "type 0 not implemented";
+	    } elsif ($type == 1) { # hardlink
+		die "type 1 not implemented";
+	    } elsif ($type == 2) { # symlink
+		symlink $linkname, "$options->{root}/$fname" or die "cannot create symlink $fname";
+		next; # chmod cannot work on symlinks
+	    } elsif ($type == 3) { # character special
+		0 == system('mknod', "$options->{root}/$fname", 'c', $devmajor, $devminor) or die "mknod failed: $?";
+	    } elsif ($type == 4) { # block special
+		0 == system('mknod', "$options->{root}/$fname", 'b', $devmajor, $devminor) or die "mknod failed: $?";
+	    } elsif ($type == 5) { # directory
+		make_path "$options->{root}/$fname", { error => \my $err };
+		if (@$err) {
+		    die "cannot create $fname";
+		}
+	    } else {
+		die "unsupported type: $type";
+	    }
+	    chmod $mode, "$options->{root}/$fname" or die "cannot chmod $fname: $!";
+	}
     }
 
     # we tell apt about the configuration via a config file passed via the
@@ -713,7 +756,30 @@ sub setup {
     # apt and libapt treats apt as essential. If we want to install less
     # (essential variant) then we have to compute the package set ourselves.
     # Same if we want to install priority based variants.
-    if (any { $_ eq $options->{variant} } ('essential', 'standard', 'important', 'required', 'buildd', 'minbase')) {
+    if (any { $_ eq $options->{variant} } ('extract', 'custom')) {
+	print STDERR "I: downloading packages with apt...\n";
+	run_apt_progress ('apt-get', '--yes',
+	    '-oApt::Get::Download-Only=true',
+	    'install', keys %pkgs_to_install);
+    } elsif ($options->{variant} eq 'apt') {
+	# if we just want to install Essential:yes packages, apt and their
+	# dependencies then we can make use of libapt treating apt as
+	# implicitly essential. An upgrade with the (currently) empty status
+	# file will trigger an installation of the essential packages plus apt.
+	#
+	# 2018-09-02, #debian-dpkg on OFTC, times in UTC+2
+	# 23:39 < josch> I'll just put it in my script and if it starts
+	#                breaking some time I just say it's apt's fault. :P
+	# 23:42 < DonKult> that is how it usually works, so yes, do that :P (<-
+	#                  and please add that line next to it so you can
+	#                  remind me in 5+ years that I said that after I wrote
+	#                  in the bugreport: "Are you crazy?!? Nobody in his
+	#                  right mind would even suggest depending on it!")
+	print STDERR "I: downloading packages with apt...\n";
+	run_apt_progress ('apt-get', '--yes',
+	    '-oApt::Get::Download-Only=true',
+	    'dist-upgrade');
+    } elsif (any { $_ eq $options->{variant} } ('essential', 'standard', 'important', 'required', 'buildd', 'minbase')) {
 	my %ess_pkgs;
 	open(my $pipe_apt, '-|', 'apt-get', 'indextargets', '--format', '$(FILENAME)', 'Created-By: Packages') or die "cannot start apt-get indextargets: $!";
 	while (my $fname = <$pipe_apt>) {
@@ -790,24 +856,6 @@ sub setup {
 	run_apt_progress ('apt-get', '--yes',
 	    '-oApt::Get::Download-Only=true',
 	    'install', keys %ess_pkgs);
-    } elsif ($options->{variant} eq 'apt') {
-	# if we just want to install Essential:yes packages, apt and their
-	# dependencies then we can make use of libapt treating apt as
-	# implicitly essential. An upgrade with the (currently) empty status
-	# file will trigger an installation of the essential packages plus apt.
-	#
-	# 2018-09-02, #debian-dpkg on OFTC, times in UTC+2
-	# 23:39 < josch> I'll just put it in my script and if it starts
-	#                breaking some time I just say it's apt's fault. :P
-	# 23:42 < DonKult> that is how it usually works, so yes, do that :P (<-
-	#                  and please add that line next to it so you can
-	#                  remind me in 5+ years that I said that after I wrote
-	#                  in the bugreport: "Are you crazy?!? Nobody in his
-	#                  right mind would even suggest depending on it!")
-	print STDERR "I: downloading packages with apt...\n";
-	run_apt_progress ('apt-get', '--yes',
-	    '-oApt::Get::Download-Only=true',
-	    'dist-upgrade');
     } else {
 	die "unknown variant: $options->{variant}";
     }
@@ -841,345 +889,346 @@ sub setup {
 	die "nothing got downloaded";
     }
 
-    print STDERR "I: extracting archives...\n";
-    print_progress 0.0;
-    my $counter = 0;
-    my $total = scalar @essential_pkgs;
-    foreach my $deb (@essential_pkgs) {
-	$counter += 1;
-	# not using dpkg-deb --extract as that would replace the
-	# merged-usr symlinks with plain directories
-	pipe my $rfh, my $wfh;
-	my $pid1 = fork() // die "fork() failed: $!";
-	if ($pid1 == 0) {
-	    open(STDOUT, '>&', $wfh);
-	    exec 'dpkg-deb', '--fsys-tarfile', "$options->{root}/$deb";
-	}
-	my $pid2 = fork() // die "fork() failed: $!";
-	if ($pid2 == 0) {
-	    open(STDIN, '<&', $rfh);
-	    exec 'tar', '-C', $options->{root}, '--keep-directory-symlink', '--extract', '--file', '-';
-	}
-	waitpid($pid1, 0);
-	$? == 0 or die "dpkg-deb --fsys-tarfile failed: $?";
-	waitpid($pid2, 0);
-	$? == 0 or die "tar --extract failed: $?";
-	print_progress ($counter/$total*100);
-    }
-    print_progress "done";
-
-    if ($options->{mode} eq 'fakechroot') {
-	# FIXME: if trouble arises, look into /etc/fakechroot/*.env for
-	#        more interesting variables to set
-	$ENV{FAKECHROOT_CMD_SUBST} = join ':', (
-	    '/bin/mount=/bin/true',
-	    '/usr/bin/ldd=/usr/bin/ldd.fakechroot',
-	    '/usr/bin/mkfifo=/bin/true',
-	    '/usr/sbin/ldconfig=/bin/true',
-	);
-    }
-
-    # make sure that APT_CONFIG is not set when executing anything inside the
-    # chroot
-    my @chrootcmd = ('env', '--unset=APT_CONFIG');
-    if ($options->{mode} eq 'proot') {
-	# FIXME: proot currently cannot install apt because of https://github.com/proot-me/PRoot/issues/147
-	push @chrootcmd, ('proot', '--root-id', '--bind=/dev', "--rootfs=$options->{root}", '--cwd=/');
-    } elsif (any { $_ eq $options->{mode} } ('root', 'unshare', 'fakechroot')) {
-	push @chrootcmd, ('/usr/sbin/chroot', $options->{root});
-    } else {
-	die "unknown mode: $options->{mode}";
-    }
-
-    # copy qemu-user-static binary into chroot or setup proot with --qemu
-    if (defined $options->{qemu}) {
-	if ($options->{mode} eq 'proot') {
-	    push @chrootcmd, "--qemu=qemu-$options->{qemu}";
-	} elsif ($options->{mode} eq 'fakechroot') {
-	    # The binfmt support on the outside is used, so qemu needs to know
-	    # where it has to look for shared libraries
-	    $ENV{QEMU_LD_PREFIX} = $options->{root};
-	    # Make sure that the fakeroot and fakechroot shared libraries
-	    # exist for the right architecture
-	    open my $fh, '-|', 'dpkg-architecture', '-a', $options->{nativearch}, '-qDEB_HOST_MULTIARCH' // die "failed to fork(): $!";
-	    chomp (my $deb_host_multiarch = do { local $/; <$fh> });
-	    close $fh;
-	    if ($? != 0 or !$deb_host_multiarch) {
-		die "dpkg-architecture failed: $?";
+    if ($options->{mode} eq 'chrootless') {
+	print STDERR "I: installing packages...\n";
+	# FIXME: the dpkg config from the host is parsed before the command
+	# line arguments are parsed and might break this mode
+	my @chrootless_opts = (
+	    '-oDPkg::Options::=--force-not-root',
+	    '-oDPkg::Options::=--force-script-chrootless',
+	    '-oDPkg::Options::=--root=' . $options->{root},
+	    '-oDPkg::Options::=--log=' . "$options->{root}/var/log/dpkg.log");
+	run_apt_progress ('apt-get', '--yes', @chrootless_opts,
+	    'install', (map { "$options->{root}/$_" } @essential_pkgs));
+	if (any { $_ eq $options->{variant} } ('extract', 'custom')) {
+	    # nothing to do
+	} elsif (any { $_ eq $options->{variant} } ('essential', 'apt', 'standard', 'important', 'required', 'buildd', 'minbase')) {
+	    if (%pkgs_to_install) {
+		run_apt_progress ('apt-get', '--yes', @chrootless_opts,
+		    'install', keys %pkgs_to_install);
 	    }
-	    my $fakechrootdir = "/usr/lib/$deb_host_multiarch/fakechroot";
-	    if (!-e "$fakechrootdir/libfakechroot.so") {
-		die "$fakechrootdir/libfakechroot.so doesn't exist. Install libfakechroot:$options->{nativearch} outside the chroot";
-	    }
-	    my $fakerootdir = "/usr/lib/$deb_host_multiarch/libfakeroot";
-	    if (!-e "$fakerootdir/libfakeroot-sysv.so") {
-		die "$fakerootdir/libfakeroot-sysv.so doesn't exist. Install libfakeroot:$options->{nativearch} outside the chroot";
-	    }
-	    # fakechroot only fills LD_LIBRARY_PATH with the directories of
-	    # the host's architecture. We append the directories of the chroot
-	    # architecture.
-	    $ENV{LD_LIBRARY_PATH} .= ":$fakechrootdir:$fakerootdir";
-	} elsif (any { $_ eq $options->{mode} } ('root', 'unshare')) {
-	    # other modes require a static qemu-user binary
-	    my $qemubin = "/usr/bin/qemu-$options->{qemu}-static";
-	    if (!-e $qemubin) {
-		die "cannot find $qemubin";
-	    }
-	    copy $qemubin, "$options->{root}/$qemubin" or die "cannot copy $qemubin: $!";
 	} else {
-	    die "unknown mode: $options->{mode}";
+	    die "unknown variant: $options->{variant}";
 	}
-    }
+    } elsif (any { $_ eq $options->{mode} } ('root', 'unshare', 'fakechroot', 'proot')) {
+	print STDERR "I: extracting archives...\n";
+	print_progress 0.0;
+	my $counter = 0;
+	my $total = scalar @essential_pkgs;
+	foreach my $deb (@essential_pkgs) {
+	    $counter += 1;
+	    # not using dpkg-deb --extract as that would replace the
+	    # merged-usr symlinks with plain directories
+	    pipe my $rfh, my $wfh;
+	    my $pid1 = fork() // die "fork() failed: $!";
+	    if ($pid1 == 0) {
+		open(STDOUT, '>&', $wfh);
+		exec 'dpkg-deb', '--fsys-tarfile', "$options->{root}/$deb";
+	    }
+	    my $pid2 = fork() // die "fork() failed: $!";
+	    if ($pid2 == 0) {
+		open(STDIN, '<&', $rfh);
+		exec 'tar', '-C', $options->{root}, '--keep-directory-symlink', '--extract', '--file', '-';
+	    }
+	    waitpid($pid1, 0);
+	    $? == 0 or die "dpkg-deb --fsys-tarfile failed: $?";
+	    waitpid($pid2, 0);
+	    $? == 0 or die "tar --extract failed: $?";
+	    print_progress ($counter/$total*100);
+	}
+	print_progress "done";
 
-    if ($options->{havemknod}) {
-	foreach my $file (@devfiles) {
-	    my ($fname, $mode, $type, $linkname, $devmajor, $devminor) = @{$file};
-	    if ($type == 0) { # normal file
-		die "type 0 not implemented";
-	    } elsif ($type == 1) { # hardlink
-		die "type 1 not implemented";
-	    } elsif ($type == 2) { # symlink
-		symlink $linkname, "$options->{root}/$fname" or die "cannot create symlink $fname";
-		next; # chmod cannot work on symlinks
-	    } elsif ($type == 3) { # character special
-		0 == system('mknod', "$options->{root}/$fname", 'c', $devmajor, $devminor) or die "mknod failed: $?";
-	    } elsif ($type == 4) { # block special
-		0 == system('mknod', "$options->{root}/$fname", 'b', $devmajor, $devminor) or die "mknod failed: $?";
-	    } elsif ($type == 5) { # directory
-		make_path "$options->{root}/$fname", { error => \my $err };
-		if (@$err) {
-		    die "cannot create $fname";
-		}
+	if ($options->{variant} eq 'extract') {
+	    # nothing else to do
+	} elsif (any { $_ eq $options->{variant} } ('custom', 'essential', 'apt', 'standard', 'important', 'required', 'buildd', 'minbase')) {
+	    if ($options->{mode} eq 'fakechroot') {
+		# FIXME: if trouble arises, look into /etc/fakechroot/*.env for
+		#        more interesting variables to set
+		$ENV{FAKECHROOT_CMD_SUBST} = join ':', (
+		    '/bin/mount=/bin/true',
+		    '/usr/bin/ldd=/usr/bin/ldd.fakechroot',
+		    '/usr/bin/mkfifo=/bin/true',
+		    '/usr/sbin/ldconfig=/bin/true',
+		);
+	    }
+
+	    # make sure that APT_CONFIG is not set when executing anything inside the
+	    # chroot
+	    my @chrootcmd = ('env', '--unset=APT_CONFIG');
+	    if ($options->{mode} eq 'proot') {
+		# FIXME: proot currently cannot install apt because of https://github.com/proot-me/PRoot/issues/147
+		push @chrootcmd, ('proot', '--root-id', '--bind=/dev', "--rootfs=$options->{root}", '--cwd=/');
+	    } elsif (any { $_ eq $options->{mode} } ('root', 'unshare', 'fakechroot')) {
+		push @chrootcmd, ('/usr/sbin/chroot', $options->{root});
 	    } else {
-		die "unsupported type: $type";
+		die "unknown mode: $options->{mode}";
 	    }
-	    chmod $mode, "$options->{root}/$fname" or die "cannot chmod $fname: $!";
-	}
-    }
 
-    # install the extracted packages properly
-    # we need --force-depends because dpkg does not take Pre-Depends into
-    # account and thus doesn't install them in the right order
-    print STDERR "I: installing packages...\n";
-    run_dpkg_progress [@essential_pkgs], @chrootcmd, 'dpkg', '--install', '--force-depends';
-
-    # if the path-excluded option was added to the dpkg config, reinstall all
-    # packages
-    if (-e "$options->{root}/etc/dpkg/dpkg.cfg.d/99mmdebstrap") {
-	open(my $fh, '<', "$options->{root}/etc/dpkg/dpkg.cfg.d/99mmdebstrap") or die "cannot open /etc/dpkg/dpkg.cfg.d/99mmdebstrap: $!";
-	my $num_matches = grep /^path-exclude=/, <$fh>;
-	close $fh;
-	if ($num_matches > 0) {
-	    # without --skip-same-version, dpkg will install the given
-	    # packages even though they are already installed
-	    print STDERR "I: re-installing packages because of path-exclude...\n";
-	    run_dpkg_progress [@essential_pkgs], @chrootcmd, 'dpkg', '--install';
-	}
-    }
-
-    foreach my $deb (@essential_pkgs) {
-	unlink "$options->{root}/$deb" or die "cannot unlink $deb";
-    }
-
-    if (%pkgs_to_install) {
-	# some packages have to be installed from the outside before anything
-	# can be installed from the inside.
-	#
-	# we do not need to install any *-archive-keyring packages inside the
-	# chroot prior to installing the packages, because the keyring is only
-	# used when doing "apt-get update" and that was already done at the
-	# beginning using key material from the outside. Since the apt cache
-	# is already filled and we are not calling "apt-get update" again, the
-	# keyring can be installed later during installation. But: if it's not
-	# installed during installation, then we might end up with a fully
-	# installed system without keyrings that are valid for its
-	# sources.list.
-	my %pkgs_to_install_from_outside;
-
-	# install apt if necessary
-	if ($options->{variant} ne 'apt') {
-	    $pkgs_to_install_from_outside{apt} = ();
-	}
-
-	# since apt will be run inside the chroot, make sure that
-	# apt-transport-https and ca-certificates gets installed first if any
-	# mirror is a https URI
-	open(my $pipe_apt, '-|', 'apt-get', 'indextargets', '--format', '$(URI)', 'Created-By: Packages') or die "cannot start apt-get indextargets: $!";
-	while (my $uri = <$pipe_apt>) {
-	    if ($uri =~ /^https:\/\//) {
-		# FIXME: support for https is part of apt >= 1.5
-		$pkgs_to_install_from_outside{'apt-transport-https'} = ();
-		$pkgs_to_install_from_outside{'ca-certificates'} = ();
-		last;
-	    } elsif ($uri =~ /^tor(\+[a-z]+)*:\/\//) {
-		# tor URIs can be tor+http://, tor+https:// or even
-		# tor+mirror+file://
-		$pkgs_to_install_from_outside{'apt-transport-tor'} = ();
-		last;
-	    }
-	}
-	close $pipe_apt;
-	$? == 0 or die "apt-get indextargets failed";
-
-	if (%pkgs_to_install_from_outside) {
-	    print STDERR 'I: downloading ' . (join ', ', keys %pkgs_to_install_from_outside) . "...\n";
-	    run_apt_progress ('apt-get', '--yes',
-		'-oApt::Get::Download-Only=true',
-		'install', (keys %pkgs_to_install_from_outside));
-	    my @debs_to_install;
-	    my $apt_archives = "/var/cache/apt/archives/";
-	    opendir my $dh, "$options->{root}/$apt_archives" or die "cannot read $apt_archives";
-	    while (my $deb = readdir $dh) {
-		if ($deb !~ /\.deb$/) {
-		    next;
-		}
-		$deb = "$apt_archives/$deb";
-		if (!-f "$options->{root}/$deb") {
-		    next;
-		}
-		push @debs_to_install, $deb;
-	    }
-	    close $dh;
-	    if (scalar @debs_to_install == 0) {
-		die "nothing got downloaded";
-	    }
-	    # we need --force-depends because dpkg does not take Pre-Depends
-	    # into account and thus doesn't install them in the right order
-	    print STDERR 'I: installing ' . (join ', ', keys %pkgs_to_install_from_outside) . "...\n";
-	    run_dpkg_progress [@debs_to_install], @chrootcmd, 'dpkg',  '--install', '--force-depends';
-	    foreach my $deb (@debs_to_install) {
-		unlink "$options->{root}/$deb" or die "cannot unlink $deb";
-	    }
-	}
-
-	# if more than essential should be installed, make the system look
-	# more like a real one by creating or bind-mounting the device nodes
-	foreach my $file (@devfiles) {
-	    my ($fname, $mode, $type, $linkname, $devmajor, $devminor) = @{$file};
-	    next if $fname eq './dev/';
-	    if ($type == 0) { # normal file
-		die "type 0 not implemented";
-	    } elsif ($type == 1) { # hardlink
-		die "type 1 not implemented";
-	    } elsif ($type == 2) { # symlink
-		if (!$options->{havemknod}) {
-		    symlink $linkname, "$options->{root}/$fname" or die "cannot create symlink $fname";
-		}
-	    } elsif ($type == 3 or $type == 4) { # character/block special
-		if (!$options->{havemknod}) {
-		    open my $fh, '>', "$options->{root}/$fname" or die "cannot open $options->{root}/$fname: $!";
+	    # copy qemu-user-static binary into chroot or setup proot with --qemu
+	    if (defined $options->{qemu}) {
+		if ($options->{mode} eq 'proot') {
+		    push @chrootcmd, "--qemu=qemu-$options->{qemu}";
+		} elsif ($options->{mode} eq 'fakechroot') {
+		    # The binfmt support on the outside is used, so qemu needs to know
+		    # where it has to look for shared libraries
+		    $ENV{QEMU_LD_PREFIX} = $options->{root};
+		    # Make sure that the fakeroot and fakechroot shared libraries
+		    # exist for the right architecture
+		    open my $fh, '-|', 'dpkg-architecture', '-a', $options->{nativearch}, '-qDEB_HOST_MULTIARCH' // die "failed to fork(): $!";
+		    chomp (my $deb_host_multiarch = do { local $/; <$fh> });
 		    close $fh;
-		    0 == system('mount', '-o', 'bind', "/$fname", "$options->{root}/$fname") or die "mount failed: $?";
-		}
-	    } elsif ($type == 5) { # directory
-		if (!$options->{havemknod}) {
-		    make_path "$options->{root}/$fname";
-		    chmod $mode, "$options->{root}/$fname" or die "cannot chmod $fname: $!";
-		}
-		0 == system('mount', '-o', 'bind', "/$fname", "$options->{root}/$fname") or die "mount failed: $?";
-	    } else {
-		die "unsupported type: $type";
-	    }
-	}
-	# We can only mount /proc and /sys after extracting the essential
-	# set because if we mount it before, then base-files will not be able
-	# to extract those
-	if ($options->{mode} eq 'unshare') {
-	    # without the network namespace unshared, we cannot mount a new
-	    # sysfs. Since we need network, we just bind-mount.
-	    #
-	    # we have to rbind because just using bind results in "wrong fs
-	    # type, bad option, bad superblock" error
-	    0 == system('mount', '-o', 'rbind', '/sys', "$options->{root}/sys") or die "mount failed: $?";
-	} elsif (any { $_ eq $options->{mode} } ('root', 'fakechroot', 'proot')) {
-	    0 == system('mount', '-t', 'sysfs', '-o', 'nosuid,nodev,noexec', 'sys', "$options->{root}/sys") or die "mount failed: $?";
-	} else {
-	    die "unknown mode: $options->{mode}";
-	}
-	0 == system('mount', '-t', 'proc', 'proc', "$options->{root}/proc") or die "mount failed: $?";
-
-	# prevent daemons from starting
-	{
-	    open my $fh, '>', "$options->{root}/usr/sbin/policy-rc.d" or die "cannot open policy-rc.d: $!";
-	    print $fh "#!/bin/sh\n";
-	    print $fh "exit 101\n";
-	    close $fh;
-	    chmod 0755, "$options->{root}/usr/sbin/policy-rc.d" or die "cannot chmod policy-rc.d: $!";
-	}
-
-	{
-	    move("$options->{root}/sbin/start-stop-daemon", "$options->{root}/sbin/start-stop-daemon.REAL") or die "cannot move start-stop-daemon";
-	    open my $fh, '>', "$options->{root}/sbin/start-stop-daemon" or die "cannot open policy-rc.d: $!";
-	    print $fh "#!/bin/sh\n";
-	    print $fh "echo \"Warning: Fake start-stop-daemon called, doing nothing\">&2\n";
-	    close $fh;
-	    chmod 0755, "$options->{root}/sbin/start-stop-daemon" or die "cannot chmod start-stop-daemon: $!";
-	}
-
-	# allow network access from within
-	copy("/etc/resolv.conf", "$options->{root}/etc/resolv.conf") or die "cannot copy /etc/resolv.conf: $!";
-	copy("/etc/hostname", "$options->{root}/etc/hostname") or die "cannot copy /etc/hostname: $!";
-
-	print STDERR "I: installing remaining packages inside the chroot...\n";
-	run_apt_progress @chrootcmd, 'apt-get',  '--yes', 'install', keys %pkgs_to_install;
-
-	# cleanup
-	move("$options->{root}/sbin/start-stop-daemon.REAL", "$options->{root}/sbin/start-stop-daemon") or die "cannot move start-stop-daemon";
-	unlink "$options->{root}/usr/sbin/policy-rc.d" or die "cannot unlink policy-rc.d";
-
-	foreach my $file (@devfiles) {
-	    my ($fname, undef, $type, $linkname, undef, undef) = @{$file};
-	    next if $fname eq './dev/';
-	    if ($type == 0) { # normal file
-		die "type 0 not implemented";
-	    } elsif ($type == 1) { # hardlink
-		die "type 1 not implemented";
-	    } elsif ($type == 2) { # symlink
-		if (!$options->{havemknod}) {
-		    unlink "$options->{root}/$fname" or die "cannot unlink $fname: $!";
-		}
-	    } elsif ($type == 3 or $type == 4) { # character/block special
-		if (!$options->{havemknod}) {
-		    if ($options->{mode} eq 'unshare') {
-			0 == system('umount', '--no-mtab', "$options->{root}/$fname") or die "umount failed: $?";
-		    } elsif (any { $_ eq $options->{mode} } ('root', 'fakechroot', 'proot')) {
-			0 == system('umount', "$options->{root}/$fname") or die "umount failed: $?";
-		    } else {
-			die "unknown mode: $options->{mode}";
+		    if ($? != 0 or !$deb_host_multiarch) {
+			die "dpkg-architecture failed: $?";
 		    }
-		    unlink "$options->{root}/$fname";
-		}
-	    } elsif ($type == 5) { # directory
-		if ($options->{mode} eq 'unshare') {
-		    0 == system('umount', '--no-mtab', "$options->{root}/$fname") or die "umount failed: $?";
-		} elsif (any { $_ eq $options->{mode} } ('root', 'fakechroot', 'proot')) {
-		    0 == system('umount', "$options->{root}/$fname") or die "umount failed: $?";
+		    my $fakechrootdir = "/usr/lib/$deb_host_multiarch/fakechroot";
+		    if (!-e "$fakechrootdir/libfakechroot.so") {
+			die "$fakechrootdir/libfakechroot.so doesn't exist. Install libfakechroot:$options->{nativearch} outside the chroot";
+		    }
+		    my $fakerootdir = "/usr/lib/$deb_host_multiarch/libfakeroot";
+		    if (!-e "$fakerootdir/libfakeroot-sysv.so") {
+			die "$fakerootdir/libfakeroot-sysv.so doesn't exist. Install libfakeroot:$options->{nativearch} outside the chroot";
+		    }
+		    # fakechroot only fills LD_LIBRARY_PATH with the directories of
+		    # the host's architecture. We append the directories of the chroot
+		    # architecture.
+		    $ENV{LD_LIBRARY_PATH} .= ":$fakechrootdir:$fakerootdir";
+		} elsif (any { $_ eq $options->{mode} } ('root', 'unshare')) {
+		    # other modes require a static qemu-user binary
+		    my $qemubin = "/usr/bin/qemu-$options->{qemu}-static";
+		    if (!-e $qemubin) {
+			die "cannot find $qemubin";
+		    }
+		    copy $qemubin, "$options->{root}/$qemubin" or die "cannot copy $qemubin: $!";
 		} else {
 		    die "unknown mode: $options->{mode}";
 		}
-		if (!$options->{havemknod}) {
-		    rmdir "$options->{root}/$fname" or die "cannot rmdir $fname: $!";
-		}
-	    } else {
-		die "unsupported type: $type";
 	    }
-	}
-	# naturally we have to clean up after ourselves in sudo mode where we
-	# do a real mount. But we also need to unmount in unshare mode because
-	# otherwise, even with the --one-file-system tar option, the
-	# permissions of the mount source will be stored and not the mount
-	# target (the directory)
-	if ($options->{mode} eq 'unshare') {
-	    # since we cannot write to /etc/mtab we need --no-mtab
-	    # unmounting /sys only seems to be successful with --lazy
-	    0 == system('umount', '--no-mtab', '--lazy', "$options->{root}/sys") or die "umount failed: $?";
-	    0 == system('umount', '--no-mtab', "$options->{root}/proc") or die "umount failed: $?";
-	} elsif (any { $_ eq $options->{mode} } ('root', 'fakechroot', 'proot')) {
-	    0 == system('umount', "$options->{root}/sys") or die "umount failed: $?";
-	    0 == system('umount', "$options->{root}/proc") or die "umount failed: $?";
+
+	    # install the extracted packages properly
+	    # we need --force-depends because dpkg does not take Pre-Depends into
+	    # account and thus doesn't install them in the right order
+	    print STDERR "I: installing packages...\n";
+	    run_dpkg_progress [@essential_pkgs], @chrootcmd, 'dpkg', '--install', '--force-depends';
+
+	    # if the path-excluded option was added to the dpkg config, reinstall all
+	    # packages
+	    if (-e "$options->{root}/etc/dpkg/dpkg.cfg.d/99mmdebstrap") {
+		open(my $fh, '<', "$options->{root}/etc/dpkg/dpkg.cfg.d/99mmdebstrap") or die "cannot open /etc/dpkg/dpkg.cfg.d/99mmdebstrap: $!";
+		my $num_matches = grep /^path-exclude=/, <$fh>;
+		close $fh;
+		if ($num_matches > 0) {
+		    # without --skip-same-version, dpkg will install the given
+		    # packages even though they are already installed
+		    print STDERR "I: re-installing packages because of path-exclude...\n";
+		    run_dpkg_progress [@essential_pkgs], @chrootcmd, 'dpkg', '--install';
+		}
+	    }
+
+	    foreach my $deb (@essential_pkgs) {
+		unlink "$options->{root}/$deb" or die "cannot unlink $deb";
+	    }
+
+	    if (%pkgs_to_install) {
+		# some packages have to be installed from the outside before anything
+		# can be installed from the inside.
+		#
+		# we do not need to install any *-archive-keyring packages inside the
+		# chroot prior to installing the packages, because the keyring is only
+		# used when doing "apt-get update" and that was already done at the
+		# beginning using key material from the outside. Since the apt cache
+		# is already filled and we are not calling "apt-get update" again, the
+		# keyring can be installed later during installation. But: if it's not
+		# installed during installation, then we might end up with a fully
+		# installed system without keyrings that are valid for its
+		# sources.list.
+		my %pkgs_to_install_from_outside;
+
+		# install apt if necessary
+		if ($options->{variant} ne 'apt') {
+		    $pkgs_to_install_from_outside{apt} = ();
+		}
+
+		# since apt will be run inside the chroot, make sure that
+		# apt-transport-https and ca-certificates gets installed first if any
+		# mirror is a https URI
+		open(my $pipe_apt, '-|', 'apt-get', 'indextargets', '--format', '$(URI)', 'Created-By: Packages') or die "cannot start apt-get indextargets: $!";
+		while (my $uri = <$pipe_apt>) {
+		    if ($uri =~ /^https:\/\//) {
+			# FIXME: support for https is part of apt >= 1.5
+			$pkgs_to_install_from_outside{'apt-transport-https'} = ();
+			$pkgs_to_install_from_outside{'ca-certificates'} = ();
+			last;
+		    } elsif ($uri =~ /^tor(\+[a-z]+)*:\/\//) {
+			# tor URIs can be tor+http://, tor+https:// or even
+			# tor+mirror+file://
+			$pkgs_to_install_from_outside{'apt-transport-tor'} = ();
+			last;
+		    }
+		}
+		close $pipe_apt;
+		$? == 0 or die "apt-get indextargets failed";
+
+		if (%pkgs_to_install_from_outside) {
+		    print STDERR 'I: downloading ' . (join ', ', keys %pkgs_to_install_from_outside) . "...\n";
+		    run_apt_progress ('apt-get', '--yes',
+			'-oApt::Get::Download-Only=true',
+			'install', (keys %pkgs_to_install_from_outside));
+		    my @debs_to_install;
+		    my $apt_archives = "/var/cache/apt/archives/";
+		    opendir my $dh, "$options->{root}/$apt_archives" or die "cannot read $apt_archives";
+		    while (my $deb = readdir $dh) {
+			if ($deb !~ /\.deb$/) {
+			    next;
+			}
+			$deb = "$apt_archives/$deb";
+			if (!-f "$options->{root}/$deb") {
+			    next;
+			}
+			push @debs_to_install, $deb;
+		    }
+		    close $dh;
+		    if (scalar @debs_to_install == 0) {
+			die "nothing got downloaded";
+		    }
+		    # we need --force-depends because dpkg does not take Pre-Depends
+		    # into account and thus doesn't install them in the right order
+		    print STDERR 'I: installing ' . (join ', ', keys %pkgs_to_install_from_outside) . "...\n";
+		    run_dpkg_progress [@debs_to_install], @chrootcmd, 'dpkg',  '--install', '--force-depends';
+		    foreach my $deb (@debs_to_install) {
+			unlink "$options->{root}/$deb" or die "cannot unlink $deb";
+		    }
+		}
+
+		# if more than essential should be installed, make the system look
+		# more like a real one by creating or bind-mounting the device nodes
+		foreach my $file (@devfiles) {
+		    my ($fname, $mode, $type, $linkname, $devmajor, $devminor) = @{$file};
+		    next if $fname eq './dev/';
+		    if ($type == 0) { # normal file
+			die "type 0 not implemented";
+		    } elsif ($type == 1) { # hardlink
+			die "type 1 not implemented";
+		    } elsif ($type == 2) { # symlink
+			if (!$options->{havemknod}) {
+			    symlink $linkname, "$options->{root}/$fname" or die "cannot create symlink $fname";
+			}
+		    } elsif ($type == 3 or $type == 4) { # character/block special
+			if (!$options->{havemknod}) {
+			    open my $fh, '>', "$options->{root}/$fname" or die "cannot open $options->{root}/$fname: $!";
+			    close $fh;
+			    0 == system('mount', '-o', 'bind', "/$fname", "$options->{root}/$fname") or die "mount failed: $?";
+			}
+		    } elsif ($type == 5) { # directory
+			if (!$options->{havemknod}) {
+			    make_path "$options->{root}/$fname";
+			    chmod $mode, "$options->{root}/$fname" or die "cannot chmod $fname: $!";
+			}
+			0 == system('mount', '-o', 'bind', "/$fname", "$options->{root}/$fname") or die "mount failed: $?";
+		    } else {
+			die "unsupported type: $type";
+		    }
+		}
+		# We can only mount /proc and /sys after extracting the essential
+		# set because if we mount it before, then base-files will not be able
+		# to extract those
+		if ($options->{mode} eq 'unshare') {
+		    # without the network namespace unshared, we cannot mount a new
+		    # sysfs. Since we need network, we just bind-mount.
+		    #
+		    # we have to rbind because just using bind results in "wrong fs
+		    # type, bad option, bad superblock" error
+		    0 == system('mount', '-o', 'rbind', '/sys', "$options->{root}/sys") or die "mount failed: $?";
+		} elsif (any { $_ eq $options->{mode} } ('root', 'fakechroot', 'proot')) {
+		    0 == system('mount', '-t', 'sysfs', '-o', 'nosuid,nodev,noexec', 'sys', "$options->{root}/sys") or die "mount failed: $?";
+		} else {
+		    die "unknown mode: $options->{mode}";
+		}
+		0 == system('mount', '-t', 'proc', 'proc', "$options->{root}/proc") or die "mount failed: $?";
+
+		# prevent daemons from starting
+		{
+		    open my $fh, '>', "$options->{root}/usr/sbin/policy-rc.d" or die "cannot open policy-rc.d: $!";
+		    print $fh "#!/bin/sh\n";
+		    print $fh "exit 101\n";
+		    close $fh;
+		    chmod 0755, "$options->{root}/usr/sbin/policy-rc.d" or die "cannot chmod policy-rc.d: $!";
+		}
+
+		{
+		    move("$options->{root}/sbin/start-stop-daemon", "$options->{root}/sbin/start-stop-daemon.REAL") or die "cannot move start-stop-daemon";
+		    open my $fh, '>', "$options->{root}/sbin/start-stop-daemon" or die "cannot open policy-rc.d: $!";
+		    print $fh "#!/bin/sh\n";
+		    print $fh "echo \"Warning: Fake start-stop-daemon called, doing nothing\">&2\n";
+		    close $fh;
+		    chmod 0755, "$options->{root}/sbin/start-stop-daemon" or die "cannot chmod start-stop-daemon: $!";
+		}
+
+		print STDERR "I: installing remaining packages inside the chroot...\n";
+		run_apt_progress @chrootcmd, 'apt-get',  '--yes', 'install', keys %pkgs_to_install;
+
+		# cleanup
+		move("$options->{root}/sbin/start-stop-daemon.REAL", "$options->{root}/sbin/start-stop-daemon") or die "cannot move start-stop-daemon";
+		unlink "$options->{root}/usr/sbin/policy-rc.d" or die "cannot unlink policy-rc.d";
+
+		foreach my $file (@devfiles) {
+		    my ($fname, undef, $type, $linkname, undef, undef) = @{$file};
+		    next if $fname eq './dev/';
+		    if ($type == 0) { # normal file
+			die "type 0 not implemented";
+		    } elsif ($type == 1) { # hardlink
+			die "type 1 not implemented";
+		    } elsif ($type == 2) { # symlink
+			if (!$options->{havemknod}) {
+			    unlink "$options->{root}/$fname" or die "cannot unlink $fname: $!";
+			}
+		    } elsif ($type == 3 or $type == 4) { # character/block special
+			if (!$options->{havemknod}) {
+			    if ($options->{mode} eq 'unshare') {
+				0 == system('umount', '--no-mtab', "$options->{root}/$fname") or die "umount failed: $?";
+			    } elsif (any { $_ eq $options->{mode} } ('root', 'fakechroot', 'proot')) {
+				0 == system('umount', "$options->{root}/$fname") or die "umount failed: $?";
+			    } else {
+				die "unknown mode: $options->{mode}";
+			    }
+			    unlink "$options->{root}/$fname";
+			}
+		    } elsif ($type == 5) { # directory
+			if ($options->{mode} eq 'unshare') {
+			    0 == system('umount', '--no-mtab', "$options->{root}/$fname") or die "umount failed: $?";
+			} elsif (any { $_ eq $options->{mode} } ('root', 'fakechroot', 'proot')) {
+			    0 == system('umount', "$options->{root}/$fname") or die "umount failed: $?";
+			} else {
+			    die "unknown mode: $options->{mode}";
+			}
+			if (!$options->{havemknod}) {
+			    rmdir "$options->{root}/$fname" or die "cannot rmdir $fname: $!";
+			}
+		    } else {
+			die "unsupported type: $type";
+		    }
+		}
+		# naturally we have to clean up after ourselves in sudo mode where we
+		# do a real mount. But we also need to unmount in unshare mode because
+		# otherwise, even with the --one-file-system tar option, the
+		# permissions of the mount source will be stored and not the mount
+		# target (the directory)
+		if ($options->{mode} eq 'unshare') {
+		    # since we cannot write to /etc/mtab we need --no-mtab
+		    # unmounting /sys only seems to be successful with --lazy
+		    0 == system('umount', '--no-mtab', '--lazy', "$options->{root}/sys") or die "umount failed: $?";
+		    0 == system('umount', '--no-mtab', "$options->{root}/proc") or die "umount failed: $?";
+		} elsif (any { $_ eq $options->{mode} } ('root', 'fakechroot', 'proot')) {
+		    0 == system('umount', "$options->{root}/sys") or die "umount failed: $?";
+		    0 == system('umount', "$options->{root}/proc") or die "umount failed: $?";
+		} else {
+		    die "unknown mode: $options->{mode}";
+		}
+	    }
 	} else {
-	    die "unknown mode: $options->{mode}";
+	    die "unknown variant: $options->{variant}";
 	}
+    } else {
+	die "unknown mode: $options->{mode}";
     }
 
     # clean up temporary configuration file
@@ -1246,8 +1295,8 @@ sub main() {
 	'aptopt=s@' => \$options->{aptopts},
     ) or pod2usage(-exitval => 2, -verbose => 1);
 
-    my @valid_variants = ('essential', 'apt', 'required', 'minbase', 'buildd',
-	'important', 'debootstrap', '-', 'standard');
+    my @valid_variants = ('extract', 'custom', 'essential', 'apt', 'required',
+	'minbase', 'buildd', 'important', 'debootstrap', '-', 'standard');
     if (none { $_ eq $options->{variant}} @valid_variants) {
 	die "invalid variant. Choose from " . (join ', ', @valid_variants);
     }
@@ -1264,7 +1313,8 @@ sub main() {
     if ($options->{mode} eq 'sudo') {
 	$options->{mode} = 'root';
     }
-    my @valid_modes = ('auto', 'root', 'unshare', 'fakechroot', 'proot');
+    my @valid_modes = ('auto', 'root', 'unshare', 'fakechroot', 'proot',
+	'chrootless');
     if (none { $_ eq $options->{mode} } @valid_modes) {
 	die "invalid mode. Choose from " . (join ', ', @valid_modes);
     }
@@ -1492,6 +1542,8 @@ sub main() {
 	    }
 	    exit 1;
 	}
+    } elsif ($options->{mode} eq 'chrootless') {
+	# nothing to do
     } else {
 	die "unknown mode: $options->{mode}";
     }
@@ -1502,6 +1554,9 @@ sub main() {
     $options->{maketar} = 0;
     if (scalar @tar_compress_opts > 0 or $options->{target} =~ /\.tar$/ or $options->{target} eq '-') {
 	$options->{maketar} = 1;
+	if (any { $_ eq $options->{variant} } ('extract', 'custom') and $options->{mode} eq 'fakechroot') {
+	    print STDERR "I: creating a tarball in fakechroot mode might fail in extract and custom variants because there might be no tar inside the chroot\n";
+	}
     }
 
     if ($options->{maketar}) {
@@ -1572,7 +1627,7 @@ sub main() {
 	} \@idmap;
 	waitpid $pid, 0;
 	$? == 0 or die "havemknod failed";
-    } elsif (any { $_ eq $options->{mode} } ('root', 'fakechroot', 'proot')) {
+    } elsif (any { $_ eq $options->{mode} } ('root', 'fakechroot', 'proot', 'chrootless')) {
 	$options->{havemknod} = havemknod($options->{root});
     } else {
 	die "unknown mode: $options->{mode}";
@@ -1639,7 +1694,7 @@ sub main() {
 
 	    exit 0;
 	} \@idmap;
-    } elsif (any { $_ eq $options->{mode} } ('root', 'fakechroot', 'proot')) {
+    } elsif (any { $_ eq $options->{mode} } ('root', 'fakechroot', 'proot', 'chrootless')) {
 	$pid = fork() // die "fork() failed: $!";
 	if ($pid == 0) {
 	    close $rfh;
@@ -1668,7 +1723,7 @@ sub main() {
 		    # proot requires tar to run inside proot or otherwise
 		    # permissions will be completely off
 		    0 == system('proot', '--root-id', "--rootfs=$options->{root}", '--cwd=/', 'tar', @taropts, '--exclude=./dev', '-C', '/', '.') or die "tar failed: $?";
-		} elsif (any { $_ eq $options->{mode} } ('root')) {
+		} elsif (any { $_ eq $options->{mode} } ('root', 'chrootless')) {
 		    0 == system('tar', @taropts, '-C', $options->{root}, '.') or die "tar failed: $?";
 		} else {
 		    die "unknown mode: $options->{mode}";
@@ -1719,7 +1774,7 @@ sub main() {
 	    } \@idmap;
 	    waitpid $pid, 0;
 	    $? == 0 or die "remove_tree failed";
-	} elsif (any { $_ eq $options->{mode} } ('root', 'fakechroot', 'proot')) {
+	} elsif (any { $_ eq $options->{mode} } ('root', 'fakechroot', 'proot', 'chrootless')) {
 	    # without unshare, we use the system's rm to recursively remove the
 	    # temporary directory just to make sure that we do not accidentally
 	    # remove more than we should by using --one-file-system.
@@ -1797,10 +1852,10 @@ Print this help text and exit.
 
 =item B<--variant>
 
-Choose which package set to install. Valid variant names are B<essential>,
-B<apt>, B<required>, B<minbase>, B<buildd>, B<important>, B<debootstrap>,
-B<->, and B<standard>. The default variant is B<required>. See the section
-B<VARIANTS> for more information.
+Choose which package set to install. Valid variant names are B<extract>,
+B<custom>, B<essential>, B<apt>, B<required>, B<minbase>, B<buildd>,
+B<important>, B<debootstrap>, B<->, and B<standard>. The default variant is
+B<required>. See the section B<VARIANTS> for more information.
 
 =item B<--mode>
 
@@ -1837,9 +1892,15 @@ Example: --dpkgopt="path-exclude=/usr/share/man/*"
 =item B<--include>
 
 Comma separated list of packages which will be installed in addition to the
-packages installed by the specified variant. This option is incompatible with
-the essential variant because apt inside the chroot is needed to install extra
-packages.
+packages installed by the specified variant. The direct and indirect hard
+dependencies will also be installed. The behaviour of this option depends on
+the selected variant. The B<extract> and B<custom> variants install no packages
+by default, so for these variants, the packages specified by this option will
+be the only ones that get either extracted or installed by dpkg, respectively.
+For all other variants, apt is used to install the additional packages. The
+B<essential> variant does not include apt and thus, the include option will
+only work when the B<chrootless> mode is selected and thus apt from the outside
+can be used.
 
 =item B<--components>
 
@@ -1897,16 +1958,36 @@ permissions are only retained while proot is still running, this will lead to
 wrong permissions in the final directory and tarball. This mode is useful if
 you plan to use the chroot with proot.
 
+=item B<chrootless>
+
+Uses the dpkg option C<--force-script-chrootless> to install packages into
+B<TARGET> without dpkg and apt inside B<target> but using apt and dpkg from
+the machine running mmdebstrap. Maintainer scripts are run without chrooting
+into B<TARGET> and rely on their dependencies being installed on the machine
+running mmdebstrap.
+
 =back
 
 =head1 VARIANTS
 
-All package sets also include the hard dependencies (but not recommends) of
-the selected package sets. The variants B<minbase>, B<buildd> and B<->,
-resemble the package sets that debootstrap would install with the same
-I<--variant> argument.
+All package sets also include the direct and indirect hard dependencies (but
+not recommends) of the selected package sets. The variants B<minbase>,
+B<buildd> and B<->, resemble the package sets that debootstrap would install
+with the same I<--variant> argument.
 
 =over 8
+
+=item B<extract>
+
+Installs nothing by default (not even C<Essential:yes> packages). Packages
+given by the C<--include> option are extracted but will not be installed.
+
+=item B<custom>
+
+Installs nothing by default (not even C<Essential:yes> packages). Packages
+given by the C<--include> option will be installed.  If another mode than
+B<chrootless> was selected and dpkg was not part of the included package set,
+then this variant will fail because it cannot configure the packages.
 
 =item B<essential>
 
