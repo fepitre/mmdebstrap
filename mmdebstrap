@@ -1535,6 +1535,12 @@ sub main() {
 	}
     }
 
+    # check for double quotes because apt doesn't allow to escape them and
+    # thus paths with double quotes are invalid in the apt config
+    if ($options->{root} =~ /"/) {
+	die "apt cannot handle paths with double quotes";
+    }
+
     my @idmap;
     # for unshare mode the rootfs directory has to have appropriate
     # permissions
