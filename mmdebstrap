@@ -1634,9 +1634,8 @@ sub main() {
     }
 
     my $devtar = '';
-    # without real device nodes having been created, we manually craft the
-    # right entries for the final tarball
-    if ($options->{maketar} and not $options->{havemknod}) {
+    # We always craft the /dev entries ourselves if a tarball is to be created
+    if ($options->{maketar}) {
 	foreach my $file (@devfiles) {
 	    my ($fname, $mode, $type, $linkname, $devmajor, $devminor) = @{$file};
 	    my $entry = pack('a100 a8 a8 a8 a12 a12 A8 a1 a100 a8 a32 a32 a8 a8 a155 x12',
@@ -1663,7 +1662,7 @@ sub main() {
     }
 
     my $exitstatus = 0;
-    my @taropts = ('--sort=name', "--mtime=\@$mtime", '--clamp-mtime', '--numeric-owner', '--one-file-system', '-c');
+    my @taropts = ('--sort=name', "--mtime=\@$mtime", '--clamp-mtime', '--numeric-owner', '--one-file-system', '-c', '--exclude=./dev');
     push @taropts, @tar_compress_opts;
     my $pid;
     pipe my $rfh, my $wfh;
@@ -1687,7 +1686,7 @@ sub main() {
 		print $devtar;
 
 		# pack everything except ./dev
-		0 == system('tar', @taropts, '--exclude=./dev', '-C', $options->{root}, '.') or die "tar failed: $?";
+		0 == system('tar', @taropts, '-C', $options->{root}, '.') or die "tar failed: $?";
 
 		print STDERR "done\n";
 	    }
@@ -1722,7 +1721,7 @@ sub main() {
 		} elsif ($options->{mode} eq 'proot') {
 		    # proot requires tar to run inside proot or otherwise
 		    # permissions will be completely off
-		    0 == system('proot', '--root-id', "--rootfs=$options->{root}", '--cwd=/', 'tar', @taropts, '--exclude=./dev', '-C', '/', '.') or die "tar failed: $?";
+		    0 == system('proot', '--root-id', "--rootfs=$options->{root}", '--cwd=/', 'tar', @taropts, '-C', '/', '.') or die "tar failed: $?";
 		} elsif (any { $_ eq $options->{mode} } ('root', 'chrootless')) {
 		    0 == system('tar', @taropts, '-C', $options->{root}, '.') or die "tar failed: $?";
 		} else {
