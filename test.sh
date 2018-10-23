@@ -146,7 +146,7 @@ for dist in stable testing unstable; do
 		fi
 		sudo rm debian-$dist-debootstrap/var/lib/dpkg/lock
 		# introduced in dpkg 1.19.1
-		if [ "$dist" = "unstable" ]; then
+		if [ "$dist" != "stable" ]; then
 			sudo rm debian-$dist-debootstrap/var/lib/dpkg/lock-frontend
 		fi
 
