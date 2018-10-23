@@ -1317,6 +1317,10 @@ sub main() {
 	$options->{variant} = 'important';
     }
 
+    if ($options->{variant} eq 'essential' and defined $options->{include}) {
+	die "cannot install extra packages with variant essential because apt is missing";
+    }
+
     # fakeroot is an alias for fakechroot
     if ($options->{mode} eq 'fakeroot') {
 	$options->{mode} = 'fakechroot';
@@ -1331,8 +1335,85 @@ sub main() {
 	die "invalid mode. Choose from " . (join ', ', @valid_modes);
     }
 
-    if ($options->{variant} eq 'essential' and defined $options->{include}) {
-	die "cannot install extra packages with variant essential because apt is missing";
+    # figure out the mode to use or test whether the chosen mode is legal
+    if ($options->{mode} eq 'auto') {
+	if ($EFFECTIVE_USER_ID == 0) {
+	    $options->{mode} = 'root';
+	} elsif (test_unshare()) {
+	    $options->{mode} = 'unshare';
+	} elsif (system('proot --version>/dev/null') == 0) {
+	    $options->{mode} = 'proot';
+	} elsif (system('fakechroot --version>/dev/null') == 0) {
+	    $options->{mode} = 'fakechroot';
+	} else {
+	    die "unable to pick chroot mode automatically";
+	}
+	print STDERR "I: automatically chosen mode: $options->{mode}\n";
+    } elsif ($options->{mode} eq 'root') {
+	if ($EFFECTIVE_USER_ID != 0) {
+	    die "need to be root";
+	}
+    } elsif ($options->{mode} eq 'proot') {
+	if (system('proot --version>/dev/null') != 0) {
+	    die "need working proot binary";
+	}
+    } elsif ($options->{mode} eq 'fakechroot') {
+	# test if we are inside fakechroot already
+	# We fork a child process because setting FAKECHROOT_DETECT seems to
+	# be an irreversible operation for fakechroot.
+	my $pid = open my $rfh, '-|' // die "failed to fork(): $!";
+	if ($pid == 0) {
+	    # with the FAKECHROOT_DETECT environment variable set, any program
+	    # execution will be replaced with the output "fakeroot [version]"
+	    $ENV{FAKECHROOT_DETECT} = 0;
+	    exec 'echo', 'If fakechroot is running, this will not be printed';
+	}
+	my $content = do { local $/; <$rfh> };
+	waitpid $pid, 0;
+	if ($? == 0 and $content =~ /^fakechroot \d\.\d+$/) {
+	    # fakechroot is already running
+	} elsif (system('fakechroot --version>/dev/null') != 0) {
+	    die "need working fakechroot binary";
+	} else {
+	    # exec ourselves again but within fakechroot
+	    exec 'fakechroot', 'fakeroot', $PROGRAM_NAME, @ARGVORIG;
+	}
+    } elsif ($options->{mode} eq 'unshare') {
+	if (!test_unshare()) {
+	    if ($EFFECTIVE_USER_ID == 0) {
+		print STDERR "I: cannot use unshare mode when executing as root\n";
+	    }
+	    system "newuidmap 2>/dev/null";
+	    if (($? >> 8) != 1) {
+		if (($? >> 8) == 127) {
+		    print STDERR "I: cannot find newuidmap\n";
+		} else {
+		    print STDERR "I: newuidmap returned unknown exit status\n";
+		}
+	    }
+	    system "newgidmap 2>/dev/null";
+	    if (($? >> 8) != 1) {
+		if (($? >> 8) == 127) {
+		    print STDERR "I: cannot find newgidmap\n";
+		} else {
+		    print STDERR "I: newgidmap returned unknown exit status\n";
+		}
+	    }
+	    my $procfile = '/proc/sys/kernel/unprivileged_userns_clone';
+	    open(my $fh, '<', $procfile) or die "failed to open $procfile: $!";
+	    chomp(my $content = do { local $/; <$fh> });
+	    close($fh);
+	    if ($content ne "1") {
+		print STDERR "I: /proc/sys/kernel/unprivileged_userns_clone is set to $content\n";
+		print STDERR "I: try running: sudo sysctl -w kernel.unprivileged_userns_clone=1\n";
+		print STDERR "I: or permanently enable unprivileged usernamespaces by putting the setting into /etc/sysctl.d/\n";
+	    }
+	    exit 1;
+	}
+    } elsif ($options->{mode} eq 'chrootless') {
+	# nothing to do
+    } else {
+	die "unknown mode: $options->{mode}";
     }
 
     my ($nativearch, @foreignarchs) = split /,/, $options->{architectures};
@@ -1477,87 +1558,6 @@ sub main() {
 
     if ($options->{target} eq '/') {
 	die "refusing to use the filesystem root as output directory";
-    }
-
-    # figure out the mode to use or test whether the chosen mode is legal
-    if ($options->{mode} eq 'auto') {
-	if ($EFFECTIVE_USER_ID == 0) {
-	    $options->{mode} = 'root';
-	} elsif (test_unshare()) {
-	    $options->{mode} = 'unshare';
-	} elsif (system('proot --version>/dev/null') == 0) {
-	    $options->{mode} = 'proot';
-	} elsif (system('fakechroot --version>/dev/null') == 0) {
-	    $options->{mode} = 'fakechroot';
-	} else {
-	    die "unable to pick chroot mode automatically";
-	}
-	print STDERR "I: automatically chosen mode: $options->{mode}\n";
-    } elsif ($options->{mode} eq 'root') {
-	if ($EFFECTIVE_USER_ID != 0) {
-	    die "need to be root";
-	}
-    } elsif ($options->{mode} eq 'proot') {
-	if (system('proot --version>/dev/null') != 0) {
-	    die "need working proot binary";
-	}
-    } elsif ($options->{mode} eq 'fakechroot') {
-	# test if we are inside fakechroot already
-	# We fork a child process because setting FAKECHROOT_DETECT seems to
-	# be an irreversible operation for fakechroot.
-	my $pid = open my $rfh, '-|' // die "failed to fork(): $!";
-	if ($pid == 0) {
-	    # with the FAKECHROOT_DETECT environment variable set, any program
-	    # execution will be replaced with the output "fakeroot [version]"
-	    $ENV{FAKECHROOT_DETECT} = 0;
-	    exec 'echo', 'If fakechroot is running, this will not be printed';
-	}
-	my $content = do { local $/; <$rfh> };
-	waitpid $pid, 0;
-	if ($? == 0 and $content =~ /^fakechroot \d\.\d+$/) {
-	    # fakechroot is already running
-	} elsif (system('fakechroot --version>/dev/null') != 0) {
-	    die "need working fakechroot binary";
-	} else {
-	    # exec ourselves again but within fakechroot
-	    exec 'fakechroot', 'fakeroot', $PROGRAM_NAME, @ARGVORIG;
-	}
-    } elsif ($options->{mode} eq 'unshare') {
-	if (!test_unshare()) {
-	    if ($EFFECTIVE_USER_ID == 0) {
-		print STDERR "I: cannot use unshare mode when executing as root\n";
-	    }
-	    system "newuidmap 2>/dev/null";
-	    if (($? >> 8) != 1) {
-		if (($? >> 8) == 127) {
-		    print STDERR "I: cannot find newuidmap\n";
-		} else {
-		    print STDERR "I: newuidmap returned unknown exit status\n";
-		}
-	    }
-	    system "newgidmap 2>/dev/null";
-	    if (($? >> 8) != 1) {
-		if (($? >> 8) == 127) {
-		    print STDERR "I: cannot find newgidmap\n";
-		} else {
-		    print STDERR "I: newgidmap returned unknown exit status\n";
-		}
-	    }
-	    my $procfile = '/proc/sys/kernel/unprivileged_userns_clone';
-	    open(my $fh, '<', $procfile) or die "failed to open $procfile: $!";
-	    chomp(my $content = do { local $/; <$fh> });
-	    close($fh);
-	    if ($content ne "1") {
-		print STDERR "I: /proc/sys/kernel/unprivileged_userns_clone is set to $content\n";
-		print STDERR "I: try running: sudo sysctl -w kernel.unprivileged_userns_clone=1\n";
-		print STDERR "I: or permanently enable unprivileged usernamespaces by putting the setting into /etc/sysctl.d/\n";
-	    }
-	    exit 1;
-	}
-    } elsif ($options->{mode} eq 'chrootless') {
-	# nothing to do
-    } else {
-	die "unknown mode: $options->{mode}";
     }
 
     my @tar_compress_opts = get_tar_compress_options($options->{target});
