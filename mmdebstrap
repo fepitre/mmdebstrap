@@ -1721,7 +1721,11 @@ sub main() {
 		} elsif ($options->{mode} eq 'proot') {
 		    # proot requires tar to run inside proot or otherwise
 		    # permissions will be completely off
-		    0 == system('proot', '--root-id', "--rootfs=$options->{root}", '--cwd=/', 'tar', @taropts, '-C', '/', '.') or die "tar failed: $?";
+		    my @qemuopt = ();
+		    if (defined $options->{qemu}) {
+			push @qemuopt, "--qemu=qemu-$options->{qemu}";
+		    }
+		    0 == system('proot', '--root-id', "--rootfs=$options->{root}", '--cwd=/', @qemuopt, 'tar', @taropts, '-C', '/', '.') or die "tar failed: $?";
 		} elsif (any { $_ eq $options->{mode} } ('root', 'chrootless')) {
 		    0 == system('tar', @taropts, '-C', $options->{root}, '.') or die "tar failed: $?";
 		} else {
