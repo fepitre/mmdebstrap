@@ -1008,6 +1008,30 @@ sub setup {
 		}
 	    }
 
+	    # some versions of coreutils use the renameat2 system call in mv.
+	    # This breaks certain versions of fakechroot and proot. Here we do
+	    # a sanity check and warn the user in case things might break.
+	    if (any { $_ eq $options->{mode} } ('fakechroot', 'proot') and -e "$options->{root}/bin/mv") {
+		mkdir "$options->{root}/000-move-me" or die "cannot create directory: $!";
+		my $ret = system @chrootcmd, '/bin/mv', '/000-move-me', '/001-delete-me';
+		if ($ret != 0) {
+		    print STDERR "I: the /bin/mv binary inside the chroot doesn't work under ";
+		    if ($options->{mode} eq 'proot') {
+			print STDERR "proot\n";
+			print STDERR "I: this is likely due to missing support for renameat2 in proot\n";
+			print STDERR "I: see https://github.com/proot-me/PRoot/issues/147\n";
+		    } else {
+			print STDERR "fakechroot\n";
+			print STDERR "I: with certain versions of coreutils and glibc, this is due to missing support for renameat2 in fakechroot\n";
+			print STDERR "I: see https://github.com/dex4er/fakechroot/issues/60\n";
+		    }
+		    print STDERR "I: expect package post installation scripts not to work\n";
+		    rmdir "$options->{root}/000-move-me" or die "cannot rmdir: $!";
+		} else {
+		    rmdir "$options->{root}/001-delete-me" or die "cannot rmdir: $!";
+		}
+	    }
+
 	    # install the extracted packages properly
 	    # we need --force-depends because dpkg does not take Pre-Depends into
 	    # account and thus doesn't install them in the right order
