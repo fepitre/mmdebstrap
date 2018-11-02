@@ -2,6 +2,24 @@
 
 set -eu
 
+starttime=
+total=44
+i=1
+
+print_header() {
+	echo ------------------------------------------------------------------------------
+	echo "($i/$total) $1"
+	if [ -z "$starttime" ]; then
+		starttime=$(date +%s)
+	else
+		currenttime=$(date +%s)
+		timeleft=$(((total-i+1)*(currenttime-starttime)/(i-1)))
+		printf "time left: %02d:%02d:%02d\n" $((timeleft/3600)) $(((timeleft%3600)/60)) $((timeleft%60))
+	fi
+	echo ------------------------------------------------------------------------------
+	i=$((i+1))
+}
+
 mkdir -p cover_db
 
 if mountpoint -q -- cover_db; then
@@ -16,7 +34,7 @@ fi
 # filesystem that doesn't support ownership information at all and a umask that
 # gives read/write access to everybody.
 # https://github.com/pjcj/Devel--Cover/issues/223
-fallocate -l 10M cover_db.img
+fallocate -l 100M cover_db.img
 sudo mkfs.vfat cover_db.img
 sudo mount -o loop,umask=000 cover_db.img cover_db
 
@@ -38,68 +56,96 @@ fi
 
 echo "running http server with pid $pid"
 
+mirror="http://localhost:8000"
+
 # choose the timestamp of the unstable Release file, so that we get
 # reproducible results for the same mirror timestamp
 export SOURCE_DATE_EPOCH=$(date --date="$(grep-dctrl -s Date -n '' mirror/dists/unstable/Release)" +%s)
 
 CMD="perl -MDevel::Cover=-silent,-nogcov ./mmdebstrap"
 
-total=37
-i=1
-
-echo ------------------------------------------------------------------------------
-echo "($i/$total) mode=root,variant=apt: create directory"
-echo ------------------------------------------------------------------------------
-i=$((i+1))
-sudo $CMD --mode=root --variant=apt unstable ./debian-unstable "http://localhost:8000"
+print_header "mode=root,variant=apt: create directory"
+sudo $CMD --mode=root --variant=apt unstable ./debian-unstable $mirror
 sudo tar -C ./debian-unstable --one-file-system -c . | tar -t | sort > tar1.txt
 sudo rm -r --one-file-system ./debian-unstable
 
-echo ------------------------------------------------------------------------------
-echo "($i/$total) mode=unshare,variant=apt: create tarball"
-echo ------------------------------------------------------------------------------
-i=$((i+1))
-$CMD --mode=unshare --variant=apt unstable unstable-chroot.tar "http://localhost:8000"
+print_header "mode=root,variant=apt: existing empty directory"
+mkdir ./debian-unstable
+sudo $CMD --mode=root --variant=apt unstable ./debian-unstable $mirror
+sudo tar -C ./debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
+diff -u tar1.txt tar2.txt
+sudo rm -r --one-file-system ./debian-unstable
+
+print_header "mode=unshare,variant=apt: create tarball"
+$CMD --mode=unshare --variant=apt unstable unstable-chroot.tar $mirror
 tar -tf unstable-chroot.tar | sort > tar2.txt
 diff -u tar1.txt tar2.txt
 rm unstable-chroot.tar
 
-echo ------------------------------------------------------------------------------
-echo "($i/$total) mode=auto,variant=apt: read from stdin, write to stdout"
-echo ------------------------------------------------------------------------------
-i=$((i+1))
-echo "deb http://localhost:8000 unstable main" | $CMD --variant=apt > unstable-chroot.tar
+print_header "mode=auto,variant=apt: read from stdin, write to stdout"
+echo "deb $mirror unstable main" | $CMD --variant=apt > unstable-chroot.tar
 tar -tf unstable-chroot.tar | sort > tar2.txt
 diff -u tar1.txt tar2.txt
 rm unstable-chroot.tar
 
-echo ------------------------------------------------------------------------------
-echo "($i/$total) mode=root,variant=apt: test --aptopt"
-echo ------------------------------------------------------------------------------
-i=$((i+1))
-sudo $CMD --mode=root --variant=apt --aptopt="Acquire::Check-Valid-Until false" unstable ./debian-unstable "http://localhost:8000"
+print_header "mode=auto,variant=apt: default mirror"
+$CMD --variant=apt unstable unstable-chroot.tar $mirror
+tar -tf unstable-chroot.tar | sort > tar2.txt
+diff -u tar1.txt tar2.txt
+rm unstable-chroot.tar
+
+print_header "mode=auto,variant=apt: mirror is -"
+echo "deb $mirror unstable main" | $CMD --variant=apt unstable unstable-chroot.tar -
+tar -tf unstable-chroot.tar | sort > tar2.txt
+diff -u tar1.txt tar2.txt
+rm unstable-chroot.tar
+
+print_header "mode=auto,variant=apt: mirror is deb..."
+$CMD --variant=apt unstable unstable-chroot.tar "deb $mirror unstable main"
+tar -tf unstable-chroot.tar | sort > tar2.txt
+diff -u tar1.txt tar2.txt
+rm unstable-chroot.tar
+
+print_header "mode=auto,variant=apt: mirror is real file"
+echo "deb $mirror unstable main" > sources.list
+$CMD --variant=apt unstable unstable-chroot.tar sources.list
+rm sources.list
+tar -tf unstable-chroot.tar | sort > tar2.txt
+diff -u tar1.txt tar2.txt
+rm unstable-chroot.tar
+
+print_header "mode=auto,variant=apt: no mirror but data on stdin"
+echo "deb $mirror unstable main" | $CMD --variant=apt unstable unstable-chroot.tar
+tar -tf unstable-chroot.tar | sort > tar2.txt
+diff -u tar1.txt tar2.txt
+rm unstable-chroot.tar
+
+print_header "mode=root,variant=apt: add foreign architecture"
+sudo $CMD --mode=root --variant=apt --architectures=amd64,armhf unstable ./debian-unstable $mirror
+{ echo "amd64"; echo "armhf"; } | cmp ./debian-unstable/var/lib/dpkg/arch -
+sudo rm ./debian-unstable/var/lib/dpkg/arch
+sudo tar -C ./debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
+diff -u tar1.txt tar2.txt
+sudo rm -r --one-file-system ./debian-unstable
+
+print_header "mode=root,variant=apt: test --aptopt"
+sudo $CMD --mode=root --variant=apt --aptopt="Acquire::Check-Valid-Until false" unstable ./debian-unstable $mirror
 echo "Acquire::Check-Valid-Until false;" | cmp ./debian-unstable/etc/apt/apt.conf.d/99mmdebstrap -
 sudo rm ./debian-unstable/etc/apt/apt.conf.d/99mmdebstrap
 sudo tar -C ./debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
 diff -u tar1.txt tar2.txt
 sudo rm -r --one-file-system ./debian-unstable
 
-echo ------------------------------------------------------------------------------
-echo "($i/$total) mode=root,variant=apt: test --dpkgopt"
-echo ------------------------------------------------------------------------------
-i=$((i+1))
-sudo $CMD --mode=root --variant=apt --dpkgopt="path-exclude=/usr/share/doc/*" unstable ./debian-unstable "http://localhost:8000"
+print_header "mode=root,variant=apt: test --dpkgopt"
+sudo $CMD --mode=root --variant=apt --dpkgopt="path-exclude=/usr/share/doc/*" unstable ./debian-unstable $mirror
 echo "path-exclude=/usr/share/doc/*" | cmp ./debian-unstable/etc/dpkg/dpkg.cfg.d/99mmdebstrap -
 sudo rm ./debian-unstable/etc/dpkg/dpkg.cfg.d/99mmdebstrap
 sudo tar -C ./debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
 grep -v '^./usr/share/doc/.' tar1.txt | diff -u - tar2.txt
 sudo rm -r --one-file-system ./debian-unstable
 
-echo ------------------------------------------------------------------------------
-echo "($i/$total) mode=root,variant=apt: test --include"
-echo ------------------------------------------------------------------------------
-i=$((i+1))
-sudo $CMD --mode=root --variant=apt --include=doc-debian unstable ./debian-unstable "http://localhost:8000"
+print_header "mode=root,variant=apt: test --include"
+sudo $CMD --mode=root --variant=apt --include=doc-debian unstable ./debian-unstable $mirror
 sudo rm ./debian-unstable/usr/share/doc-base/debian-*
 sudo rm -r ./debian-unstable/usr/share/doc/debian
 sudo rm -r ./debian-unstable/usr/share/doc/doc-debian
@@ -113,11 +159,8 @@ sudo rm -r --one-file-system ./debian-unstable
 # test all variants
 
 for variant in essential apt required minbase buildd important debootstrap - standard; do
-	echo ------------------------------------------------------------------------------
-	echo "($i/$total) mode=root,variant=$variant: create directory"
-	echo ------------------------------------------------------------------------------
-	i=$((i+1))
-	sudo $CMD --mode=root --variant=$variant unstable ./debian-unstable "http://localhost:8000"
+	print_header "mode=root,variant=$variant: create directory"
+	sudo $CMD --mode=root --variant=$variant unstable ./debian-unstable $mirror
 	sudo tar -C ./debian-unstable --one-file-system -c . | tar -t | sort > "$variant.txt"
 	sudo rm -r --one-file-system ./debian-unstable
 	# check if the other modes produce the same result in each variant
@@ -138,11 +181,8 @@ for variant in essential apt required minbase buildd important debootstrap - sta
 				fi
 				;;
 		esac
-		echo ------------------------------------------------------------------------------
-		echo "($i/$total) mode=$mode,variant=$variant: create tarball"
-		echo ------------------------------------------------------------------------------
-		i=$((i+1))
-		$CMD --mode=$mode --variant=$variant unstable unstable-chroot.tar "http://localhost:8000"
+		print_header "mode=$mode,variant=$variant: create tarball"
+		$CMD --mode=$mode --variant=$variant unstable unstable-chroot.tar $mirror
 		# in fakechroot mode, we use a fake ldconfig, so we have to
 		# artificially add some files
 		{ tar -tf unstable-chroot.tar;
@@ -153,11 +193,8 @@ for variant in essential apt required minbase buildd important debootstrap - sta
 		# with fakechroot, thus, we do an additional run where we
 		# explicitly run mmdebstrap with fakechroot from the start
 		if [ "$mode" = "fakechroot" ]; then
-			echo ------------------------------------------------------------------------------
-			echo "($i/$total) mode=$mode,variant=$variant: create tarball (ver 2)"
-			echo ------------------------------------------------------------------------------
-			i=$((i+1))
-			fakechroot fakeroot $CMD --mode=$mode --variant=$variant unstable unstable-chroot.tar "http://localhost:8000"
+			print_header "mode=$mode,variant=$variant: create tarball (ver 2)"
+			fakechroot fakeroot $CMD --mode=$mode --variant=$variant unstable unstable-chroot.tar $mirror
 			{ tar -tf unstable-chroot.tar;
 			  printf "./etc/ld.so.cache\n./var/cache/ldconfig/\n";
 			} | sort | diff -u "./$variant.txt" -
@@ -216,11 +253,8 @@ for mode in root unshare fakechroot proot chrootless; do
 	if [ "$mode" = "root" ]; then
 		prefix=sudo
 	fi
-	echo ------------------------------------------------------------------------------
-	echo "($i/$total) mode=$mode,variant=extract: unpack doc-debian"
-	echo ------------------------------------------------------------------------------
-	i=$((i+1))
-	$prefix $CMD --mode=$mode --variant=extract --include=doc-debian unstable ./debian-unstable "http://localhost:8000"
+	print_header "mode=$mode,variant=extract: unpack doc-debian"
+	$prefix $CMD --mode=$mode --variant=extract --include=doc-debian unstable ./debian-unstable $mirror
 	# delete contents of doc-debian
 	sudo rm ./debian-unstable/usr/share/doc-base/debian-*
 	sudo rm -r ./debian-unstable/usr/share/doc/debian
@@ -265,11 +299,8 @@ for mode in root unshare fakechroot proot chrootless; do
 	sudo find ./debian-unstable -depth -print0 | xargs -0 sudo rmdir
 done
 
-echo ------------------------------------------------------------------------------
-echo "($i/$total) mode=chrootless,variant=custom: install doc-debian"
-echo ------------------------------------------------------------------------------
-i=$((i+1))
-$CMD --mode=chrootless --variant=custom --include=doc-debian unstable ./debian-unstable "http://localhost:8000"
+print_header "mode=chrootless,variant=custom: install doc-debian"
+$CMD --mode=chrootless --variant=custom --include=doc-debian unstable ./debian-unstable $mirror
 # delete contents of doc-debian
 sudo rm ./debian-unstable/usr/share/doc-base/debian-*
 sudo rm -r ./debian-unstable/usr/share/doc/debian
@@ -302,11 +333,8 @@ sudo find ./debian-unstable -depth -print0 | xargs -0 sudo rmdir
 # create directory in sudo mode
 # FIXME: once fakechroot and proot are fixed, we have to test more variants
 #        than just essential
-echo ------------------------------------------------------------------------------
-echo "($i/$total) mode=root,variant=essential: create directory"
-echo ------------------------------------------------------------------------------
-i=$((i+1))
-sudo $CMD --mode=root --variant=essential unstable ./debian-unstable "http://localhost:8000"
+print_header "mode=root,variant=essential: create directory"
+sudo $CMD --mode=root --variant=essential unstable ./debian-unstable $mirror
 sudo tar -C ./debian-unstable --one-file-system -c . | tar -t | sort > tar1.txt
 sudo rm -r --one-file-system ./debian-unstable
 
@@ -323,11 +351,8 @@ for mode in root unshare fakechroot proot; do
 		# fakechroot from the start
 		prefix="fakechroot fakeroot"
 	fi
-	echo ------------------------------------------------------------------------------
-	echo "($i/$total) mode=$mode,variant=essential: create armhf tarball"
-	echo ------------------------------------------------------------------------------
-	i=$((i+1))
-	$prefix $CMD --mode=$mode --variant=essential --architectures=armhf unstable ./debian-unstable.tar "http://localhost:8000"
+	print_header "mode=$mode,variant=essential: create armhf tarball"
+	$prefix $CMD --mode=$mode --variant=essential --architectures=armhf unstable ./debian-unstable.tar $mirror
 	# we ignore differences between architectures by ignoring some files
 	# and renaming others
 	# in fakechroot mode, we use a fake ldconfig, so we have to
@@ -373,4 +398,5 @@ echo
 
 sudo umount cover_db
 sudo rmdir cover_db
-#rm tar1.txt tar2.txt
+rm tar1.txt tar2.txt
+rm cover_db.img
