@@ -624,7 +624,7 @@ sub setup {
     if (scalar @{$options->{foreignarchs}} > 0) {
 	open my $fh, '>', "$options->{root}/var/lib/dpkg/arch" or die "cannot open /var/lib/dpkg/arch: $!";
 	print $fh "$options->{nativearch}\n";
-	foreach my $arch ($options->{foreignarchs}) {
+	foreach my $arch (@{$options->{foreignarchs}}) {
 	    print $fh "$arch\n";
 	}
 	close $fh;
