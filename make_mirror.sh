@@ -44,6 +44,7 @@ Dir::State "$rootdir/var/lib/apt";
 Dir::Cache "$rootdir/var/cache/apt";
 Apt::Install-Recommends false;
 Apt::Get::Download-Only true;
+Acquire::Languages "none";
 Dir::Etc::Trusted "/etc/apt/trusted.gpg";
 Dir::Etc::TrustedParts "/etc/apt/trusted.gpg.d";
 END
