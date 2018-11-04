@@ -1531,10 +1531,6 @@ sub main() {
 	    # come from standard input
 	    $sourceslist .= $stdindata;
 	} else {
-	    my $archopt = '';
-	    if (scalar @{$options->{foreignarchs}} > 0) {
-		$archopt = " [arch=$options->{nativearch}]";
-	    }
 	    if (scalar @ARGV > 0) {
 		for my $arg (@ARGV) {
 		    if ($arg eq '-') {
@@ -1542,7 +1538,7 @@ sub main() {
 		    } elsif ($arg =~ /^deb(-src)? /) {
 			$sourceslist .= "$arg\n";
 		    } elsif ($arg =~ /:\/\//) {
-			$sourceslist .= "deb$archopt $arg $suite $options->{components}\n";
+			$sourceslist .= "deb $arg $suite $options->{components}\n";
 		    } elsif (-f $arg) {
 			open my $fh, '<', $arg or die "cannot open $arg: $!";
 			while (my $line = <$fh>) {
@@ -1563,10 +1559,10 @@ sub main() {
 	    } elsif ($stdindata ne '') {
 		$sourceslist .= $stdindata;
 	    } else {
-		$sourceslist .= "deb$archopt http://deb.debian.org/debian $suite $options->{components}\n";
+		$sourceslist .= "deb http://deb.debian.org/debian $suite $options->{components}\n";
 		if (any { $_ eq $suite } ('stable', 'oldstable', 'stretch') ) {
-		    $sourceslist .= "deb$archopt http://deb.debian.org/debian $suite-updates $options->{components}\n";
-		    $sourceslist .= "deb$archopt http://security.debian.org/debian-security $suite/updates $options->{components}\n";
+		    $sourceslist .= "deb http://deb.debian.org/debian $suite-updates $options->{components}\n";
+		    $sourceslist .= "deb http://security.debian.org/debian-security $suite/updates $options->{components}\n";
 		}
 	    }
 	}
