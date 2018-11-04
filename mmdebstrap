@@ -573,7 +573,11 @@ sub setup {
     # the host system might have configured additional architectures
     # force only the native architecture
     if (scalar @{$options->{foreignarchs}} > 0) {
-	print $conf "Apt::Architectures \"$options->{nativearch} @{$options->{foreignarchs}}\";\n";
+	print $conf "Apt::Architectures { \"$options->{nativearch}\"; ";
+	foreach my $arch (@{$options->{foreignarchs}}) {
+	    print $conf "\"$arch\"; ";
+	}
+	print $conf "};\n";
     } else {
 	print $conf "Apt::Architectures \"$options->{nativearch}\";\n";
     }
