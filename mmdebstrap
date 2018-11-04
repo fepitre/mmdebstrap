@@ -901,6 +901,8 @@ sub setup {
 	print STDERR "I: installing packages...\n";
 	# FIXME: the dpkg config from the host is parsed before the command
 	# line arguments are parsed and might break this mode
+	# Example: if the host has --path-exclude set, then this will also
+	# affect the chroot.
 	my @chrootless_opts = (
 	    '-oDPkg::Options::=--force-not-root',
 	    '-oDPkg::Options::=--force-script-chrootless',
@@ -1039,6 +1041,7 @@ sub setup {
 	    # install the extracted packages properly
 	    # we need --force-depends because dpkg does not take Pre-Depends into
 	    # account and thus doesn't install them in the right order
+	    # And the --predep-package option is broken: #539133
 	    print STDERR "I: installing packages...\n";
 	    run_dpkg_progress [@essential_pkgs], @chrootcmd, 'dpkg', '--install', '--force-depends';
 
