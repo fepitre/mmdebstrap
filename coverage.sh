@@ -2,8 +2,20 @@
 
 set -eu
 
+mirrordir="./shared/debian"
+
+./make_mirror.sh
+
+# we use -f because the file might not exist
+rm -f shared/cover_db.img
+
+# prepare image for cover_db
+guestfish -N shared/cover_db.img=disk:100M -- mkfs vfat /dev/sda
+
+cp mmdebstrap shared
+
 starttime=
-total=44
+total=54
 i=1
 
 print_header() {
@@ -20,149 +32,308 @@ print_header() {
 	i=$((i+1))
 }
 
-mkdir -p cover_db
-
-if mountpoint -q -- cover_db; then
-	sudo umount cover_db
-fi
-
-# here is something crazy:
-# as we run mmdebstrap, the process ends up being run by different users with
-# different privileges (real or fake). But for being able to collect
-# Devel::Cover data, they must all share a single directory. The only way that
-# I found to make this work is to mount the database directory with a
-# filesystem that doesn't support ownership information at all and a umask that
-# gives read/write access to everybody.
-# https://github.com/pjcj/Devel--Cover/issues/223
-fallocate -l 100M cover_db.img
-sudo mkfs.vfat cover_db.img
-sudo mount -o loop,umask=000 cover_db.img cover_db
-
 nativearch=$(dpkg --print-architecture)
-
-./make_mirror.sh
-
-cd mirror
-python3 -m http.server 8000 2>/dev/null & pid=$!
-cd -
-
-# wait for the server to start
-sleep 1
-
-if ! kill -0 $pid; then
-	echo "failed to start http server"
-	exit 1
-fi
-
-echo "running http server with pid $pid"
-
-mirror="http://localhost:8000"
 
 # choose the timestamp of the unstable Release file, so that we get
 # reproducible results for the same mirror timestamp
-export SOURCE_DATE_EPOCH=$(date --date="$(grep-dctrl -s Date -n '' mirror/dists/unstable/Release)" +%s)
+SOURCE_DATE_EPOCH=$(date --date="$(grep-dctrl -s Date -n '' "$mirrordir/dists/unstable/Release")" +%s)
 
-CMD="perl -MDevel::Cover=-silent,-nogcov ./mmdebstrap"
+# for traditional sort order that uses native byte values
+export LC_ALL=C
+
+# by default, use the mmdebstrap executable in the current directory together
+# with perl Devel::Cover but allow to overwrite this
+: "${CMD:=perl -MDevel::Cover=-silent,-nogcov ./mmdebstrap}"
+mirror="http://127.0.0.1/debian"
+
+for dist in stable testing unstable; do
+	for variant in minbase buildd -; do
+		# skip because of different userids for apt/systemd
+		if [ "$dist" = 'stable' ] && [ "$variant" = '-' ]; then
+			continue
+		fi
+		print_header "mode=root,variant=$variant: check against debootstrap $dist"
+		cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C
+export SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH
+$CMD --variant=$variant --mode=root $dist /tmp/debian-$dist-mm.tar $mirror
+
+mkdir /tmp/debian-$dist-mm
+tar -C /tmp/debian-$dist-mm -xf /tmp/debian-$dist-mm.tar
+
+mkdir /tmp/debian-$dist-debootstrap
+tar -C /tmp/debian-$dist-debootstrap -xf "cache/debian-$dist-$variant.tar"
+
+# diff cannot compare device nodes, so we use tar to do that for us and then
+# delete the directory
+tar -C /tmp/debian-$dist-debootstrap -cf dev1.tar ./dev
+tar -C /tmp/debian-$dist-mm -cf dev2.tar ./dev
+cmp dev1.tar dev2.tar
+rm dev1.tar dev2.tar
+rm -r /tmp/debian-$dist-debootstrap/dev /tmp/debian-$dist-mm/dev
+
+# remove downloaded deb packages
+rm /tmp/debian-$dist-debootstrap/var/cache/apt/archives/*.deb
+# remove aux-cache
+rm /tmp/debian-$dist-debootstrap/var/cache/ldconfig/aux-cache
+# remove logs
+rm /tmp/debian-$dist-debootstrap/var/log/dpkg.log \
+	/tmp/debian-$dist-debootstrap/var/log/bootstrap.log \
+	/tmp/debian-$dist-mm/var/log/apt/eipp.log.xz \
+	/tmp/debian-$dist-debootstrap/var/log/alternatives.log
+# remove *-old files
+rm /tmp/debian-$dist-debootstrap/var/cache/debconf/config.dat-old \
+	/tmp/debian-$dist-mm/var/cache/debconf/config.dat-old
+rm /tmp/debian-$dist-debootstrap/var/cache/debconf/templates.dat-old \
+	/tmp/debian-$dist-mm/var/cache/debconf/templates.dat-old
+rm /tmp/debian-$dist-debootstrap/var/lib/dpkg/status-old \
+	/tmp/debian-$dist-mm/var/lib/dpkg/status-old
+# remove dpkg files
+rm /tmp/debian-$dist-debootstrap/var/lib/dpkg/available \
+	/tmp/debian-$dist-debootstrap/var/lib/dpkg/cmethopt
+# since we installed packages directly from the .deb files, Priorities differ
+# thus we first check for equality and then remove the files
+chroot /tmp/debian-$dist-debootstrap dpkg --list > dpkg1
+chroot /tmp/debian-$dist-mm dpkg --list > dpkg2
+diff -u dpkg1 dpkg2
+rm dpkg1 dpkg2
+grep -v '^Priority: ' /tmp/debian-$dist-debootstrap/var/lib/dpkg/status > status1
+grep -v '^Priority: ' /tmp/debian-$dist-mm/var/lib/dpkg/status > status2
+diff -u status1 status2
+rm status1 status2
+rm /tmp/debian-$dist-debootstrap/var/lib/dpkg/status /tmp/debian-$dist-mm/var/lib/dpkg/status
+rmdir /tmp/debian-$dist-mm/var/lib/apt/lists/auxfiles
+# debootstrap exposes the hosts's kernel version
+rm /tmp/debian-$dist-debootstrap/etc/apt/apt.conf.d/01autoremove-kernels \
+	/tmp/debian-$dist-mm/etc/apt/apt.conf.d/01autoremove-kernels
+# who creates /run/mount?
+rm -f /tmp/debian-$dist-debootstrap/run/mount/utab
+rmdir /tmp/debian-$dist-debootstrap/run/mount
+# debootstrap doesn't clean apt
+rm /tmp/debian-$dist-debootstrap/var/lib/apt/lists/127.0.0.1_debian_dists_${dist}_main_binary-amd64_Packages \
+	/tmp/debian-$dist-debootstrap/var/lib/apt/lists/127.0.0.1_debian_dists_${dist}_Release \
+	/tmp/debian-$dist-debootstrap/var/lib/apt/lists/127.0.0.1_debian_dists_${dist}_Release.gpg
+
+if [ "$variant" = "-" ]; then
+	rm /tmp/debian-$dist-debootstrap/etc/machine-id
+	rm /tmp/debian-$dist-mm/etc/machine-id
+	rm /tmp/debian-$dist-debootstrap/var/lib/systemd/catalog/database
+	rm /tmp/debian-$dist-mm/var/lib/systemd/catalog/database
+fi
+rm /tmp/debian-$dist-debootstrap/var/lib/dpkg/lock
+# introduced in dpkg 1.19.1
+if [ "$dist" != "stable" ]; then
+	rm /tmp/debian-$dist-debootstrap/var/lib/dpkg/lock-frontend
+fi
+
+# check if the file content differs
+diff --no-dereference --brief --recursive /tmp/debian-$dist-debootstrap /tmp/debian-$dist-mm
+
+# check if file properties (permissions, ownership, symlink names, modification time) differ
+#
+# we cannot use this (yet) because it cannot copy with paths that have [ or @ in them
+#fmtree -c -p /tmp/debian-$dist-debootstrap -k flags,gid,link,mode,size,time,uid | sudo fmtree -p /tmp/debian-$dist-mm
+END
+		./run_qemu.sh
+	done
+done
 
 print_header "mode=root,variant=apt: create directory"
-sudo $CMD --mode=root --variant=apt unstable ./debian-unstable $mirror
-sudo tar -C ./debian-unstable --one-file-system -c . | tar -t | sort > tar1.txt
-sudo rm -r --one-file-system ./debian-unstable
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C
+$CMD --mode=root --variant=apt unstable /tmp/debian-unstable $mirror
+tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar1.txt
+END
+./run_qemu.sh
+
+print_header "mode=unshare,variant=apt: test progress bars on fake tty"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C
+script -qfc "$CMD --mode=root --variant=apt unstable /tmp/unstable-chroot.tar $mirror" /dev/null
+tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
+diff -u tar1.txt tar2.txt
+END
+./run_qemu.sh
 
 print_header "mode=root,variant=apt: existing empty directory"
-mkdir ./debian-unstable
-sudo $CMD --mode=root --variant=apt unstable ./debian-unstable $mirror
-sudo tar -C ./debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C
+mkdir /tmp/debian-unstable
+$CMD --mode=root --variant=apt unstable /tmp/debian-unstable $mirror
+tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
 diff -u tar1.txt tar2.txt
-sudo rm -r --one-file-system ./debian-unstable
+END
+./run_qemu.sh
 
 print_header "mode=unshare,variant=apt: create tarball"
-$CMD --mode=unshare --variant=apt unstable unstable-chroot.tar $mirror
-tar -tf unstable-chroot.tar | sort > tar2.txt
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C
+adduser --gecos user --disabled-password user
+sysctl -w kernel.unprivileged_userns_clone=1
+runuser -u user -- $CMD --mode=unshare --variant=apt unstable /tmp/unstable-chroot.tar $mirror
+tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
 diff -u tar1.txt tar2.txt
-rm unstable-chroot.tar
+END
+./run_qemu.sh
 
 print_header "mode=auto,variant=apt: read from stdin, write to stdout"
-echo "deb $mirror unstable main" | $CMD --variant=apt > unstable-chroot.tar
-tar -tf unstable-chroot.tar | sort > tar2.txt
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C
+echo "deb $mirror unstable main" | $CMD --variant=apt > /tmp/unstable-chroot.tar
+tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
 diff -u tar1.txt tar2.txt
-rm unstable-chroot.tar
+END
+./run_qemu.sh
 
 print_header "mode=auto,variant=apt: default mirror"
-$CMD --variant=apt unstable unstable-chroot.tar $mirror
-tar -tf unstable-chroot.tar | sort > tar2.txt
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C
+echo "127.0.0.1 deb.debian.org" >> /etc/hosts
+$CMD --variant=apt unstable /tmp/unstable-chroot.tar
+tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
 diff -u tar1.txt tar2.txt
-rm unstable-chroot.tar
+END
+./run_qemu.sh
+
+print_header "mode=auto,variant=apt: pass distribution but implicitly write to stdout"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C
+echo "127.0.0.1 deb.debian.org" >> /etc/hosts
+$CMD --variant=apt unstable > /tmp/unstable-chroot.tar
+tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
+diff -u tar1.txt tar2.txt
+END
+./run_qemu.sh
 
 print_header "mode=auto,variant=apt: mirror is -"
-echo "deb $mirror unstable main" | $CMD --variant=apt unstable unstable-chroot.tar -
-tar -tf unstable-chroot.tar | sort > tar2.txt
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C
+echo "deb $mirror unstable main" | $CMD --variant=apt unstable /tmp/unstable-chroot.tar -
+tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
 diff -u tar1.txt tar2.txt
-rm unstable-chroot.tar
+END
+./run_qemu.sh
 
 print_header "mode=auto,variant=apt: mirror is deb..."
-$CMD --variant=apt unstable unstable-chroot.tar "deb $mirror unstable main"
-tar -tf unstable-chroot.tar | sort > tar2.txt
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C
+$CMD --variant=apt unstable /tmp/unstable-chroot.tar "deb $mirror unstable main"
+tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
 diff -u tar1.txt tar2.txt
-rm unstable-chroot.tar
+END
+./run_qemu.sh
 
 print_header "mode=auto,variant=apt: mirror is real file"
-echo "deb $mirror unstable main" > sources.list
-$CMD --variant=apt unstable unstable-chroot.tar sources.list
-rm sources.list
-tar -tf unstable-chroot.tar | sort > tar2.txt
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C
+echo "deb $mirror unstable main" > /tmp/sources.list
+$CMD --variant=apt unstable /tmp/unstable-chroot.tar /tmp/sources.list
+tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
 diff -u tar1.txt tar2.txt
-rm unstable-chroot.tar
+END
+./run_qemu.sh
 
 print_header "mode=auto,variant=apt: no mirror but data on stdin"
-echo "deb $mirror unstable main" | $CMD --variant=apt unstable unstable-chroot.tar
-tar -tf unstable-chroot.tar | sort > tar2.txt
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C
+echo "deb $mirror unstable main" | $CMD --variant=apt unstable /tmp/unstable-chroot.tar
+tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
 diff -u tar1.txt tar2.txt
-rm unstable-chroot.tar
+END
+./run_qemu.sh
 
 print_header "mode=root,variant=apt: add foreign architecture"
-sudo $CMD --mode=root --variant=apt --architectures=amd64,armhf unstable ./debian-unstable $mirror
-{ echo "amd64"; echo "armhf"; } | cmp ./debian-unstable/var/lib/dpkg/arch -
-sudo rm ./debian-unstable/var/lib/dpkg/arch
-sudo tar -C ./debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C
+$CMD --mode=root --variant=apt --architectures=amd64,armhf unstable /tmp/debian-unstable $mirror
+{ echo "amd64"; echo "armhf"; } | cmp /tmp/debian-unstable/var/lib/dpkg/arch -
+rm /tmp/debian-unstable/var/lib/dpkg/arch
+tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
 diff -u tar1.txt tar2.txt
-sudo rm -r --one-file-system ./debian-unstable
+END
+./run_qemu.sh
 
 print_header "mode=root,variant=apt: test --aptopt"
-sudo $CMD --mode=root --variant=apt --aptopt="Acquire::Check-Valid-Until false" unstable ./debian-unstable $mirror
-echo "Acquire::Check-Valid-Until false;" | cmp ./debian-unstable/etc/apt/apt.conf.d/99mmdebstrap -
-sudo rm ./debian-unstable/etc/apt/apt.conf.d/99mmdebstrap
-sudo tar -C ./debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C
+$CMD --mode=root --variant=apt --aptopt="Acquire::Check-Valid-Until false" unstable /tmp/debian-unstable $mirror
+echo "Acquire::Check-Valid-Until false;" | cmp /tmp/debian-unstable/etc/apt/apt.conf.d/99mmdebstrap -
+rm /tmp/debian-unstable/etc/apt/apt.conf.d/99mmdebstrap
+tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
 diff -u tar1.txt tar2.txt
-sudo rm -r --one-file-system ./debian-unstable
+END
+./run_qemu.sh
 
 print_header "mode=root,variant=apt: test --dpkgopt"
-sudo $CMD --mode=root --variant=apt --dpkgopt="path-exclude=/usr/share/doc/*" unstable ./debian-unstable $mirror
-echo "path-exclude=/usr/share/doc/*" | cmp ./debian-unstable/etc/dpkg/dpkg.cfg.d/99mmdebstrap -
-sudo rm ./debian-unstable/etc/dpkg/dpkg.cfg.d/99mmdebstrap
-sudo tar -C ./debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C
+$CMD --mode=root --variant=apt --dpkgopt="path-exclude=/usr/share/doc/*" unstable /tmp/debian-unstable $mirror
+echo "path-exclude=/usr/share/doc/*" | cmp /tmp/debian-unstable/etc/dpkg/dpkg.cfg.d/99mmdebstrap -
+rm /tmp/debian-unstable/etc/dpkg/dpkg.cfg.d/99mmdebstrap
+tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
 grep -v '^./usr/share/doc/.' tar1.txt | diff -u - tar2.txt
-sudo rm -r --one-file-system ./debian-unstable
+END
+./run_qemu.sh
 
 print_header "mode=root,variant=apt: test --include"
-sudo $CMD --mode=root --variant=apt --include=doc-debian unstable ./debian-unstable $mirror
-sudo rm ./debian-unstable/usr/share/doc-base/debian-*
-sudo rm -r ./debian-unstable/usr/share/doc/debian
-sudo rm -r ./debian-unstable/usr/share/doc/doc-debian
-sudo rm ./debian-unstable/var/log/apt/eipp.log.xz
-sudo rm ./debian-unstable/var/lib/dpkg/info/doc-debian.list
-sudo rm ./debian-unstable/var/lib/dpkg/info/doc-debian.md5sums
-sudo tar -C ./debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C
+$CMD --mode=root --variant=apt --include=doc-debian unstable /tmp/debian-unstable $mirror
+rm /tmp/debian-unstable/usr/share/doc-base/debian-*
+rm -r /tmp/debian-unstable/usr/share/doc/debian
+rm -r /tmp/debian-unstable/usr/share/doc/doc-debian
+rm /tmp/debian-unstable/var/log/apt/eipp.log.xz
+rm /tmp/debian-unstable/var/lib/dpkg/info/doc-debian.list
+rm /tmp/debian-unstable/var/lib/dpkg/info/doc-debian.md5sums
+tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
 diff -u tar1.txt tar2.txt
-sudo rm -r --one-file-system ./debian-unstable
+END
+./run_qemu.sh
 
 # test all variants
 
 for variant in essential apt required minbase buildd important debootstrap - standard; do
 	print_header "mode=root,variant=$variant: create directory"
-	sudo $CMD --mode=root --variant=$variant unstable ./debian-unstable $mirror
-	sudo tar -C ./debian-unstable --one-file-system -c . | tar -t | sort > "$variant.txt"
-	sudo rm -r --one-file-system ./debian-unstable
+	cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C
+$CMD --mode=root --variant=$variant unstable /tmp/unstable-chroot.tar $mirror
+tar -tf /tmp/unstable-chroot.tar | sort > "$variant.txt"
+END
+	./run_qemu.sh
 	# check if the other modes produce the same result in each variant
 	for mode in unshare fakechroot proot; do
 		# fontconfig doesn't install reproducibly because differences
@@ -182,23 +353,36 @@ for variant in essential apt required minbase buildd important debootstrap - sta
 				;;
 		esac
 		print_header "mode=$mode,variant=$variant: create tarball"
-		$CMD --mode=$mode --variant=$variant unstable unstable-chroot.tar $mirror
-		# in fakechroot mode, we use a fake ldconfig, so we have to
-		# artificially add some files
-		{ tar -tf unstable-chroot.tar;
-		  [ "$mode" = "fakechroot" ] && printf "./etc/ld.so.cache\n./var/cache/ldconfig/\n";
-	 	} | sort | diff -u "./$variant.txt" -
-		rm unstable-chroot.tar
+		cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C
+adduser --gecos user --disabled-password user
+[ "$mode" = unshare ] && sysctl -w kernel.unprivileged_userns_clone=1
+runuser -u user -- $CMD --mode=$mode --variant=$variant unstable /tmp/unstable-chroot.tar $mirror
+# in fakechroot mode, we use a fake ldconfig, so we have to
+# artificially add some files
+{ tar -tf /tmp/unstable-chroot.tar;
+  [ "$mode" = "fakechroot" ] && printf "./etc/ld.so.cache\n./var/cache/ldconfig/\n";
+} | sort | diff -u "./$variant.txt" -
+END
+		./run_qemu.sh
 		# Devel::Cover doesn't survive mmdebstrap re-exec-ing itself
 		# with fakechroot, thus, we do an additional run where we
 		# explicitly run mmdebstrap with fakechroot from the start
 		if [ "$mode" = "fakechroot" ]; then
 			print_header "mode=$mode,variant=$variant: create tarball (ver 2)"
-			fakechroot fakeroot $CMD --mode=$mode --variant=$variant unstable unstable-chroot.tar $mirror
-			{ tar -tf unstable-chroot.tar;
-			  printf "./etc/ld.so.cache\n./var/cache/ldconfig/\n";
-			} | sort | diff -u "./$variant.txt" -
-			rm unstable-chroot.tar
+			cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C
+adduser --gecos user --disabled-password user
+runuser -u user -- fakechroot fakeroot $CMD --mode=$mode --variant=$variant unstable /tmp/unstable-chroot.tar $mirror
+{ tar -tf /tmp/unstable-chroot.tar;
+  printf "./etc/ld.so.cache\n./var/cache/ldconfig/\n";
+} | sort | diff -u "./$variant.txt" -
+END
+			./run_qemu.sh
 		fi
 	done
 	# some variants are equal and some are strict superset of the last
@@ -206,197 +390,219 @@ for variant in essential apt required minbase buildd important debootstrap - sta
 	case "$variant" in
 		essential) ;; # nothing to compare it to
 		apt)
-			[ $(comm -23 essential.txt apt.txt | wc -l) -eq 0 ]
-			[ $(comm -13 essential.txt apt.txt | wc -l) -gt 0 ]
-			rm essential.txt
+			[ $(comm -23 shared/essential.txt shared/apt.txt | wc -l) -eq 0 ]
+			[ $(comm -13 shared/essential.txt shared/apt.txt | wc -l) -gt 0 ]
+			rm shared/essential.txt
 			;;
 		required)
-			[ $(comm -23 apt.txt required.txt | wc -l) -eq 0 ]
-			[ $(comm -13 apt.txt required.txt | wc -l) -gt 0 ]
-			rm apt.txt
+			[ $(comm -23 shared/apt.txt shared/required.txt | wc -l) -eq 0 ]
+			[ $(comm -13 shared/apt.txt shared/required.txt | wc -l) -gt 0 ]
+			rm shared/apt.txt
 			;;
 		minbase) # equal to required
-			cmp required.txt minbase.txt
-			rm required.txt
+			cmp shared/required.txt shared/minbase.txt
+			rm shared/required.txt
 			;;
 		buildd)
-			[ $(comm -23 minbase.txt buildd.txt | wc -l) -eq 0 ]
-			[ $(comm -13 minbase.txt buildd.txt | wc -l) -gt 0 ]
-			rm buildd.txt # we need minbase.txt but not buildd.txt
+			[ $(comm -23 shared/minbase.txt shared/buildd.txt | wc -l) -eq 0 ]
+			[ $(comm -13 shared/minbase.txt shared/buildd.txt | wc -l) -gt 0 ]
+			rm shared/buildd.txt # we need minbase.txt but not buildd.txt
 			;;
 		important)
-			[ $(comm -23 minbase.txt important.txt | wc -l) -eq 0 ]
-			[ $(comm -13 minbase.txt important.txt | wc -l) -gt 0 ]
-			rm minbase.txt
+			[ $(comm -23 shared/minbase.txt shared/important.txt | wc -l) -eq 0 ]
+			[ $(comm -13 shared/minbase.txt shared/important.txt | wc -l) -gt 0 ]
+			rm shared/minbase.txt
 			;;
 		debootstrap) # equal to important
-			cmp important.txt debootstrap.txt
-			rm important.txt
+			cmp shared/important.txt shared/debootstrap.txt
+			rm shared/important.txt
 			;;
 		-) # equal to debootstrap
-			cmp debootstrap.txt ./-.txt
-			rm debootstrap.txt
+			cmp shared/debootstrap.txt shared/-.txt
+			rm shared/debootstrap.txt
 			;;
 		standard)
-			[ $(comm -23 ./-.txt standard.txt | wc -l) -eq 0 ]
-			[ $(comm -13 ./-.txt standard.txt | wc -l) -gt 0 ]
-			rm ./-.txt standard.txt
+			[ $(comm -23 shared/-.txt shared/standard.txt | wc -l) -eq 0 ]
+			[ $(comm -13 shared/-.txt shared/standard.txt | wc -l) -gt 0 ]
+			rm shared/-.txt shared/standard.txt
 			;;
 		*) exit 1;;
 	esac
-
 done
 
 # test extract variant also with chrootless mode
 for mode in root unshare fakechroot proot chrootless; do
 	prefix=
-	if [ "$mode" = "root" ]; then
-		prefix=sudo
+	if [ "$mode" = "fakechroot" ]; then
+		# Devel::Cover doesn't survive mmdebstrap re-exec-ing itself
+		# with fakechroot, thus, we explicitly run mmdebstrap with
+		# fakechroot from the start
+		prefix="runuser -u user -- fakechroot fakeroot"
+	elif [ "$mode" != "root" ]; then
+		prefix="runuser -u user --"
 	fi
 	print_header "mode=$mode,variant=extract: unpack doc-debian"
-	$prefix $CMD --mode=$mode --variant=extract --include=doc-debian unstable ./debian-unstable $mirror
-	# delete contents of doc-debian
-	sudo rm ./debian-unstable/usr/share/doc-base/debian-*
-	sudo rm -r ./debian-unstable/usr/share/doc/debian
-	sudo rm -r ./debian-unstable/usr/share/doc/doc-debian
-	# delete real files
-	sudo rm ./debian-unstable/etc/apt/sources.list
-	sudo rm ./debian-unstable/etc/fstab
-	sudo rm ./debian-unstable/etc/hostname
-	sudo rm ./debian-unstable/etc/resolv.conf
-	sudo rm ./debian-unstable/var/lib/dpkg/status
-	# delete symlinks
-	sudo rm ./debian-unstable/libx32
-	sudo rm ./debian-unstable/lib64
-	sudo rm ./debian-unstable/lib32
-	sudo rm ./debian-unstable/sbin
-	sudo rm ./debian-unstable/bin
-	sudo rm ./debian-unstable/lib
-	# delete ./dev (files might exist or not depending on the mode)
-	sudo rm -f ./debian-unstable/dev/console
-	sudo rm -f ./debian-unstable/dev/fd
-	sudo rm -f ./debian-unstable/dev/full
-	sudo rm -f ./debian-unstable/dev/null
-	sudo rm -f ./debian-unstable/dev/ptmx
-	sudo rm -f ./debian-unstable/dev/random
-	sudo rm -f ./debian-unstable/dev/stderr
-	sudo rm -f ./debian-unstable/dev/stdin
-	sudo rm -f ./debian-unstable/dev/stdout
-	sudo rm -f ./debian-unstable/dev/tty
-	sudo rm -f ./debian-unstable/dev/urandom
-	sudo rm -f ./debian-unstable/dev/zero
-	# in chrootless mode, there is more to remove
-	if [ "$mode" = "chrootless" ]; then
-		sudo rm ./debian-unstable/var/log/apt/eipp.log.xz
-		sudo rm ./debian-unstable/var/lib/dpkg/triggers/Lock
-		sudo rm ./debian-unstable/var/lib/dpkg/triggers/Unincorp
-		sudo rm ./debian-unstable/var/lib/dpkg/status-old
-		sudo rm ./debian-unstable/var/lib/dpkg/info/format
-		sudo rm ./debian-unstable/var/lib/dpkg/info/doc-debian.md5sums
-		sudo rm ./debian-unstable/var/lib/dpkg/info/doc-debian.list
-	fi
-	# the rest should be empty directories that we can rmdir recursively
-	sudo find ./debian-unstable -depth -print0 | xargs -0 sudo rmdir
+	cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C
+adduser --gecos user --disabled-password user
+[ "$mode" = unshare ] && sysctl -w kernel.unprivileged_userns_clone=1
+$prefix $CMD --mode=$mode --variant=extract --include=doc-debian unstable /tmp/debian-unstable $mirror
+# delete contents of doc-debian
+rm /tmp/debian-unstable/usr/share/doc-base/debian-*
+rm -r /tmp/debian-unstable/usr/share/doc/debian
+rm -r /tmp/debian-unstable/usr/share/doc/doc-debian
+# delete real files
+rm /tmp/debian-unstable/etc/apt/sources.list
+rm /tmp/debian-unstable/etc/fstab
+rm /tmp/debian-unstable/etc/hostname
+rm /tmp/debian-unstable/etc/resolv.conf
+rm /tmp/debian-unstable/var/lib/dpkg/status
+# delete symlinks
+rm /tmp/debian-unstable/libx32
+rm /tmp/debian-unstable/lib64
+rm /tmp/debian-unstable/lib32
+rm /tmp/debian-unstable/sbin
+rm /tmp/debian-unstable/bin
+rm /tmp/debian-unstable/lib
+# delete ./dev (files might exist or not depending on the mode)
+rm -f /tmp/debian-unstable/dev/console
+rm -f /tmp/debian-unstable/dev/fd
+rm -f /tmp/debian-unstable/dev/full
+rm -f /tmp/debian-unstable/dev/null
+rm -f /tmp/debian-unstable/dev/ptmx
+rm -f /tmp/debian-unstable/dev/random
+rm -f /tmp/debian-unstable/dev/stderr
+rm -f /tmp/debian-unstable/dev/stdin
+rm -f /tmp/debian-unstable/dev/stdout
+rm -f /tmp/debian-unstable/dev/tty
+rm -f /tmp/debian-unstable/dev/urandom
+rm -f /tmp/debian-unstable/dev/zero
+# the rest should be empty directories that we can rmdir recursively
+find /tmp/debian-unstable -depth -print0 | xargs -0 rmdir
+END
+	./run_qemu.sh
 done
 
 print_header "mode=chrootless,variant=custom: install doc-debian"
-$CMD --mode=chrootless --variant=custom --include=doc-debian unstable ./debian-unstable $mirror
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C
+adduser --gecos user --disabled-password user
+runuser -u user -- $CMD --mode=chrootless --variant=custom --include=doc-debian unstable /tmp/debian-unstable $mirror
 # delete contents of doc-debian
-sudo rm ./debian-unstable/usr/share/doc-base/debian-*
-sudo rm -r ./debian-unstable/usr/share/doc/debian
-sudo rm -r ./debian-unstable/usr/share/doc/doc-debian
+rm /tmp/debian-unstable/usr/share/doc-base/debian-*
+rm -r /tmp/debian-unstable/usr/share/doc/debian
+rm -r /tmp/debian-unstable/usr/share/doc/doc-debian
 # delete real files
-sudo rm ./debian-unstable/etc/apt/sources.list
-sudo rm ./debian-unstable/etc/fstab
-sudo rm ./debian-unstable/etc/hostname
-sudo rm ./debian-unstable/etc/resolv.conf
-sudo rm ./debian-unstable/var/lib/dpkg/status
+rm /tmp/debian-unstable/etc/apt/sources.list
+rm /tmp/debian-unstable/etc/fstab
+rm /tmp/debian-unstable/etc/hostname
+rm /tmp/debian-unstable/etc/resolv.conf
+rm /tmp/debian-unstable/var/lib/dpkg/status
 # delete symlinks
-sudo rm ./debian-unstable/libx32
-sudo rm ./debian-unstable/lib64
-sudo rm ./debian-unstable/lib32
-sudo rm ./debian-unstable/sbin
-sudo rm ./debian-unstable/bin
-sudo rm ./debian-unstable/lib
+rm /tmp/debian-unstable/libx32
+rm /tmp/debian-unstable/lib64
+rm /tmp/debian-unstable/lib32
+rm /tmp/debian-unstable/sbin
+rm /tmp/debian-unstable/bin
+rm /tmp/debian-unstable/lib
 # in chrootless mode, there is more to remove
-sudo rm ./debian-unstable/var/log/apt/eipp.log.xz
-sudo rm ./debian-unstable/var/lib/dpkg/triggers/Lock
-sudo rm ./debian-unstable/var/lib/dpkg/triggers/Unincorp
-sudo rm ./debian-unstable/var/lib/dpkg/status-old
-sudo rm ./debian-unstable/var/lib/dpkg/info/format
-sudo rm ./debian-unstable/var/lib/dpkg/info/doc-debian.md5sums
-sudo rm ./debian-unstable/var/lib/dpkg/info/doc-debian.list
+rm /tmp/debian-unstable/var/log/apt/eipp.log.xz
+rm /tmp/debian-unstable/var/lib/dpkg/triggers/Lock
+rm /tmp/debian-unstable/var/lib/dpkg/triggers/Unincorp
+rm /tmp/debian-unstable/var/lib/dpkg/status-old
+rm /tmp/debian-unstable/var/lib/dpkg/info/format
+rm /tmp/debian-unstable/var/lib/dpkg/info/doc-debian.md5sums
+rm /tmp/debian-unstable/var/lib/dpkg/info/doc-debian.list
 # the rest should be empty directories that we can rmdir recursively
-sudo find ./debian-unstable -depth -print0 | xargs -0 sudo rmdir
+find /tmp/debian-unstable -depth -print0 | xargs -0 rmdir
+END
+./run_qemu.sh
 
 # test foreign architecture with all modes
 # create directory in sudo mode
 # FIXME: once fakechroot and proot are fixed, we have to test more variants
 #        than just essential
 print_header "mode=root,variant=essential: create directory"
-sudo $CMD --mode=root --variant=essential unstable ./debian-unstable $mirror
-sudo tar -C ./debian-unstable --one-file-system -c . | tar -t | sort > tar1.txt
-sudo rm -r --one-file-system ./debian-unstable
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C
+$CMD --mode=root --variant=essential unstable /tmp/unstable-chroot.tar $mirror
+tar -tf /tmp/unstable-chroot.tar | sort > tar1.txt
+END
+./run_qemu.sh
 
 # FIXME: once fakechroot and proot are fixed, we can switch to variant=apt
 # FIXME: cannot test fakechroot or proot because of
 #        https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=909637
 for mode in root unshare fakechroot proot; do
 	prefix=
-	if [ "$mode" = "root" ]; then
-		prefix=sudo
-	elif [ "$mode" = "fakechroot" ]; then
+	if [ "$mode" = "fakechroot" ]; then
 		# Devel::Cover doesn't survive mmdebstrap re-exec-ing itself
 		# with fakechroot, thus, we explicitly run mmdebstrap with
 		# fakechroot from the start
-		prefix="fakechroot fakeroot"
+		prefix="runuser -u user -- fakechroot fakeroot"
+	elif [ "$mode" != "root" ]; then
+		prefix="runuser -u user --"
 	fi
 	print_header "mode=$mode,variant=essential: create armhf tarball"
-	$prefix $CMD --mode=$mode --variant=essential --architectures=armhf unstable ./debian-unstable.tar $mirror
-	# we ignore differences between architectures by ignoring some files
-	# and renaming others
-	# in fakechroot mode, we use a fake ldconfig, so we have to
-	# artificially add some files
-	# in proot mode, some extra files are put there by proot
-	{ tar -tf ./debian-unstable.tar \
-		| grep -v '^./usr/lib/ld-linux-armhf.so.3$' \
-		| grep -v '^./usr/lib/arm-linux-gnueabihf/ld-linux.so.3$' \
-		| grep -v '^./usr/lib/arm-linux-gnueabihf/ld-linux-armhf.so.3$' \
-		| sed 's/arm-linux-gnueabihf/x86_64-linux-gnu/' \
-		| sed 's/armhf/amd64/';
-		[ "$mode" = "fakechroot" ] && printf "./etc/ld.so.cache\n./var/cache/ldconfig/\n";
-	} | sort > tar2.txt
-	{ cat tar1.txt \
-		| grep -v '^./usr/bin/i386$' \
-		| grep -v '^./usr/bin/x86_64$' \
-		| grep -v '^./usr/lib64/ld-linux-x86-64.so.2$' \
-		| grep -v '^./usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2$' \
-		| grep -v '^./usr/lib/x86_64-linux-gnu/libmvec-2.27.so$' \
-		| grep -v '^./usr/lib/x86_64-linux-gnu/libmvec.so.1$' \
-		| grep -v '^./usr/share/man/man8/i386.8.gz$' \
-		| grep -v '^./usr/share/man/man8/x86_64.8.gz$';
-		[ "$mode" = "proot" ] && printf "./etc/ld.so.preload\n./host-rootfs/\n";
-	} | sort | diff -u - tar2.txt
-	sudo rm ./debian-unstable.tar
+	cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C
+adduser --gecos user --disabled-password user
+[ "$mode" = unshare ] && sysctl -w kernel.unprivileged_userns_clone=1
+$prefix $CMD --mode=$mode --variant=essential --architectures=armhf unstable /tmp/unstable-chroot.tar $mirror
+# we ignore differences between architectures by ignoring some files
+# and renaming others
+# in fakechroot mode, we use a fake ldconfig, so we have to
+# artificially add some files
+# in proot mode, some extra files are put there by proot
+{ tar -tf /tmp/unstable-chroot.tar \
+	| grep -v '^./usr/lib/ld-linux-armhf.so.3$' \
+	| grep -v '^./usr/lib/arm-linux-gnueabihf/ld-linux.so.3$' \
+	| grep -v '^./usr/lib/arm-linux-gnueabihf/ld-linux-armhf.so.3$' \
+	| sed 's/arm-linux-gnueabihf/x86_64-linux-gnu/' \
+	| sed 's/armhf/amd64/';
+	[ "$mode" = "fakechroot" ] && printf "./etc/ld.so.cache\n./var/cache/ldconfig/\n";
+} | sort > tar2.txt
+{ cat tar1.txt \
+	| grep -v '^./usr/bin/i386$' \
+	| grep -v '^./usr/bin/x86_64$' \
+	| grep -v '^./usr/lib64/ld-linux-x86-64.so.2$' \
+	| grep -v '^./usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2$' \
+	| grep -v '^./usr/lib/x86_64-linux-gnu/libmvec-2.27.so$' \
+	| grep -v '^./usr/lib/x86_64-linux-gnu/libmvec.so.1$' \
+	| grep -v '^./usr/share/man/man8/i386.8.gz$' \
+	| grep -v '^./usr/share/man/man8/x86_64.8.gz$';
+	[ "$mode" = "proot" ] && printf "./etc/ld.so.preload\n";
+} | sort | diff -u - tar2.txt
+END
+	./run_qemu.sh
 done
 
 # test if auto mode picks the right mode
 
-kill $pid
+# test installation of foreign architecture packages
 
-wait $pid || true
+# test tty output
 
-cover -nogcov -report html_basic
+guestfish add-ro shared/cover_db.img : run : mount /dev/sda / : tar-out / - \
+       | tar -C shared/cover_db --extract
+
+cover -nogcov -report html_basic shared/cover_db
 mkdir -p report
 for f in common.js coverage.html cover.css css.js mmdebstrap--branch.html mmdebstrap--condition.html mmdebstrap.html mmdebstrap--subroutine.html standardista-table-sorting.js; do
-	cp -a cover_db/$f report
+	cp -a shared/cover_db/$f report
 done
+cover -delete shared/cover_db
 
 echo
 echo open file://$(pwd)/report/coverage.html in a browser
 echo
 
-sudo umount cover_db
-sudo rmdir cover_db
-rm tar1.txt tar2.txt
-rm cover_db.img
+rm shared/tar1.txt shared/tar2.txt

@@ -2,8 +2,8 @@
 
 set -eu
 
-mirrordir="./mirror"
-cachedir="./cache"
+mirrordir="./shared/debian"
+cachedir="./shared/cache"
 
 mirror="http://deb.debian.org/debian"
 arch1=$(dpkg --print-architecture)
@@ -22,11 +22,13 @@ if [ -e "$mirrordir/dists/unstable/Release" ]; then
 	esac
 fi
 
+# use -f because the files might not exist
 for dist in stable testing unstable; do
 	for variant in minbase buildd -; do
 		rm -f "$cachedir/debian-$dist-$variant.tar"
 	done
 done
+rm -f "$cachedir/debian-unstable.qcow"
 
 for nativearch in $arch1 $arch2; do
 	for dist in stable testing unstable; do
@@ -147,5 +149,103 @@ END
 		fi
 
 		rm -r "$rootdir"
+	done
+done
+
+# now fill the cache with new content
+mkdir -p "$cachedir"
+
+# We must not use any --dpkgopt here because any dpkg options still
+# leak into the chroot with chrootless mode.
+# We do not use our own package cache here because
+#   - it doesn't (and shouldn't) contain the extra packages
+#   - it doesn't matter if the base system is from a different mirror timestamp
+./mmdebstrap --variant=apt --architectures=amd64,armhf --mode=unshare \
+	--include=linux-image-amd64,systemd-sysv,perl,arch-test,fakechroot,fakeroot,mount,uidmap,proot,qemu-user-static,binfmt-support,qemu-user,dpkg-dev,mini-httpd,libdevel-cover-perl,debootstrap,libfakechroot:armhf,libfakeroot:armhf \
+	unstable debian-unstable.tar
+
+cat << END > extlinux.conf
+default linux
+timeout 0
+
+label linux
+kernel /vmlinuz
+append initrd=/initrd.img root=/dev/sda1 rw console=ttyS0,115200
+serial 0 115200
+END
+cat << END > mmdebstrap.service
+[Unit]
+Description=mmdebstrap worker script
+
+[Service]
+Type=oneshot
+ExecStart=/worker.sh
+
+[Install]
+WantedBy=multi-user.target
+END
+# here is something crazy:
+# as we run mmdebstrap, the process ends up being run by different users with
+# different privileges (real or fake). But for being able to collect
+# Devel::Cover data, they must all share a single directory. The only way that
+# I found to make this work is to mount the database directory with a
+# filesystem that doesn't support ownership information at all and a umask that
+# gives read/write access to everybody.
+# https://github.com/pjcj/Devel--Cover/issues/223
+cat << 'END' > worker.sh
+#!/bin/sh
+mount -t 9p -o trans=virtio,access=any mmdebstrap /mnt
+(
+	cd /mnt;
+	mkdir -p cover_db
+	mount -o loop,umask=000 cover_db.img cover_db
+	sh ./test.sh
+	ret=$?
+	df -h cover_db
+	umount cover_db
+	echo $ret
+) > /mnt/result.txt 2>&1
+umount /mnt
+systemctl poweroff
+END
+chmod +x worker.sh
+cat << 'END' > mini-httpd
+START=1
+DAEMON_OPTS="-h 127.0.0.1 -p 80 -u nobody -dd /mnt -i /var/run/mini-httpd.pid -T UTF-8"
+END
+cat << 'END' > hosts
+127.0.0.1 localhost
+END
+guestfish -N debian-unstable.img=disk:2G -- \
+	part-disk /dev/sda mbr : \
+	part-set-bootable /dev/sda 1 true : \
+	mkfs ext2 /dev/sda1 : \
+	mount /dev/sda1 / : \
+	tar-in debian-unstable.tar / : \
+	extlinux / : \
+	copy-in extlinux.conf / : \
+	mkdir-p /etc/systemd/system/multi-user.target.wants : \
+	ln-s ../mmdebstrap.service /etc/systemd/system/multi-user.target.wants/mmdebstrap.service : \
+	copy-in mmdebstrap.service /etc/systemd/system/ : \
+	copy-in worker.sh / : \
+	copy-in mini-httpd /etc/default : \
+	copy-in hosts /etc/ :
+rm extlinux.conf worker.sh mini-httpd hosts debian-unstable.tar mmdebstrap.service
+qemu-img convert -O qcow2 debian-unstable.img "$cachedir/debian-unstable.qcow"
+rm debian-unstable.img
+
+mirror="http://127.0.0.1/debian"
+SOURCE_DATE_EPOCH=$(date --date="$(grep-dctrl -s Date -n '' "$mirrordir/dists/unstable/Release")" +%s)
+for dist in stable testing unstable; do
+	for variant in minbase buildd -; do
+		echo running debootstrap --merged-usr --variant=$variant $dist ./debian-$dist-debootstrap "http://localhost:8000/"
+		cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C
+debootstrap --merged-usr --variant=$variant $dist /tmp/debian-$dist-debootstrap $mirror
+tar --sort=name --mtime=@$SOURCE_DATE_EPOCH --clamp-mtime --numeric-owner --one-file-system -C /tmp/debian-$dist-debootstrap -c . > "cache/debian-$dist-$variant.tar"
+END
+		./run_qemu.sh
 	done
 done
