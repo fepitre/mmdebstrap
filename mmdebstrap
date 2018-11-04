@@ -1052,7 +1052,7 @@ sub setup {
 		    # without --skip-same-version, dpkg will install the given
 		    # packages even though they are already installed
 		    print STDERR "I: re-installing packages because of path-exclude...\n";
-		    run_dpkg_progress [@essential_pkgs], @chrootcmd, 'dpkg', '--install';
+		    run_dpkg_progress [@essential_pkgs], @chrootcmd, 'dpkg', '--install', '--force-depends';
 		}
 	    }
 
