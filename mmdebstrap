@@ -1760,6 +1760,7 @@ sub main() {
 		    my @qemuopt = ();
 		    if (defined $options->{qemu}) {
 			push @qemuopt, "--qemu=qemu-$options->{qemu}";
+			push @taropts, "--exclude=./host-rootfs"
 		    }
 		    0 == system('proot', '--root-id', "--rootfs=$options->{root}", '--cwd=/', @qemuopt, 'tar', @taropts, '-C', '/', '.') or die "tar failed: $?";
 		} elsif (any { $_ eq $options->{mode} } ('root', 'chrootless')) {
