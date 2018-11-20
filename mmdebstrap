@@ -897,30 +897,13 @@ sub setup {
 	die "nothing got downloaded";
     }
 
-    if ($options->{mode} eq 'chrootless') {
-	print STDERR "I: installing packages...\n";
-	# FIXME: the dpkg config from the host is parsed before the command
-	# line arguments are parsed and might break this mode
-	# Example: if the host has --path-exclude set, then this will also
-	# affect the chroot.
-	my @chrootless_opts = (
-	    '-oDPkg::Options::=--force-not-root',
-	    '-oDPkg::Options::=--force-script-chrootless',
-	    '-oDPkg::Options::=--root=' . $options->{root},
-	    '-oDPkg::Options::=--log=' . "$options->{root}/var/log/dpkg.log");
-	run_apt_progress ('apt-get', '--yes', @chrootless_opts,
-	    'install', (map { "$options->{root}/$_" } @essential_pkgs));
-	if (any { $_ eq $options->{variant} } ('extract', 'custom')) {
-	    # nothing to do
-	} elsif (any { $_ eq $options->{variant} } ('essential', 'apt', 'standard', 'important', 'required', 'buildd', 'minbase')) {
-	    if (%pkgs_to_install) {
-		run_apt_progress ('apt-get', '--yes', @chrootless_opts,
-		    'install', keys %pkgs_to_install);
-	    }
-	} else {
-	    die "unknown variant: $options->{variant}";
-	}
-    } elsif (any { $_ eq $options->{mode} } ('root', 'unshare', 'fakechroot', 'proot')) {
+    # We have to extract the packages from @essential_pkgs either if we run in
+    # chrootless mode and extract variant or in any other mode.
+    # In other words, the only scenario in which the @essential_pkgs are not
+    # extracted are in chrootless mode in any other than the extract variant.
+    if ($options->{mode} eq 'chrootless' and $options->{variant} ne 'extract') {
+	# nothing to do
+    } else {
 	print STDERR "I: extracting archives...\n";
 	print_progress 0.0;
 	my $counter = 0;
@@ -947,9 +930,39 @@ sub setup {
 	    print_progress ($counter/$total*100);
 	}
 	print_progress "done";
+    }
+
+    if ($options->{mode} eq 'chrootless') {
+	print STDERR "I: installing packages...\n";
+	# FIXME: the dpkg config from the host is parsed before the command
+	# line arguments are parsed and might break this mode
+	# Example: if the host has --path-exclude set, then this will also
+	# affect the chroot.
+	my @chrootless_opts = (
+	    '-oDPkg::Options::=--force-not-root',
+	    '-oDPkg::Options::=--force-script-chrootless',
+	    '-oDPkg::Options::=--root=' . $options->{root},
+	    '-oDPkg::Options::=--log=' . "$options->{root}/var/log/dpkg.log");
+	if ($options->{variant} eq 'extract') {
+	    # nothing to do
+	} else {
+	    run_apt_progress ('apt-get', '--yes', @chrootless_opts,
+		'install', (map { "$options->{root}/$_" } @essential_pkgs));
+	}
+	if (any { $_ eq $options->{variant} } ('extract', 'custom')) {
+	    # nothing to do
+	} elsif (any { $_ eq $options->{variant} } ('essential', 'apt', 'standard', 'important', 'required', 'buildd', 'minbase')) {
+	    if (%pkgs_to_install) {
+		run_apt_progress ('apt-get', '--yes', @chrootless_opts,
+		    'install', keys %pkgs_to_install);
+	    }
+	} else {
+	    die "unknown variant: $options->{variant}";
+	}
+    } elsif (any { $_ eq $options->{mode} } ('root', 'unshare', 'fakechroot', 'proot')) {
 
 	if ($options->{variant} eq 'extract') {
-	    # nothing else to do
+	    # nothing to do
 	} elsif (any { $_ eq $options->{variant} } ('custom', 'essential', 'apt', 'standard', 'important', 'required', 'buildd', 'minbase')) {
 	    if ($options->{mode} eq 'fakechroot') {
 		# FIXME: if trouble arises, look into /etc/fakechroot/*.env for
