@@ -1,3 +1,12 @@
+0.3.0 (2018-11-21)
+------------------
+
+ - add chrootless mode
+ - add extract and custom variants
+ - make testsuite unprivileged through qemu and guestfish
+ - allow empty lost+found directory in target
+ - add 54 testcases and fix lots of bugs as a result
+
 0.2.0 (2018-10-03)
 ------------------
 
