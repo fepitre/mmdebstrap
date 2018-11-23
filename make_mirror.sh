@@ -223,6 +223,8 @@ END
 cat << 'END' > hosts
 127.0.0.1 localhost
 END
+#libguestfs-test-tool
+#export LIBGUESTFS_DEBUG=1 LIBGUESTFS_TRACE=1
 guestfish -N debian-unstable.img=disk:2G -- \
 	part-disk /dev/sda mbr : \
 	part-set-bootable /dev/sda 1 true : \
