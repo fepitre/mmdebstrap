@@ -597,15 +597,17 @@ done
 guestfish add-ro shared/cover_db.img : run : mount /dev/sda / : tar-out / - \
        | tar -C shared/cover_db --extract
 
-cover -nogcov -report html_basic shared/cover_db
-mkdir -p report
-for f in common.js coverage.html cover.css css.js mmdebstrap--branch.html mmdebstrap--condition.html mmdebstrap.html mmdebstrap--subroutine.html standardista-table-sorting.js; do
-	cp -a shared/cover_db/$f report
-done
-cover -delete shared/cover_db
+if [ -e shared/cover_db/runs ]; then
+	cover -nogcov -report html_basic shared/cover_db
+	mkdir -p report
+	for f in common.js coverage.html cover.css css.js mmdebstrap--branch.html mmdebstrap--condition.html mmdebstrap.html mmdebstrap--subroutine.html standardista-table-sorting.js; do
+		cp -a shared/cover_db/$f report
+	done
+	cover -delete shared/cover_db
 
-echo
-echo open file://$(pwd)/report/coverage.html in a browser
-echo
+	echo
+	echo open file://$(pwd)/report/coverage.html in a browser
+	echo
+fi
 
 rm shared/tar1.txt shared/tar2.txt
