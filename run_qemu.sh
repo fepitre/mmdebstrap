@@ -4,7 +4,9 @@ set -eu
 
 cachedir="./shared/cache"
 
-qemu-img create -f qcow2 -b "$cachedir/debian-unstable.qcow" debian-unstable-overlay.qcow
+# the path to debian-unstable.qcow must be absolute or otherwise qemu will
+# look for the path relative to debian-unstable-overlay.qcow
+qemu-img create -f qcow2 -b "$(realpath $cachedir)/debian-unstable.qcow" debian-unstable-overlay.qcow
 qemu-system-x86_64 -enable-kvm -m 512M -nographic \
 	-monitor unix:/tmp/monitor,server,nowait \
 	-serial unix:/tmp/ttyS0,server,nowait \
