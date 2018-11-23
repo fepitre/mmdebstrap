@@ -93,14 +93,10 @@ There is no `--second-stage` option.
 Tests
 =====
 
-The script `test.sh` compares the output of mmdebstrap with debootstrap in
-several scenarios. Since debootstrap needs superuser privileges, `test.sh`
-needs `sudo` to run.
-
 The script `coverage.sh` runs mmdebstrap in all kind of scenarios to execute
 all code paths of the script. It verifies its output in each scenario and
-displays the results gathered with Devel::Cover. Due to a whacky setup and to
-also test root mode, this script needs superuser privileges.
+displays the results gathered with Devel::Cover. It also compares the output of
+mmdebstrap with debootstrap in several scenarios.
 
 Bugs
 ====
