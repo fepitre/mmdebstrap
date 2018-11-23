@@ -197,12 +197,16 @@ cat << 'END' > worker.sh
 mount -t 9p -o trans=virtio,access=any mmdebstrap /mnt
 (
 	cd /mnt;
-	mkdir -p cover_db
-	mount -o loop,umask=000 cover_db.img cover_db
+	if [ -e cover_db.img ]; then
+		mkdir -p cover_db
+		mount -o loop,umask=000 cover_db.img cover_db
+	fi
 	sh ./test.sh
 	ret=$?
-	df -h cover_db
-	umount cover_db
+	if [ -e cover_db.img ]; then
+		df -h cover_db
+		umount cover_db
+	fi
 	echo $ret
 ) > /mnt/result.txt 2>&1
 umount /mnt
