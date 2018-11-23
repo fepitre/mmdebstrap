@@ -1,5 +1,7 @@
 #!/bin/sh
 
+set -eu
+
 cachedir="./shared/cache"
 
 qemu-img create -f qcow2 -b "$cachedir/debian-unstable.qcow" debian-unstable-overlay.qcow
