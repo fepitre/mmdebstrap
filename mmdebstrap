@@ -747,7 +747,11 @@ sub setup {
     }
 
     # setting PATH for chroot, ldconfig, start-stop-daemon...
-    $ENV{"PATH"} = "/usr/sbin:/usr/bin:/sbin:/bin";
+    if (defined $ENV{PATH} && $ENV{PATH} ne "") {
+	$ENV{PATH} = "$ENV{PATH}:/usr/sbin:/usr/bin:/sbin:/bin";
+    } else {
+	$ENV{PATH} = "/usr/sbin:/usr/bin:/sbin:/bin";
+    }
 
     my %pkgs_to_install;
     if (defined $options->{include}) {
