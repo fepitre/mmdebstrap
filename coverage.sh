@@ -12,7 +12,10 @@ rm -f shared/cover_db.img
 # prepare image for cover_db
 guestfish -N shared/cover_db.img=disk:100M -- mkfs vfat /dev/sda
 
-cp mmdebstrap shared
+# only copy if necessary
+if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
+	cp -a mmdebstrap shared
+fi
 
 starttime=
 total=54
