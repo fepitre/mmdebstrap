@@ -163,11 +163,12 @@ mkdir -p "$cachedir"
 # Write tarfile via redirection because in the Debian package autopkgtest
 # ./mmdebstrap is a suid binary and we do not want the tarfile being owned
 # by root.
+tmpdir="$(mktemp -d)"
 ./mmdebstrap --variant=apt --architectures=amd64,armhf --mode=unshare \
 	--include=linux-image-amd64,systemd-sysv,perl,arch-test,fakechroot,fakeroot,mount,uidmap,proot,qemu-user-static,binfmt-support,qemu-user,dpkg-dev,mini-httpd,libdevel-cover-perl,debootstrap,libfakechroot:armhf,libfakeroot:armhf \
-	unstable > debian-unstable.tar
+	unstable > "$tmpdir/debian-unstable.tar"
 
-cat << END > extlinux.conf
+cat << END > "$tmpdir/extlinux.conf"
 default linux
 timeout 0
 
@@ -176,7 +177,7 @@ kernel /vmlinuz
 append initrd=/initrd.img root=/dev/sda1 rw console=ttyS0,115200
 serial 0 115200
 END
-cat << END > mmdebstrap.service
+cat << END > "$tmpdir/mmdebstrap.service"
 [Unit]
 Description=mmdebstrap worker script
 
@@ -195,7 +196,7 @@ END
 # filesystem that doesn't support ownership information at all and a umask that
 # gives read/write access to everybody.
 # https://github.com/pjcj/Devel--Cover/issues/223
-cat << 'END' > worker.sh
+cat << 'END' > "$tmpdir/worker.sh"
 #!/bin/sh
 mount -t 9p -o trans=virtio,access=any mmdebstrap /mnt
 (
@@ -215,33 +216,34 @@ mount -t 9p -o trans=virtio,access=any mmdebstrap /mnt
 umount /mnt
 systemctl poweroff
 END
-chmod +x worker.sh
-cat << 'END' > mini-httpd
+chmod +x "$tmpdir/worker.sh"
+cat << 'END' > "$tmpdir/mini-httpd"
 START=1
 DAEMON_OPTS="-h 127.0.0.1 -p 80 -u nobody -dd /mnt -i /var/run/mini-httpd.pid -T UTF-8"
 END
-cat << 'END' > hosts
+cat << 'END' > "$tmpdir/hosts"
 127.0.0.1 localhost
 END
 #libguestfs-test-tool
 #export LIBGUESTFS_DEBUG=1 LIBGUESTFS_TRACE=1
-guestfish -N debian-unstable.img=disk:2G -- \
+guestfish -N "$tmpdir/debian-unstable.img"=disk:2G -- \
 	part-disk /dev/sda mbr : \
 	part-set-bootable /dev/sda 1 true : \
 	mkfs ext2 /dev/sda1 : \
 	mount /dev/sda1 / : \
-	tar-in debian-unstable.tar / : \
+	tar-in "$tmpdir/debian-unstable.tar" / : \
 	extlinux / : \
-	copy-in extlinux.conf / : \
+	copy-in "$tmpdir/extlinux.conf" / : \
 	mkdir-p /etc/systemd/system/multi-user.target.wants : \
 	ln-s ../mmdebstrap.service /etc/systemd/system/multi-user.target.wants/mmdebstrap.service : \
-	copy-in mmdebstrap.service /etc/systemd/system/ : \
-	copy-in worker.sh / : \
-	copy-in mini-httpd /etc/default : \
-	copy-in hosts /etc/ :
-rm extlinux.conf worker.sh mini-httpd hosts debian-unstable.tar mmdebstrap.service
-qemu-img convert -O qcow2 debian-unstable.img "$cachedir/debian-unstable.qcow"
-rm debian-unstable.img
+	copy-in "$tmpdir/mmdebstrap.service" /etc/systemd/system/ : \
+	copy-in "$tmpdir/worker.sh" / : \
+	copy-in "$tmpdir/mini-httpd" /etc/default : \
+	copy-in "$tmpdir/hosts" /etc/ :
+rm "$tmpdir/extlinux.conf" "$tmpdir/worker.sh" "$tmpdir/mini-httpd" "$tmpdir/hosts" "$tmpdir/debian-unstable.tar" "$tmpdir/mmdebstrap.service"
+qemu-img convert -O qcow2 "$tmpdir/debian-unstable.img" "$cachedir/debian-unstable.qcow"
+rm "$tmpdir/debian-unstable.img"
+rmdir "$tmpdir"
 
 mirror="http://127.0.0.1/debian"
 SOURCE_DATE_EPOCH=$(date --date="$(grep-dctrl -s Date -n '' "$mirrordir/dists/unstable/Release")" +%s)
