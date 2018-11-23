@@ -160,9 +160,12 @@ mkdir -p "$cachedir"
 # We do not use our own package cache here because
 #   - it doesn't (and shouldn't) contain the extra packages
 #   - it doesn't matter if the base system is from a different mirror timestamp
+# Write tarfile via redirection because in the Debian package autopkgtest
+# ./mmdebstrap is a suid binary and we do not want the tarfile being owned
+# by root.
 ./mmdebstrap --variant=apt --architectures=amd64,armhf --mode=unshare \
 	--include=linux-image-amd64,systemd-sysv,perl,arch-test,fakechroot,fakeroot,mount,uidmap,proot,qemu-user-static,binfmt-support,qemu-user,dpkg-dev,mini-httpd,libdevel-cover-perl,debootstrap,libfakechroot:armhf,libfakeroot:armhf \
-	unstable debian-unstable.tar
+	unstable > debian-unstable.tar
 
 cat << END > extlinux.conf
 default linux
