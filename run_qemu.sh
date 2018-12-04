@@ -8,7 +8,11 @@ tmpdir="$(mktemp -d)"
 # the path to debian-unstable.qcow must be absolute or otherwise qemu will
 # look for the path relative to debian-unstable-overlay.qcow
 qemu-img create -f qcow2 -b "$(realpath $cachedir)/debian-unstable.qcow" "$tmpdir/debian-unstable-overlay.qcow"
-qemu-system-x86_64 -enable-kvm -m 512M -nographic \
+KVM=
+if [ -e /dev/kvm ]; then
+	KVM="-enable-kvm"
+fi
+qemu-system-x86_64 $KVM -m 512M -nographic \
 	-monitor unix:/tmp/monitor,server,nowait \
 	-serial unix:/tmp/ttyS0,server,nowait \
 	-serial unix:/tmp/ttyS1,server,nowait \
