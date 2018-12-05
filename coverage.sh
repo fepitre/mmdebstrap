@@ -9,8 +9,12 @@ mirrordir="./shared/debian"
 # we use -f because the file might not exist
 rm -f shared/cover_db.img
 
-# prepare image for cover_db
-guestfish -N shared/cover_db.img=disk:100M -- mkfs vfat /dev/sda
+: "${HAVE_QEMU:=yes}"
+
+if [ "$HAVE_QEMU" = "yes" ]; then
+	# prepare image for cover_db
+	guestfish -N shared/cover_db.img=disk:100M -- mkfs vfat /dev/sda
+fi
 
 # only copy if necessary
 if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
@@ -44,6 +48,15 @@ SOURCE_DATE_EPOCH=$(date --date="$(grep-dctrl -s Date -n '' "$mirrordir/dists/un
 # for traditional sort order that uses native byte values
 export LC_ALL=C
 
+: "${HAVE_UNSHARE:=yes}"
+: "${HAVE_PROOT:=yes}"
+: "${HAVE_BINFMT:=yes}"
+
+defaultmode="auto"
+if [ "$HAVE_UNSHARE" != "yes" ]; then
+	defaultmode="root"
+fi
+
 # by default, use the mmdebstrap executable in the current directory together
 # with perl Devel::Cover but allow to overwrite this
 : "${CMD:=perl -MDevel::Cover=-silent,-nogcov ./mmdebstrap}"
@@ -56,6 +69,12 @@ for dist in stable testing unstable; do
 			continue
 		fi
 		print_header "mode=root,variant=$variant: check against debootstrap $dist"
+
+		if [ ! -e "shared/cache/debian-$dist-$variant.tar" ]; then
+			echo "shared/cache/debian-$dist-$variant.tar does not exist. Skipping..."
+			continue
+		fi
+
 		cat << END > shared/test.sh
 #!/bin/sh
 set -eu
@@ -138,8 +157,15 @@ diff --no-dereference --brief --recursive /tmp/debian-$dist-debootstrap /tmp/deb
 #
 # we cannot use this (yet) because it cannot copy with paths that have [ or @ in them
 #fmtree -c -p /tmp/debian-$dist-debootstrap -k flags,gid,link,mode,size,time,uid | sudo fmtree -p /tmp/debian-$dist-mm
+
+rm /tmp/debian-$dist-mm.tar
+rm -r /tmp/debian-$dist-debootstrap /tmp/debian-$dist-mm
 END
-		./run_qemu.sh
+		if [ "$HAVE_QEMU" = "yes" ]; then
+			./run_qemu.sh
+		else
+			./run_null.sh SUDO
+		fi
 	done
 done
 
@@ -150,8 +176,13 @@ set -eu
 export LC_ALL=C
 $CMD --mode=root --variant=apt unstable /tmp/debian-unstable $mirror
 tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar1.txt
+rm -r /tmp/debian-unstable
 END
-./run_qemu.sh
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	./run_null.sh SUDO
+fi
 
 print_header "mode=root,variant=apt: test progress bars on fake tty"
 cat << END > shared/test.sh
@@ -161,8 +192,13 @@ export LC_ALL=C
 script -qfc "$CMD --mode=root --variant=apt unstable /tmp/unstable-chroot.tar $mirror" /dev/null
 tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
 diff -u tar1.txt tar2.txt
+rm /tmp/unstable-chroot.tar
 END
-./run_qemu.sh
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	./run_null.sh SUDO
+fi
 
 print_header "mode=root,variant=apt: existing empty directory"
 cat << END > shared/test.sh
@@ -173,8 +209,13 @@ mkdir /tmp/debian-unstable
 $CMD --mode=root --variant=apt unstable /tmp/debian-unstable $mirror
 tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
 diff -u tar1.txt tar2.txt
+rm -r /tmp/debian-unstable
 END
-./run_qemu.sh
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	./run_null.sh SUDO
+fi
 
 print_header "mode=unshare,variant=apt: create tarball"
 cat << END > shared/test.sh
@@ -186,19 +227,31 @@ sysctl -w kernel.unprivileged_userns_clone=1
 runuser -u user -- $CMD --mode=unshare --variant=apt unstable /tmp/unstable-chroot.tar $mirror
 tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
 diff -u tar1.txt tar2.txt
+rm /tmp/unstable-chroot.tar
 END
-./run_qemu.sh
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	echo "HAVE_QEMU != yes -- Skipping test..."
+fi
 
-print_header "mode=auto,variant=apt: read from stdin, write to stdout"
+print_header "mode=$defaultmode,variant=apt: read from stdin, write to stdout"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C
-echo "deb $mirror unstable main" | $CMD --variant=apt > /tmp/unstable-chroot.tar
+echo "deb $mirror unstable main" | $CMD --mode=$defaultmode --variant=apt > /tmp/unstable-chroot.tar
 tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
 diff -u tar1.txt tar2.txt
+rm /tmp/unstable-chroot.tar
 END
-./run_qemu.sh
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+elif [ "$defaultmode" = "root" ]; then
+	./run_null.sh SUDO
+else
+	./run_null.sh
+fi
 
 print_header "mode=auto,variant=apt: default mirror"
 cat << END > shared/test.sh
@@ -206,11 +259,18 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C
 echo "127.0.0.1 deb.debian.org" >> /etc/hosts
-$CMD --variant=apt unstable /tmp/unstable-chroot.tar
+$CMD --mode=$defaultmode --variant=apt unstable /tmp/unstable-chroot.tar
 tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
 diff -u tar1.txt tar2.txt
+rm /tmp/unstable-chroot.tar
 END
-./run_qemu.sh
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+elif [ "$defaultmode" = "root" ]; then
+	./run_null.sh SUDO
+else
+	./run_null.sh
+fi
 
 print_header "mode=auto,variant=apt: pass distribution but implicitly write to stdout"
 cat << END > shared/test.sh
@@ -218,33 +278,52 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C
 echo "127.0.0.1 deb.debian.org" >> /etc/hosts
-$CMD --variant=apt unstable > /tmp/unstable-chroot.tar
+$CMD --mode=$defaultmode --variant=apt unstable > /tmp/unstable-chroot.tar
 tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
 diff -u tar1.txt tar2.txt
+rm /tmp/unstable-chroot.tar
 END
-./run_qemu.sh
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	echo "HAVE_QEMU != yes -- Skipping test..."
+fi
 
 print_header "mode=auto,variant=apt: mirror is -"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C
-echo "deb $mirror unstable main" | $CMD --variant=apt unstable /tmp/unstable-chroot.tar -
+echo "deb $mirror unstable main" | $CMD --mode=$defaultmode --variant=apt unstable /tmp/unstable-chroot.tar -
 tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
 diff -u tar1.txt tar2.txt
+rm /tmp/unstable-chroot.tar
 END
-./run_qemu.sh
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+elif [ "$defaultmode" = "root" ]; then
+	./run_null.sh SUDO
+else
+	./run_null.sh
+fi
 
 print_header "mode=auto,variant=apt: mirror is deb..."
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C
-$CMD --variant=apt unstable /tmp/unstable-chroot.tar "deb $mirror unstable main"
+$CMD --mode=$defaultmode --variant=apt unstable /tmp/unstable-chroot.tar "deb $mirror unstable main"
 tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
 diff -u tar1.txt tar2.txt
+rm /tmp/unstable-chroot.tar
 END
-./run_qemu.sh
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+elif [ "$defaultmode" = "root" ]; then
+	./run_null.sh SUDO
+else
+	./run_null.sh
+fi
 
 print_header "mode=auto,variant=apt: mirror is real file"
 cat << END > shared/test.sh
@@ -252,22 +331,36 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C
 echo "deb $mirror unstable main" > /tmp/sources.list
-$CMD --variant=apt unstable /tmp/unstable-chroot.tar /tmp/sources.list
+$CMD --mode=$defaultmode --variant=apt unstable /tmp/unstable-chroot.tar /tmp/sources.list
 tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
 diff -u tar1.txt tar2.txt
+rm /tmp/unstable-chroot.tar /tmp/sources.list
 END
-./run_qemu.sh
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+elif [ "$defaultmode" = "root" ]; then
+	./run_null.sh SUDO
+else
+	./run_null.sh
+fi
 
 print_header "mode=auto,variant=apt: no mirror but data on stdin"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C
-echo "deb $mirror unstable main" | $CMD --variant=apt unstable /tmp/unstable-chroot.tar
+echo "deb $mirror unstable main" | $CMD --mode=$defaultmode --variant=apt unstable /tmp/unstable-chroot.tar
 tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
 diff -u tar1.txt tar2.txt
+rm /tmp/unstable-chroot.tar
 END
-./run_qemu.sh
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+elif [ "$defaultmode" = "root" ]; then
+	./run_null.sh SUDO
+else
+	./run_null.sh
+fi
 
 print_header "mode=root,variant=apt: add foreign architecture"
 cat << END > shared/test.sh
@@ -279,8 +372,13 @@ $CMD --mode=root --variant=apt --architectures=amd64,armhf unstable /tmp/debian-
 rm /tmp/debian-unstable/var/lib/dpkg/arch
 tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
 diff -u tar1.txt tar2.txt
+rm -r /tmp/debian-unstable
 END
-./run_qemu.sh
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	./run_null.sh SUDO
+fi
 
 print_header "mode=root,variant=apt: test --aptopt"
 cat << END > shared/test.sh
@@ -292,8 +390,13 @@ echo "Acquire::Check-Valid-Until false;" | cmp /tmp/debian-unstable/etc/apt/apt.
 rm /tmp/debian-unstable/etc/apt/apt.conf.d/99mmdebstrap
 tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
 diff -u tar1.txt tar2.txt
+rm -r /tmp/debian-unstable
 END
-./run_qemu.sh
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	./run_null.sh SUDO
+fi
 
 print_header "mode=root,variant=apt: test --dpkgopt"
 cat << END > shared/test.sh
@@ -305,8 +408,13 @@ echo "path-exclude=/usr/share/doc/*" | cmp /tmp/debian-unstable/etc/dpkg/dpkg.cf
 rm /tmp/debian-unstable/etc/dpkg/dpkg.cfg.d/99mmdebstrap
 tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
 grep -v '^./usr/share/doc/.' tar1.txt | diff -u - tar2.txt
+rm -r /tmp/debian-unstable
 END
-./run_qemu.sh
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	./run_null.sh SUDO
+fi
 
 print_header "mode=root,variant=apt: test --include"
 cat << END > shared/test.sh
@@ -322,8 +430,13 @@ rm /tmp/debian-unstable/var/lib/dpkg/info/doc-debian.list
 rm /tmp/debian-unstable/var/lib/dpkg/info/doc-debian.md5sums
 tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
 diff -u tar1.txt tar2.txt
+rm -r /tmp/debian-unstable
 END
-./run_qemu.sh
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	./run_null.sh SUDO
+fi
 
 # test all variants
 
@@ -335,8 +448,13 @@ set -eu
 export LC_ALL=C
 $CMD --mode=root --variant=$variant unstable /tmp/unstable-chroot.tar $mirror
 tar -tf /tmp/unstable-chroot.tar | sort > "$variant.txt"
+rm /tmp/unstable-chroot.tar
 END
-	./run_qemu.sh
+	if [ "$HAVE_QEMU" = "yes" ]; then
+		./run_qemu.sh
+	else
+		./run_null.sh SUDO
+	fi
 	# check if the other modes produce the same result in each variant
 	for mode in unshare fakechroot proot; do
 		# fontconfig doesn't install reproducibly because differences
@@ -356,20 +474,35 @@ END
 				;;
 		esac
 		print_header "mode=$mode,variant=$variant: create tarball"
+		if [ "$mode" = "unshare" ] && [ "$HAVE_UNSHARE" != "yes" ]; then
+			echo "HAVE_UNSHARE != yes -- Skipping test..."
+			continue
+		fi
+		if [ "$mode" = "proot" ] && [ "$HAVE_PROOT" != "yes" ]; then
+			echo "HAVE_PROOT != yes -- Skipping test..."
+			continue
+		fi
 		cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C
-adduser --gecos user --disabled-password user
+[ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1 && adduser --gecos user --disabled-password user
 [ "$mode" = unshare ] && sysctl -w kernel.unprivileged_userns_clone=1
-runuser -u user -- $CMD --mode=$mode --variant=$variant unstable /tmp/unstable-chroot.tar $mirror
+prefix=
+[ "\$(id -u)" -eq 0 ] && prefix="runuser -u user --"
+\$prefix $CMD --mode=$mode --variant=$variant unstable /tmp/unstable-chroot.tar $mirror
 # in fakechroot mode, we use a fake ldconfig, so we have to
 # artificially add some files
 { tar -tf /tmp/unstable-chroot.tar;
   [ "$mode" = "fakechroot" ] && printf "./etc/ld.so.cache\n./var/cache/ldconfig/\n";
 } | sort | diff -u "./$variant.txt" -
+rm /tmp/unstable-chroot.tar
 END
-		./run_qemu.sh
+		if [ "$HAVE_QEMU" = "yes" ]; then
+			./run_qemu.sh
+		else
+			./run_null.sh
+		fi
 		# Devel::Cover doesn't survive mmdebstrap re-exec-ing itself
 		# with fakechroot, thus, we do an additional run where we
 		# explicitly run mmdebstrap with fakechroot from the start
@@ -379,13 +512,20 @@ END
 #!/bin/sh
 set -eu
 export LC_ALL=C
-adduser --gecos user --disabled-password user
-runuser -u user -- fakechroot fakeroot $CMD --mode=$mode --variant=$variant unstable /tmp/unstable-chroot.tar $mirror
+[ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1 && adduser --gecos user --disabled-password user
+prefix=
+[ "\$(id -u)" -eq 0 ] && prefix="runuser -u user --"
+\$prefix fakechroot fakeroot $CMD --mode=$mode --variant=$variant unstable /tmp/unstable-chroot.tar $mirror
 { tar -tf /tmp/unstable-chroot.tar;
   printf "./etc/ld.so.cache\n./var/cache/ldconfig/\n";
 } | sort | diff -u "./$variant.txt" -
+rm /tmp/unstable-chroot.tar
 END
-			./run_qemu.sh
+			if [ "$HAVE_QEMU" = "yes" ]; then
+				./run_qemu.sh
+			else
+				./run_null.sh
+			fi
 		fi
 	done
 	# some variants are equal and some are strict superset of the last
@@ -435,23 +575,25 @@ done
 
 # test extract variant also with chrootless mode
 for mode in root unshare fakechroot proot chrootless; do
-	prefix=
-	if [ "$mode" = "fakechroot" ]; then
-		# Devel::Cover doesn't survive mmdebstrap re-exec-ing itself
-		# with fakechroot, thus, we explicitly run mmdebstrap with
-		# fakechroot from the start
-		prefix="runuser -u user -- fakechroot fakeroot"
-	elif [ "$mode" != "root" ]; then
-		prefix="runuser -u user --"
-	fi
 	print_header "mode=$mode,variant=extract: unpack doc-debian"
+	if [ "$mode" = "unshare" ] && [ "$HAVE_UNSHARE" != "yes" ]; then
+		echo "HAVE_UNSHARE != yes -- Skipping test..."
+		continue
+	fi
+	if [ "$mode" = "proot" ] && [ "$HAVE_PROOT" != "yes" ]; then
+		echo "HAVE_PROOT != yes -- Skipping test..."
+		continue
+	fi
 	cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C
-adduser --gecos user --disabled-password user
+[ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1 && adduser --gecos user --disabled-password user
 [ "$mode" = unshare ] && sysctl -w kernel.unprivileged_userns_clone=1
-$prefix $CMD --mode=$mode --variant=extract --include=doc-debian unstable /tmp/debian-unstable $mirror
+prefix=
+[ "\$(id -u)" -eq 0 ] && [ "$mode" != "root" ] && prefix="runuser -u user --"
+[ "$mode" = "fakechroot" ] && prefix="\$prefix fakechroot fakeroot"
+\$prefix $CMD --mode=$mode --variant=extract --include=doc-debian unstable /tmp/debian-unstable $mirror
 # delete contents of doc-debian
 rm /tmp/debian-unstable/usr/share/doc-base/debian-*
 rm -r /tmp/debian-unstable/usr/share/doc/debian
@@ -485,7 +627,13 @@ rm -f /tmp/debian-unstable/dev/zero
 # the rest should be empty directories that we can rmdir recursively
 find /tmp/debian-unstable -depth -print0 | xargs -0 rmdir
 END
-	./run_qemu.sh
+	if [ "$HAVE_QEMU" = "yes" ]; then
+		./run_qemu.sh
+	elif [ "$mode" = "root" ]; then
+		./run_null.sh SUDO
+	else
+		./run_null.sh
+	fi
 done
 
 print_header "mode=chrootless,variant=custom: install doc-debian"
@@ -493,8 +641,10 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C
-adduser --gecos user --disabled-password user
-runuser -u user -- $CMD --mode=chrootless --variant=custom --include=doc-debian unstable /tmp/debian-unstable $mirror
+[ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1 && adduser --gecos user --disabled-password user
+prefix=
+[ "\$(id -u)" -eq 0 ] && prefix="runuser -u user --"
+\$prefix $CMD --mode=chrootless --variant=custom --include=doc-debian unstable /tmp/debian-unstable $mirror
 # delete contents of doc-debian
 rm /tmp/debian-unstable/usr/share/doc-base/debian-*
 rm -r /tmp/debian-unstable/usr/share/doc/debian
@@ -523,7 +673,11 @@ rm /tmp/debian-unstable/var/lib/dpkg/info/doc-debian.list
 # the rest should be empty directories that we can rmdir recursively
 find /tmp/debian-unstable -depth -print0 | xargs -0 rmdir
 END
-./run_qemu.sh
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	./run_null.sh
+fi
 
 # test foreign architecture with all modes
 # create directory in sudo mode
@@ -536,30 +690,41 @@ set -eu
 export LC_ALL=C
 $CMD --mode=root --variant=essential unstable /tmp/unstable-chroot.tar $mirror
 tar -tf /tmp/unstable-chroot.tar | sort > tar1.txt
+rm /tmp/unstable-chroot.tar
 END
-./run_qemu.sh
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	./run_null.sh SUDO
+fi
 
 # FIXME: once fakechroot and proot are fixed, we can switch to variant=apt
 # FIXME: cannot test fakechroot or proot because of
 #        https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=909637
 for mode in root unshare fakechroot proot; do
-	prefix=
-	if [ "$mode" = "fakechroot" ]; then
-		# Devel::Cover doesn't survive mmdebstrap re-exec-ing itself
-		# with fakechroot, thus, we explicitly run mmdebstrap with
-		# fakechroot from the start
-		prefix="runuser -u user -- fakechroot fakeroot"
-	elif [ "$mode" != "root" ]; then
-		prefix="runuser -u user --"
-	fi
 	print_header "mode=$mode,variant=essential: create armhf tarball"
+	if [ "$HAVE_BINFMT" != "yes" ]; then
+		echo "HAVE_BINFMT != yes -- Skipping test..."
+		continue
+	fi
+	if [ "$mode" = "unshare" ] && [ "$HAVE_UNSHARE" != "yes" ]; then
+		echo "HAVE_UNSHARE != yes -- Skipping test..."
+		continue
+	fi
+	if [ "$mode" = "proot" ] && [ "$HAVE_PROOT" != "yes" ]; then
+		echo "HAVE_PROOT != yes -- Skipping test..."
+		continue
+	fi
 	cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C
-adduser --gecos user --disabled-password user
+[ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1 && adduser --gecos user --disabled-password user
 [ "$mode" = unshare ] && sysctl -w kernel.unprivileged_userns_clone=1
-$prefix $CMD --mode=$mode --variant=essential --architectures=armhf unstable /tmp/unstable-chroot.tar $mirror
+prefix=
+[ "\$(id -u)" -eq 0 ] && [ "$mode" != "root" ] && prefix="runuser -u user --"
+[ "$mode" = "fakechroot" ] && prefix="\$prefix fakechroot fakeroot"
+\$prefix $CMD --mode=$mode --variant=essential --architectures=armhf unstable /tmp/unstable-chroot.tar $mirror
 # we ignore differences between architectures by ignoring some files
 # and renaming others
 # in fakechroot mode, we use a fake ldconfig, so we have to
@@ -584,8 +749,15 @@ $prefix $CMD --mode=$mode --variant=essential --architectures=armhf unstable /tm
 	| grep -v '^./usr/share/man/man8/x86_64.8.gz$';
 	[ "$mode" = "proot" ] && printf "./etc/ld.so.preload\n";
 } | sort | diff -u - tar2.txt
+rm /tmp/unstable-chroot.tar
 END
-	./run_qemu.sh
+	if [ "$HAVE_QEMU" = "yes" ]; then
+		./run_qemu.sh
+	elif [ "$mode" = "root" ]; then
+		./run_null.sh SUDO
+	else
+		./run_null.sh
+	fi
 done
 
 # test if auto mode picks the right mode
@@ -594,8 +766,10 @@ done
 
 # test tty output
 
-guestfish add-ro shared/cover_db.img : run : mount /dev/sda / : tar-out / - \
-       | tar -C shared/cover_db --extract
+if [ "$HAVE_QEMU" = "yes" ]; then
+	guestfish add-ro shared/cover_db.img : run : mount /dev/sda / : tar-out / - \
+		| tar -C shared/cover_db --extract
+fi
 
 if [ -e shared/cover_db/runs ]; then
 	cover -nogcov -report html_basic shared/cover_db

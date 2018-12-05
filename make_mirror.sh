@@ -13,6 +13,8 @@ if [ "$arch1" = "$arch2" ]; then
 fi
 components=main
 
+: "${HAVE_QEMU:=yes}"
+
 if [ -e "$mirrordir/dists/unstable/Release" ]; then
 	http_code=$(curl --output /dev/null --silent --location --head --time-cond "$mirrordir/dists/unstable/Release" --write-out '%{http_code}' "$mirror/dists/unstable/Release")
 	case "$http_code" in
@@ -155,20 +157,21 @@ done
 # now fill the cache with new content
 mkdir -p "$cachedir"
 
-# We must not use any --dpkgopt here because any dpkg options still
-# leak into the chroot with chrootless mode.
-# We do not use our own package cache here because
-#   - it doesn't (and shouldn't) contain the extra packages
-#   - it doesn't matter if the base system is from a different mirror timestamp
-# Write tarfile via redirection because in the Debian package autopkgtest
-# ./mmdebstrap is a suid binary and we do not want the tarfile being owned
-# by root.
-tmpdir="$(mktemp -d)"
-./mmdebstrap --variant=apt --architectures=amd64,armhf --mode=unshare \
-	--include=linux-image-amd64,systemd-sysv,perl,arch-test,fakechroot,fakeroot,mount,uidmap,proot,qemu-user-static,binfmt-support,qemu-user,dpkg-dev,mini-httpd,libdevel-cover-perl,debootstrap,libfakechroot:armhf,libfakeroot:armhf \
-	unstable > "$tmpdir/debian-unstable.tar"
+if [ "$HAVE_QEMU" = "yes" ]; then
+	# We must not use any --dpkgopt here because any dpkg options still
+	# leak into the chroot with chrootless mode.
+	# We do not use our own package cache here because
+	#   - it doesn't (and shouldn't) contain the extra packages
+	#   - it doesn't matter if the base system is from a different mirror timestamp
+	# Write tarfile via redirection because in the Debian package autopkgtest
+	# ./mmdebstrap is a suid binary and we do not want the tarfile being owned
+	# by root.
+	tmpdir="$(mktemp -d)"
+	./mmdebstrap --variant=apt --architectures=amd64,armhf --mode=unshare \
+		--include=linux-image-amd64,systemd-sysv,perl,arch-test,fakechroot,fakeroot,mount,uidmap,proot,qemu-user-static,binfmt-support,qemu-user,dpkg-dev,mini-httpd,libdevel-cover-perl,debootstrap,libfakechroot:armhf,libfakeroot:armhf \
+		unstable > "$tmpdir/debian-unstable.tar"
 
-cat << END > "$tmpdir/extlinux.conf"
+	cat << END > "$tmpdir/extlinux.conf"
 default linux
 timeout 0
 
@@ -177,7 +180,7 @@ kernel /vmlinuz
 append initrd=/initrd.img root=/dev/sda1 rw console=ttyS0,115200
 serial 0 115200
 END
-cat << END > "$tmpdir/mmdebstrap.service"
+	cat << END > "$tmpdir/mmdebstrap.service"
 [Unit]
 Description=mmdebstrap worker script
 
@@ -188,15 +191,15 @@ ExecStart=/worker.sh
 [Install]
 WantedBy=multi-user.target
 END
-# here is something crazy:
-# as we run mmdebstrap, the process ends up being run by different users with
-# different privileges (real or fake). But for being able to collect
-# Devel::Cover data, they must all share a single directory. The only way that
-# I found to make this work is to mount the database directory with a
-# filesystem that doesn't support ownership information at all and a umask that
-# gives read/write access to everybody.
-# https://github.com/pjcj/Devel--Cover/issues/223
-cat << 'END' > "$tmpdir/worker.sh"
+	# here is something crazy:
+	# as we run mmdebstrap, the process ends up being run by different users with
+	# different privileges (real or fake). But for being able to collect
+	# Devel::Cover data, they must all share a single directory. The only way that
+	# I found to make this work is to mount the database directory with a
+	# filesystem that doesn't support ownership information at all and a umask that
+	# gives read/write access to everybody.
+	# https://github.com/pjcj/Devel--Cover/issues/223
+	cat << 'END' > "$tmpdir/worker.sh"
 #!/bin/sh
 mount -t 9p -o trans=virtio,access=any mmdebstrap /mnt
 (
@@ -216,34 +219,35 @@ mount -t 9p -o trans=virtio,access=any mmdebstrap /mnt
 umount /mnt
 systemctl poweroff
 END
-chmod +x "$tmpdir/worker.sh"
-cat << 'END' > "$tmpdir/mini-httpd"
+	chmod +x "$tmpdir/worker.sh"
+	cat << 'END' > "$tmpdir/mini-httpd"
 START=1
 DAEMON_OPTS="-h 127.0.0.1 -p 80 -u nobody -dd /mnt -i /var/run/mini-httpd.pid -T UTF-8"
 END
-cat << 'END' > "$tmpdir/hosts"
+	cat << 'END' > "$tmpdir/hosts"
 127.0.0.1 localhost
 END
-#libguestfs-test-tool
-#export LIBGUESTFS_DEBUG=1 LIBGUESTFS_TRACE=1
-guestfish -N "$tmpdir/debian-unstable.img"=disk:2G -- \
-	part-disk /dev/sda mbr : \
-	part-set-bootable /dev/sda 1 true : \
-	mkfs ext2 /dev/sda1 : \
-	mount /dev/sda1 / : \
-	tar-in "$tmpdir/debian-unstable.tar" / : \
-	extlinux / : \
-	copy-in "$tmpdir/extlinux.conf" / : \
-	mkdir-p /etc/systemd/system/multi-user.target.wants : \
-	ln-s ../mmdebstrap.service /etc/systemd/system/multi-user.target.wants/mmdebstrap.service : \
-	copy-in "$tmpdir/mmdebstrap.service" /etc/systemd/system/ : \
-	copy-in "$tmpdir/worker.sh" / : \
-	copy-in "$tmpdir/mini-httpd" /etc/default : \
-	copy-in "$tmpdir/hosts" /etc/ :
-rm "$tmpdir/extlinux.conf" "$tmpdir/worker.sh" "$tmpdir/mini-httpd" "$tmpdir/hosts" "$tmpdir/debian-unstable.tar" "$tmpdir/mmdebstrap.service"
-qemu-img convert -O qcow2 "$tmpdir/debian-unstable.img" "$cachedir/debian-unstable.qcow"
-rm "$tmpdir/debian-unstable.img"
-rmdir "$tmpdir"
+	#libguestfs-test-tool
+	#export LIBGUESTFS_DEBUG=1 LIBGUESTFS_TRACE=1
+	guestfish -N "$tmpdir/debian-unstable.img"=disk:2G -- \
+		part-disk /dev/sda mbr : \
+		part-set-bootable /dev/sda 1 true : \
+		mkfs ext2 /dev/sda1 : \
+		mount /dev/sda1 / : \
+		tar-in "$tmpdir/debian-unstable.tar" / : \
+		extlinux / : \
+		copy-in "$tmpdir/extlinux.conf" / : \
+		mkdir-p /etc/systemd/system/multi-user.target.wants : \
+		ln-s ../mmdebstrap.service /etc/systemd/system/multi-user.target.wants/mmdebstrap.service : \
+		copy-in "$tmpdir/mmdebstrap.service" /etc/systemd/system/ : \
+		copy-in "$tmpdir/worker.sh" / : \
+		copy-in "$tmpdir/mini-httpd" /etc/default : \
+		copy-in "$tmpdir/hosts" /etc/ :
+	rm "$tmpdir/extlinux.conf" "$tmpdir/worker.sh" "$tmpdir/mini-httpd" "$tmpdir/hosts" "$tmpdir/debian-unstable.tar" "$tmpdir/mmdebstrap.service"
+	qemu-img convert -O qcow2 "$tmpdir/debian-unstable.img" "$cachedir/debian-unstable.qcow"
+	rm "$tmpdir/debian-unstable.img"
+	rmdir "$tmpdir"
+fi
 
 mirror="http://127.0.0.1/debian"
 SOURCE_DATE_EPOCH=$(date --date="$(grep-dctrl -s Date -n '' "$mirrordir/dists/unstable/Release")" +%s)
@@ -256,7 +260,8 @@ set -eu
 export LC_ALL=C
 debootstrap --merged-usr --variant=$variant $dist /tmp/debian-$dist-debootstrap $mirror
 tar --sort=name --mtime=@$SOURCE_DATE_EPOCH --clamp-mtime --numeric-owner --one-file-system -C /tmp/debian-$dist-debootstrap -c . > "cache/debian-$dist-$variant.tar"
+rm -r /tmp/debian-$dist-debootstrap
 END
-		./run_qemu.sh
+		./run_qemu.sh SUDO
 	done
 done
