@@ -87,8 +87,12 @@ sub get_tar_compress_options($) {
     return ();
 }
 
-sub test_unshare() {
+sub test_unshare($) {
+    my $verbose = shift;
     if ($EFFECTIVE_USER_ID == 0) {
+	if ($verbose) {
+	    print STDERR "E: cannot use unshare mode when executing as root\n";
+	}
 	return 0;
     }
     # arguments to syscalls have to be stored in their own variable or
@@ -99,9 +103,12 @@ sub test_unshare() {
     my $pid = fork() // die "fork() failed: $!";
     if ($pid == 0) {
 	my $ret = syscall &SYS_unshare, $unshare_flags;
-	if (($ret >> 8) == 0) {
+	if ($ret == 0) {
 	    exit 0;
 	} else {
+	    if ($verbose) {
+		print STDERR "E: unshare syscall failed: $!\n";
+	    }
 	    exit 1;
 	}
     }
@@ -113,10 +120,24 @@ sub test_unshare() {
     # executed without parameters
     system "newuidmap 2>/dev/null";
     if (($? >> 8) != 1) {
+	if ($verbose) {
+	    if (($? >> 8) == 127) {
+		print STDERR "E: cannot find newuidmap\n";
+	    } else {
+		print STDERR "E: newuidmap returned unknown exit status\n";
+	    }
+	}
 	return 0;
     }
     system "newgidmap 2>/dev/null";
     if (($? >> 8) != 1) {
+	if ($verbose) {
+	    if (($? >> 8) == 127) {
+		print STDERR "E: cannot find newgidmap\n";
+	    } else {
+		print STDERR "E: newgidmap returned unknown exit status\n";
+	    }
+	}
 	return 0;
     }
     return 1;
@@ -1392,7 +1413,7 @@ sub main() {
     if ($options->{mode} eq 'auto') {
 	if ($EFFECTIVE_USER_ID == 0) {
 	    $options->{mode} = 'root';
-	} elsif (test_unshare()) {
+	} elsif (test_unshare(0)) {
 	    $options->{mode} = 'unshare';
 	} elsif (system('proot --version>/dev/null') == 0) {
 	    $options->{mode} = 'proot';
@@ -1432,26 +1453,7 @@ sub main() {
 	    exec 'fakechroot', 'fakeroot', $PROGRAM_NAME, @ARGVORIG;
 	}
     } elsif ($options->{mode} eq 'unshare') {
-	if (!test_unshare()) {
-	    if ($EFFECTIVE_USER_ID == 0) {
-		print STDERR "I: cannot use unshare mode when executing as root\n";
-	    }
-	    system "newuidmap 2>/dev/null";
-	    if (($? >> 8) != 1) {
-		if (($? >> 8) == 127) {
-		    print STDERR "I: cannot find newuidmap\n";
-		} else {
-		    print STDERR "I: newuidmap returned unknown exit status\n";
-		}
-	    }
-	    system "newgidmap 2>/dev/null";
-	    if (($? >> 8) != 1) {
-		if (($? >> 8) == 127) {
-		    print STDERR "I: cannot find newgidmap\n";
-		} else {
-		    print STDERR "I: newgidmap returned unknown exit status\n";
-		}
-	    }
+	if (!test_unshare(1)) {
 	    my $procfile = '/proc/sys/kernel/unprivileged_userns_clone';
 	    open(my $fh, '<', $procfile) or die "failed to open $procfile: $!";
 	    chomp(my $content = do { local $/; <$fh> });
