@@ -993,6 +993,11 @@ sub setup {
 
 	    # copy qemu-user-static binary into chroot or setup proot with --qemu
 	    if (defined $options->{qemu}) {
+		# FIXME: check for
+		#  - binfmt_misc kernel module loaded
+		#  - binfmt_misc filesystem in /proc/filesystems
+		#  - binfmt_misc mounted on /proc/sys/fs/binfmt_misc
+		#  - /usr/sbin/update-binfmts --display qemu-arm
 		if ($options->{mode} eq 'proot') {
 		    push @chrootcmd, "--qemu=qemu-$options->{qemu}";
 		} elsif ($options->{mode} eq 'fakechroot') {
