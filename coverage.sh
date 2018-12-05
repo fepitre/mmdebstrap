@@ -153,7 +153,7 @@ tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar1.txt
 END
 ./run_qemu.sh
 
-print_header "mode=unshare,variant=apt: test progress bars on fake tty"
+print_header "mode=root,variant=apt: test progress bars on fake tty"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
