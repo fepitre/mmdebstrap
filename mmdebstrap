@@ -690,12 +690,12 @@ sub setup {
 	close $fh;
     }
 
-    # setup merged usr
-    my @amd64_dirs = ('lib32', 'lib64', 'libx32'); # only amd64 for now
-    foreach my $dir ("bin", "sbin", "lib", @amd64_dirs) {
-	symlink "usr/$dir", "$options->{root}/$dir" or die "cannot create symlink: $!";
-	make_path("$options->{root}/usr/$dir") or die "cannot create /usr/$dir: $!";
-    }
+    ## setup merged usr
+    #my @amd64_dirs = ('lib32', 'lib64', 'libx32'); # only amd64 for now
+    #foreach my $dir ("bin", "sbin", "lib", @amd64_dirs) {
+    #    symlink "usr/$dir", "$options->{root}/$dir" or die "cannot create symlink: $!";
+    #    make_path("$options->{root}/usr/$dir") or die "cannot create /usr/$dir: $!";
+    #}
 
     {
 	open my $fh, '>', "$options->{root}/etc/fstab" or die "cannot open fstab: $!";
@@ -996,7 +996,7 @@ sub setup {
 		    '/bin/mount=/bin/true',
 		    '/usr/bin/ldd=/usr/bin/ldd.fakechroot',
 		    '/usr/bin/mkfifo=/bin/true',
-		    '/usr/sbin/ldconfig=/bin/true',
+		    '/sbin/ldconfig=/bin/true',
 		);
 	    }
 

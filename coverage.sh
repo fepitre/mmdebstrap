@@ -609,13 +609,13 @@ rm /tmp/debian-unstable/etc/fstab
 rm /tmp/debian-unstable/etc/hostname
 rm /tmp/debian-unstable/etc/resolv.conf
 rm /tmp/debian-unstable/var/lib/dpkg/status
-# delete symlinks
-rm /tmp/debian-unstable/libx32
-rm /tmp/debian-unstable/lib64
-rm /tmp/debian-unstable/lib32
-rm /tmp/debian-unstable/sbin
-rm /tmp/debian-unstable/bin
-rm /tmp/debian-unstable/lib
+## delete merged usr symlinks
+#rm /tmp/debian-unstable/libx32
+#rm /tmp/debian-unstable/lib64
+#rm /tmp/debian-unstable/lib32
+#rm /tmp/debian-unstable/sbin
+#rm /tmp/debian-unstable/bin
+#rm /tmp/debian-unstable/lib
 # delete ./dev (files might exist or not depending on the mode)
 rm -f /tmp/debian-unstable/dev/console
 rm -f /tmp/debian-unstable/dev/fd
@@ -660,13 +660,13 @@ rm /tmp/debian-unstable/etc/fstab
 rm /tmp/debian-unstable/etc/hostname
 rm /tmp/debian-unstable/etc/resolv.conf
 rm /tmp/debian-unstable/var/lib/dpkg/status
-# delete symlinks
-rm /tmp/debian-unstable/libx32
-rm /tmp/debian-unstable/lib64
-rm /tmp/debian-unstable/lib32
-rm /tmp/debian-unstable/sbin
-rm /tmp/debian-unstable/bin
-rm /tmp/debian-unstable/lib
+## delete merged usr symlinks
+#rm /tmp/debian-unstable/libx32
+#rm /tmp/debian-unstable/lib64
+#rm /tmp/debian-unstable/lib32
+#rm /tmp/debian-unstable/sbin
+#rm /tmp/debian-unstable/bin
+#rm /tmp/debian-unstable/lib
 # in chrootless mode, there is more to remove
 rm /tmp/debian-unstable/var/log/apt/eipp.log.xz
 rm /tmp/debian-unstable/var/lib/dpkg/triggers/Lock
@@ -736,9 +736,9 @@ prefix=
 # artificially add some files
 # in proot mode, some extra files are put there by proot
 { tar -tf /tmp/unstable-chroot.tar \
-	| grep -v '^\./usr/lib/ld-linux-armhf\.so\.3$' \
-	| grep -v '^\./usr/lib/arm-linux-gnueabihf/ld-linux\.so\.3$' \
-	| grep -v '^\./usr/lib/arm-linux-gnueabihf/ld-linux-armhf\.so\.3$' \
+	| grep -v '^\./lib/ld-linux-armhf\.so\.3$' \
+	| grep -v '^\./lib/arm-linux-gnueabihf/ld-linux\.so\.3$' \
+	| grep -v '^\./lib/arm-linux-gnueabihf/ld-linux-armhf\.so\.3$' \
 	| sed 's/arm-linux-gnueabihf/x86_64-linux-gnu/' \
 	| sed 's/armhf/amd64/';
 	[ "$mode" = "fakechroot" ] && printf "./etc/ld.so.cache\n./var/cache/ldconfig/\n";
@@ -746,10 +746,11 @@ prefix=
 { cat tar1.txt \
 	| grep -v '^\./usr/bin/i386$' \
 	| grep -v '^\./usr/bin/x86_64$' \
-	| grep -v '^\./usr/lib64/ld-linux-x86-64\.so\.2$' \
-	| grep -v '^\./usr/lib/x86_64-linux-gnu/ld-linux-x86-64\.so\.2$' \
-	| grep -v '^\./usr/lib/x86_64-linux-gnu/libmvec-2\.[0-9]\+\.so$' \
-	| grep -v '^\./usr/lib/x86_64-linux-gnu/libmvec\.so\.1$' \
+	| grep -v '^\./lib64/$' \
+	| grep -v '^\./lib64/ld-linux-x86-64\.so\.2$' \
+	| grep -v '^\./lib/x86_64-linux-gnu/ld-linux-x86-64\.so\.2$' \
+	| grep -v '^\./lib/x86_64-linux-gnu/libmvec-2\.[0-9]\+\.so$' \
+	| grep -v '^\./lib/x86_64-linux-gnu/libmvec\.so\.1$' \
 	| grep -v '^\./usr/share/man/man8/i386\.8\.gz$' \
 	| grep -v '^\./usr/share/man/man8/x86_64\.8\.gz$';
 	[ "$mode" = "proot" ] && printf "./etc/ld.so.preload\n";
