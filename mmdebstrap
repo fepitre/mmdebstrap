@@ -2054,6 +2054,9 @@ the machine running mmdebstrap. Maintainer scripts are run without chrooting
 into B<TARGET> and rely on their dependencies being installed on the machine
 running mmdebstrap.
 
+=for TODO
+=item B<qemu>
+
 =back
 
 =head1 VARIANTS
