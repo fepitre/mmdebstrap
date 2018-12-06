@@ -150,6 +150,11 @@ if [ "$dist" != "stable" ]; then
 	rm /tmp/debian-$dist-debootstrap/var/lib/dpkg/lock-frontend
 fi
 
+# the list of shells might be sorted wrongly
+for f in "/tmp/debian-$dist-debootstrap/etc/shells" "/tmp/debian-$dist-mm/etc/shells"; do
+	sort -o "\$f" "\$f"
+done
+
 # check if the file content differs
 diff --no-dereference --brief --recursive /tmp/debian-$dist-debootstrap /tmp/debian-$dist-mm
 
