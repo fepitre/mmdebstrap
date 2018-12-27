@@ -14,6 +14,31 @@ rm -f shared/cover_db.img
 if [ "$HAVE_QEMU" = "yes" ]; then
 	# prepare image for cover_db
 	guestfish -N shared/cover_db.img=disk:100M -- mkfs vfat /dev/sda
+
+	if [ ! -e "./shared/cache/debian-unstable.qcow" ]; then
+		echo "./shared/cache/debian-unstable.qcow does not exist" >&2
+		exit 1
+	fi
+fi
+
+# check if all required debootstrap tarballs exist
+notfound=0
+for dist in stable testing unstable; do
+	for variant in minbase buildd -; do
+		# skip because of different userids for apt/systemd
+		if [ "$dist" = 'stable' ] && [ "$variant" = '-' ]; then
+			continue
+		fi
+
+		if [ ! -e "shared/cache/debian-$dist-$variant.tar" ]; then
+			echo "shared/cache/debian-$dist-$variant.tar does not exist" >&2
+			notfound=1
+		fi
+	done
+done
+if [ "$notfound" -ne 0 ]; then
+	echo "not all required debootstrap tarballs are present" >&2
+	exit 1
 fi
 
 # only copy if necessary
@@ -69,11 +94,6 @@ for dist in stable testing unstable; do
 			continue
 		fi
 		print_header "mode=root,variant=$variant: check against debootstrap $dist"
-
-		if [ ! -e "shared/cache/debian-$dist-$variant.tar" ]; then
-			echo "shared/cache/debian-$dist-$variant.tar does not exist. Skipping..."
-			continue
-		fi
 
 		cat << END > shared/test.sh
 #!/bin/sh
