@@ -437,8 +437,10 @@ sub print_progress {
 }
 
 sub run_dpkg_progress {
-    my $debs = shift;
-    my @args = @_;
+    my $options = shift;
+    my @args = @{$options->{ARGV}};
+    my @debs = @{$options->{PKGS}};
+    my $verbose = $options->{VERBOSE} // 0;
     pipe my $rfh, my $wfh;
     my $dpkgpid = open (my $pipe_dpkg, '-|') // die "failed to fork(): $!";
     if ($dpkgpid == 0) {
@@ -450,7 +452,7 @@ sub run_dpkg_progress {
 	my $fd = fileno $wfh;
 	# redirect dpkg's stderr to stdout so that we can capture it
 	open(STDERR, '>&', STDOUT);
-	exec { $args[0] } @args, "--status-fd=$fd", @{$debs};
+	exec { $args[0] } @args, "--status-fd=$fd", @debs;
 	die "cannot exec() dpkg";
     }
     close $wfh;
@@ -461,29 +463,32 @@ sub run_dpkg_progress {
     my $pid = fork() // die "failed to fork(): $!";
     if ($pid == 0) {
 	# child
-	print_progress 0.0;
+	print_progress 0.0 if not $verbose;
 	my $num = 0;
 	# each package has one install and one configure step, thus the total
 	# number is twice the number of packages
-	my $total = (scalar @{$debs}) * 2;
+	my $total = (scalar @debs) * 2;
 	while (my $line = <$rfh>) {
 	    if ($line =~ /^processing: (install|configure): /) {
 		$num += 1;
 	    }
 	    my $perc = $num/$total*100;
-	    print_progress $perc;
+	    print_progress $perc if not $verbose;
 	}
-	print_progress "done";
+	print_progress "done" if not $verbose;
 
 	exit 0;
     }
 
     # parent
-    my $dpkg_output;
+    my $dpkg_output = '';
     while (my $line = <$pipe_dpkg>) {
-	# forward captured apt output
-	#print STDERR $line;
-	$dpkg_output .= $line;
+	if ($verbose) {
+	    print STDERR $line;
+	} else {
+	    # forward captured apt output
+	    $dpkg_output .= $line;
+	}
     }
     close $pipe_dpkg;
     my $fail = 0;
@@ -498,12 +503,15 @@ sub run_dpkg_progress {
     # might interfere
     if ($fail) {
 	print STDERR $dpkg_output;
-	die ((join ' ', @args) . ' failed');
+	die ((join ' ', @args, @debs) . ' failed');
     }
 }
 
 sub run_apt_progress {
-    my @args = @_;
+    my $options = shift;
+    my @args = @{$options->{ARGV}};
+    my @debs = @{$options->{PKGS} // []};
+    my $verbose = $options->{VERBOSE} // 0;
     pipe my $rfh, my $wfh;
     my $aptpid = open(my $pipe_apt, '-|') // die "failed to fork(): $!";
     if ($aptpid == 0) {
@@ -515,7 +523,7 @@ sub run_apt_progress {
 	my $fd = fileno $wfh;
 	# redirect apt's stderr to stdout so that we can capture it
 	open(STDERR, '>&', STDOUT);
-	exec { $args[0] } @args, "-oAPT::Status-Fd=$fd";
+	exec { $args[0] } @args, "-oAPT::Status-Fd=$fd", @debs;
 	die "cannot exec apt-get update: $!";
     }
     close $wfh;
@@ -526,14 +534,14 @@ sub run_apt_progress {
     my $pid = fork() // die "failed to fork(): $!";
     if ($pid == 0) {
 	# child
-	print_progress 0.0;
+	print_progress 0.0 if not $verbose;
 	while (my $line = <$rfh>) {
 	    if ($line =~ /(pmstatus|dlstatus):[^:]+:(\d+\.\d+):.*/) {
-		print_progress $2;
+		print_progress $2 if not $verbose;
 	    }
 	    #print STDERR "apt: $line";
 	}
-	print_progress "done";
+	print_progress "done" if not $verbose;
 
 	exit 0;
     }
@@ -549,9 +557,12 @@ sub run_apt_progress {
 	} elsif ($line =~ '^Err:') {
 	    $has_error = 1;
 	}
-	# forward captured apt output
-	#print STDERR $line;
-	$apt_output .= $line;
+	if ($verbose) {
+	    print STDERR $line;
+	} else {
+	    # forward captured apt output
+	    $apt_output .= $line;
+	}
     }
     close($pipe_apt);
     my $fail = 0;
@@ -566,7 +577,7 @@ sub run_apt_progress {
     # might interfere
     if ($fail) {
 	print STDERR $apt_output;
-	die ((join ' ', @args) . ' failed');
+	die ((join ' ', @args, @debs) . ' failed');
     }
 }
 
@@ -753,7 +764,10 @@ sub setup {
     $ENV{"APT_CONFIG"} = "$tmpfile";
 
     print STDERR "I: running apt-get update...\n";
-    run_apt_progress 'apt-get', 'update';
+    run_apt_progress({
+	    ARGV => ['apt-get', 'update'],
+	    VERBOSE => $options->{verbose}
+	});
 
     # check if anything was downloaded at all
     {
@@ -791,9 +805,13 @@ sub setup {
     # Same if we want to install priority based variants.
     if (any { $_ eq $options->{variant} } ('extract', 'custom')) {
 	print STDERR "I: downloading packages with apt...\n";
-	run_apt_progress ('apt-get', '--yes',
-	    '-oApt::Get::Download-Only=true',
-	    'install', keys %pkgs_to_install);
+	run_apt_progress({
+		ARGV => ['apt-get', '--yes',
+		    '-oApt::Get::Download-Only=true',
+		    'install'],
+		PKGS => [keys %pkgs_to_install],
+		VERBOSE => $options->{verbose}
+	    });
     } elsif ($options->{variant} eq 'apt') {
 	# if we just want to install Essential:yes packages, apt and their
 	# dependencies then we can make use of libapt treating apt as
@@ -809,9 +827,12 @@ sub setup {
 	#                  in the bugreport: "Are you crazy?!? Nobody in his
 	#                  right mind would even suggest depending on it!")
 	print STDERR "I: downloading packages with apt...\n";
-	run_apt_progress ('apt-get', '--yes',
-	    '-oApt::Get::Download-Only=true',
-	    'dist-upgrade');
+	run_apt_progress({
+		ARGV => ['apt-get', '--yes',
+		    '-oApt::Get::Download-Only=true',
+		    'dist-upgrade'],
+		VERBOSE => $options->{verbose}
+	    });
     } elsif (any { $_ eq $options->{variant} } ('essential', 'standard', 'important', 'required', 'buildd', 'minbase')) {
 	my %ess_pkgs;
 	open(my $pipe_apt, '-|', 'apt-get', 'indextargets', '--format', '$(FILENAME)', 'Created-By: Packages') or die "cannot start apt-get indextargets: $!";
@@ -886,9 +907,13 @@ sub setup {
 	$? == 0 or die "apt-get indextargets failed: $?";
 
 	print STDERR "I: downloading packages with apt...\n";
-	run_apt_progress ('apt-get', '--yes',
-	    '-oApt::Get::Download-Only=true',
-	    'install', keys %ess_pkgs);
+	run_apt_progress({
+		ARGV => ['apt-get', '--yes',
+		    '-oApt::Get::Download-Only=true',
+		    'install'],
+		PKGS => [keys %ess_pkgs],
+		VERBOSE => $options->{verbose}
+	    });
     } else {
 	die "unknown variant: $options->{variant}";
     }
@@ -971,15 +996,25 @@ sub setup {
 	if ($options->{variant} eq 'extract') {
 	    # nothing to do
 	} else {
-	    run_apt_progress ('apt-get', '--yes', @chrootless_opts,
-		'install', (map { "$options->{root}/$_" } @essential_pkgs));
+	    run_apt_progress({
+		    ARGV => ['apt-get', '--yes',
+			@chrootless_opts,
+			'install'],
+		    PKGS => [map { "$options->{root}/$_" } @essential_pkgs],
+		    VERBOSE => $options->{verbose}
+		});
 	}
 	if (any { $_ eq $options->{variant} } ('extract', 'custom')) {
 	    # nothing to do
 	} elsif (any { $_ eq $options->{variant} } ('essential', 'apt', 'standard', 'important', 'required', 'buildd', 'minbase')) {
 	    if (%pkgs_to_install) {
-		run_apt_progress ('apt-get', '--yes', @chrootless_opts,
-		    'install', keys %pkgs_to_install);
+		run_apt_progress({
+			ARGV => ['apt-get', '--yes',
+			    @chrootless_opts,
+			    'install'],
+			PKGS => [keys %pkgs_to_install],
+			VERBOSE => $options->{verbose}
+		    });
 	    }
 	} else {
 	    die "unknown variant: $options->{variant}";
@@ -1086,7 +1121,11 @@ sub setup {
 	    # account and thus doesn't install them in the right order
 	    # And the --predep-package option is broken: #539133
 	    print STDERR "I: installing packages...\n";
-	    run_dpkg_progress [@essential_pkgs], @chrootcmd, 'dpkg', '--install', '--force-depends';
+	    run_dpkg_progress({
+		    ARGV => [@chrootcmd, 'dpkg', '--install', '--force-depends'],
+		    PKGS => \@essential_pkgs,
+		    VERBOSE => $options->{verbose}
+		});
 
 	    # if the path-excluded option was added to the dpkg config, reinstall all
 	    # packages
@@ -1098,7 +1137,11 @@ sub setup {
 		    # without --skip-same-version, dpkg will install the given
 		    # packages even though they are already installed
 		    print STDERR "I: re-installing packages because of path-exclude...\n";
-		    run_dpkg_progress [@essential_pkgs], @chrootcmd, 'dpkg', '--install', '--force-depends';
+		    run_dpkg_progress({
+			    ARGV => [@chrootcmd, 'dpkg', '--install', '--force-depends'],
+			    PKGS => \@essential_pkgs,
+			    VERBOSE => $options->{verbose}
+			});
 		}
 	    }
 
@@ -1148,9 +1191,13 @@ sub setup {
 
 		if (%pkgs_to_install_from_outside) {
 		    print STDERR 'I: downloading ' . (join ', ', keys %pkgs_to_install_from_outside) . "...\n";
-		    run_apt_progress ('apt-get', '--yes',
-			'-oApt::Get::Download-Only=true',
-			'install', (keys %pkgs_to_install_from_outside));
+		    run_apt_progress({
+			    ARGV => ['apt-get', '--yes',
+				'-oApt::Get::Download-Only=true',
+				'install'],
+			    PKGS => [keys %pkgs_to_install_from_outside],
+			    VERBOSE => $options->{verbose}
+			});
 		    my @debs_to_install;
 		    my $apt_archives = "/var/cache/apt/archives/";
 		    opendir my $dh, "$options->{root}/$apt_archives" or die "cannot read $apt_archives";
@@ -1171,7 +1218,11 @@ sub setup {
 		    # we need --force-depends because dpkg does not take Pre-Depends
 		    # into account and thus doesn't install them in the right order
 		    print STDERR 'I: installing ' . (join ', ', keys %pkgs_to_install_from_outside) . "...\n";
-		    run_dpkg_progress [@debs_to_install], @chrootcmd, 'dpkg',  '--install', '--force-depends';
+		    run_dpkg_progress({
+			    ARGV => [@chrootcmd, 'dpkg',  '--install', '--force-depends'],
+			    PKGS => \@debs_to_install,
+			    VERBOSE => $options->{verbose}
+			});
 		    foreach my $deb (@debs_to_install) {
 			unlink "$options->{root}/$deb" or die "cannot unlink $deb";
 		    }
@@ -1246,7 +1297,11 @@ sub setup {
 		}
 
 		print STDERR "I: installing remaining packages inside the chroot...\n";
-		run_apt_progress @chrootcmd, 'apt-get',  '--yes', 'install', keys %pkgs_to_install;
+		run_apt_progress({
+			ARGV => [@chrootcmd, 'apt-get', '--yes', 'install'],
+			PKGS => [keys %pkgs_to_install],
+			VERBOSE => $options->{verbose}
+		    });
 
 		# cleanup
 		move("$options->{root}/sbin/start-stop-daemon.REAL", "$options->{root}/sbin/start-stop-daemon") or die "cannot move start-stop-daemon";
@@ -1321,8 +1376,14 @@ sub setup {
     unlink "$options->{root}/etc/apt/apt.conf.d/00mmdebstrap" or die "failed to unlink /etc/apt/apt.conf.d/00mmdebstrap: $!";
 
     print STDERR "I: cleaning package lists and apt cache...\n";
-    run_apt_progress 'apt-get', '--option', 'Dir::Etc::SourceList=/dev/null', 'update';
-    run_apt_progress 'apt-get', 'clean';
+    run_apt_progress({
+	    ARGV => ['apt-get', '--option', 'Dir::Etc::SourceList=/dev/null', 'update'],
+	    VERBOSE => $options->{verbose}
+	});
+    run_apt_progress({
+	    ARGV => ['apt-get', 'clean'],
+	    VERBOSE => $options->{verbose}
+	});
 
     if (defined $options->{qemu} and $options->{mode} ne 'proot' and $options->{mode} ne 'fakechroot') {
 	unlink "$options->{root}/usr/bin/qemu-$options->{qemu}-static" or die "cannot unlink /usr/bin/qemu-$options->{qemu}-static";
@@ -1367,6 +1428,7 @@ sub main() {
 	mode => 'auto',
 	dpkgopts => [],
 	aptopts => [],
+	verbose => 0,
     };
     chomp ($options->{architectures} = `dpkg --print-architecture`);
     Getopt::Long::Configure ("bundling");
@@ -1379,6 +1441,7 @@ sub main() {
 	'mode=s' => \$options->{mode},
 	'dpkgopt=s@' => \$options->{dpkgopts},
 	'aptopt=s@' => \$options->{aptopts},
+	'verbose' => \$options->{verbose},
     ) or pod2usage(-exitval => 2, -verbose => 1);
 
     my @valid_variants = ('extract', 'custom', 'essential', 'apt', 'required',
