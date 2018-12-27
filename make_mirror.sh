@@ -256,6 +256,7 @@ for dist in stable testing unstable; do
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
+export SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH
 debootstrap --no-merged-usr --variant=$variant $dist /tmp/debian-$dist-debootstrap $mirror
 tar --sort=name --mtime=@$SOURCE_DATE_EPOCH --clamp-mtime --numeric-owner --one-file-system -C /tmp/debian-$dist-debootstrap -c . > "cache/debian-$dist-$variant.tar"
 rm -r /tmp/debian-$dist-debootstrap
