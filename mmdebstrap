@@ -1963,9 +1963,10 @@ verbatim.
 
 Examples:
 
-    --aptopt="Acquire::Check-Valid-Until false"
-    --aptopt="Acquire::Languages { \"environment\"; \"en\"; }"
-    --aptopt="Apt::Install-Recommends true"
+    --aptopt='Acquire::Check-Valid-Until "false"'
+    --aptopt='Acquire::Languages { "environment"; "en"; }'
+    --aptopt='Acquire::Languages "none"'
+    --aptopt='Apt::Install-Recommends "true"'
 
 =item B<--dpkgopt>
 
