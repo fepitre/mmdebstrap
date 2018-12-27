@@ -46,7 +46,7 @@ nativearch=$(dpkg --print-architecture)
 SOURCE_DATE_EPOCH=$(date --date="$(grep-dctrl -s Date -n '' "$mirrordir/dists/unstable/Release")" +%s)
 
 # for traditional sort order that uses native byte values
-export LC_ALL=C
+export LC_ALL=C.UTF-8
 
 : "${HAVE_UNSHARE:=yes}"
 : "${HAVE_PROOT:=yes}"
@@ -78,7 +78,7 @@ for dist in stable testing unstable; do
 		cat << END > shared/test.sh
 #!/bin/sh
 set -eu
-export LC_ALL=C
+export LC_ALL=C.UTF-8
 export SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH
 $CMD --variant=$variant --mode=root $dist /tmp/debian-$dist-mm.tar $mirror
 
@@ -178,7 +178,7 @@ print_header "mode=root,variant=apt: create directory"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
-export LC_ALL=C
+export LC_ALL=C.UTF-8
 $CMD --mode=root --variant=apt unstable /tmp/debian-unstable $mirror
 tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar1.txt
 rm -r /tmp/debian-unstable
@@ -193,7 +193,7 @@ print_header "mode=root,variant=apt: test progress bars on fake tty"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
-export LC_ALL=C
+export LC_ALL=C.UTF-8
 script -qfc "$CMD --mode=root --variant=apt unstable /tmp/unstable-chroot.tar $mirror" /dev/null
 tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
 diff -u tar1.txt tar2.txt
@@ -209,7 +209,7 @@ print_header "mode=root,variant=apt: existing empty directory"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
-export LC_ALL=C
+export LC_ALL=C.UTF-8
 mkdir /tmp/debian-unstable
 $CMD --mode=root --variant=apt unstable /tmp/debian-unstable $mirror
 tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
@@ -226,7 +226,7 @@ print_header "mode=unshare,variant=apt: create tarball"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
-export LC_ALL=C
+export LC_ALL=C.UTF-8
 adduser --gecos user --disabled-password user
 sysctl -w kernel.unprivileged_userns_clone=1
 runuser -u user -- $CMD --mode=unshare --variant=apt unstable /tmp/unstable-chroot.tar $mirror
@@ -244,7 +244,7 @@ print_header "mode=$defaultmode,variant=apt: read from stdin, write to stdout"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
-export LC_ALL=C
+export LC_ALL=C.UTF-8
 echo "deb $mirror unstable main" | $CMD --mode=$defaultmode --variant=apt > /tmp/unstable-chroot.tar
 tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
 diff -u tar1.txt tar2.txt
@@ -262,7 +262,7 @@ print_header "mode=auto,variant=apt: default mirror"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
-export LC_ALL=C
+export LC_ALL=C.UTF-8
 echo "127.0.0.1 deb.debian.org" >> /etc/hosts
 $CMD --mode=$defaultmode --variant=apt unstable /tmp/unstable-chroot.tar
 tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
@@ -281,7 +281,7 @@ print_header "mode=auto,variant=apt: pass distribution but implicitly write to s
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
-export LC_ALL=C
+export LC_ALL=C.UTF-8
 echo "127.0.0.1 deb.debian.org" >> /etc/hosts
 $CMD --mode=$defaultmode --variant=apt unstable > /tmp/unstable-chroot.tar
 tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
@@ -298,7 +298,7 @@ print_header "mode=auto,variant=apt: mirror is -"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
-export LC_ALL=C
+export LC_ALL=C.UTF-8
 echo "deb $mirror unstable main" | $CMD --mode=$defaultmode --variant=apt unstable /tmp/unstable-chroot.tar -
 tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
 diff -u tar1.txt tar2.txt
@@ -316,7 +316,7 @@ print_header "mode=auto,variant=apt: mirror is deb..."
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
-export LC_ALL=C
+export LC_ALL=C.UTF-8
 $CMD --mode=$defaultmode --variant=apt unstable /tmp/unstable-chroot.tar "deb $mirror unstable main"
 tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
 diff -u tar1.txt tar2.txt
@@ -334,7 +334,7 @@ print_header "mode=auto,variant=apt: mirror is real file"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
-export LC_ALL=C
+export LC_ALL=C.UTF-8
 echo "deb $mirror unstable main" > /tmp/sources.list
 $CMD --mode=$defaultmode --variant=apt unstable /tmp/unstable-chroot.tar /tmp/sources.list
 tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
@@ -353,7 +353,7 @@ print_header "mode=auto,variant=apt: no mirror but data on stdin"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
-export LC_ALL=C
+export LC_ALL=C.UTF-8
 echo "deb $mirror unstable main" | $CMD --mode=$defaultmode --variant=apt unstable /tmp/unstable-chroot.tar
 tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
 diff -u tar1.txt tar2.txt
@@ -371,7 +371,7 @@ print_header "mode=root,variant=apt: add foreign architecture"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
-export LC_ALL=C
+export LC_ALL=C.UTF-8
 $CMD --mode=root --variant=apt --architectures=amd64,armhf unstable /tmp/debian-unstable $mirror
 { echo "amd64"; echo "armhf"; } | cmp /tmp/debian-unstable/var/lib/dpkg/arch -
 rm /tmp/debian-unstable/var/lib/dpkg/arch
@@ -389,7 +389,7 @@ print_header "mode=root,variant=apt: test --aptopt"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
-export LC_ALL=C
+export LC_ALL=C.UTF-8
 $CMD --mode=root --variant=apt --aptopt="Acquire::Check-Valid-Until false" unstable /tmp/debian-unstable $mirror
 echo "Acquire::Check-Valid-Until false;" | cmp /tmp/debian-unstable/etc/apt/apt.conf.d/99mmdebstrap -
 rm /tmp/debian-unstable/etc/apt/apt.conf.d/99mmdebstrap
@@ -407,7 +407,7 @@ print_header "mode=root,variant=apt: test --dpkgopt"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
-export LC_ALL=C
+export LC_ALL=C.UTF-8
 $CMD --mode=root --variant=apt --dpkgopt="path-exclude=/usr/share/doc/*" unstable /tmp/debian-unstable $mirror
 echo "path-exclude=/usr/share/doc/*" | cmp /tmp/debian-unstable/etc/dpkg/dpkg.cfg.d/99mmdebstrap -
 rm /tmp/debian-unstable/etc/dpkg/dpkg.cfg.d/99mmdebstrap
@@ -425,7 +425,7 @@ print_header "mode=root,variant=apt: test --include"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
-export LC_ALL=C
+export LC_ALL=C.UTF-8
 $CMD --mode=root --variant=apt --include=doc-debian unstable /tmp/debian-unstable $mirror
 rm /tmp/debian-unstable/usr/share/doc-base/debian-*
 rm -r /tmp/debian-unstable/usr/share/doc/debian
@@ -450,7 +450,7 @@ for variant in essential apt required minbase buildd important debootstrap - sta
 	cat << END > shared/test.sh
 #!/bin/sh
 set -eu
-export LC_ALL=C
+export LC_ALL=C.UTF-8
 $CMD --mode=root --variant=$variant unstable /tmp/unstable-chroot.tar $mirror
 tar -tf /tmp/unstable-chroot.tar | sort > "$variant.txt"
 rm /tmp/unstable-chroot.tar
@@ -490,7 +490,7 @@ END
 		cat << END > shared/test.sh
 #!/bin/sh
 set -eu
-export LC_ALL=C
+export LC_ALL=C.UTF-8
 [ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1 && adduser --gecos user --disabled-password user
 [ "$mode" = unshare ] && sysctl -w kernel.unprivileged_userns_clone=1
 prefix=
@@ -516,7 +516,7 @@ END
 			cat << END > shared/test.sh
 #!/bin/sh
 set -eu
-export LC_ALL=C
+export LC_ALL=C.UTF-8
 [ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1 && adduser --gecos user --disabled-password user
 prefix=
 [ "\$(id -u)" -eq 0 ] && prefix="runuser -u user --"
@@ -592,7 +592,7 @@ for mode in root unshare fakechroot proot chrootless; do
 	cat << END > shared/test.sh
 #!/bin/sh
 set -eu
-export LC_ALL=C
+export LC_ALL=C.UTF-8
 [ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1 && adduser --gecos user --disabled-password user
 [ "$mode" = unshare ] && sysctl -w kernel.unprivileged_userns_clone=1
 prefix=
@@ -645,7 +645,7 @@ print_header "mode=chrootless,variant=custom: install doc-debian"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
-export LC_ALL=C
+export LC_ALL=C.UTF-8
 [ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1 && adduser --gecos user --disabled-password user
 prefix=
 [ "\$(id -u)" -eq 0 ] && prefix="runuser -u user --"
@@ -692,7 +692,7 @@ print_header "mode=root,variant=essential: create directory"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
-export LC_ALL=C
+export LC_ALL=C.UTF-8
 $CMD --mode=root --variant=essential unstable /tmp/unstable-chroot.tar $mirror
 tar -tf /tmp/unstable-chroot.tar | sort > tar1.txt
 rm /tmp/unstable-chroot.tar
@@ -723,7 +723,7 @@ for mode in root unshare fakechroot proot; do
 	cat << END > shared/test.sh
 #!/bin/sh
 set -eu
-export LC_ALL=C
+export LC_ALL=C.UTF-8
 [ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1 && adduser --gecos user --disabled-password user
 [ "$mode" = unshare ] && sysctl -w kernel.unprivileged_userns_clone=1
 prefix=
