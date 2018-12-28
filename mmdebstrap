@@ -1442,6 +1442,9 @@ sub main() {
 	'dpkgopt=s@' => \$options->{dpkgopts},
 	'aptopt=s@' => \$options->{aptopts},
 	'verbose' => \$options->{verbose},
+	# no-op option so that mmdebstrap can be used with
+	# sbuild-createchroot --debootstrap=mmdebstrap
+	'resolve-deps' => sub {},
     ) or pod2usage(-exitval => 2, -verbose => 1);
 
     my @valid_variants = ('extract', 'custom', 'essential', 'apt', 'required',
