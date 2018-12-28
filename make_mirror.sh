@@ -255,6 +255,10 @@ for dist in stable testing unstable; do
 		if [ "$dist" = 'stable' ] && [ "$variant" = '-' ]; then
 			continue
 		fi
+		# skip because of #917386 and #917407
+		if [ "$dist" = 'unstable' ] && [ "$variant" = '-' ]; then
+			continue
+		fi
 		echo running debootstrap --no-merged-usr --variant=$variant $dist /tmp/debian-$dist-debootstrap $mirror
 		cat << END > shared/test.sh
 #!/bin/sh

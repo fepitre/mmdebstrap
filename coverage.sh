@@ -29,6 +29,10 @@ for dist in stable testing unstable; do
 		if [ "$dist" = 'stable' ] && [ "$variant" = '-' ]; then
 			continue
 		fi
+		# skip because of #917386 and #917407
+		if [ "$dist" = 'unstable' ] && [ "$variant" = '-' ]; then
+			continue
+		fi
 
 		if [ ! -e "shared/cache/debian-$dist-$variant.tar" ]; then
 			echo "shared/cache/debian-$dist-$variant.tar does not exist" >&2
@@ -91,6 +95,10 @@ for dist in stable testing unstable; do
 	for variant in minbase buildd -; do
 		# skip because of different userids for apt/systemd
 		if [ "$dist" = 'stable' ] && [ "$variant" = '-' ]; then
+			continue
+		fi
+		# skip because of #917386 and #917407
+		if [ "$dist" = 'unstable' ] && [ "$variant" = '-' ]; then
 			continue
 		fi
 		print_header "mode=root,variant=$variant: check against debootstrap $dist"
