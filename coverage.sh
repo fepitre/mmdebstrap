@@ -2,7 +2,7 @@
 
 set -eu
 
-mirrordir="./shared/debian"
+mirrordir="./shared/cache/debian"
 
 ./make_mirror.sh
 

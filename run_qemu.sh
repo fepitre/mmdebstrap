@@ -2,7 +2,7 @@
 
 set -eu
 
-cachedir="./shared/cache"
+: "${cachedir:=./shared/cache}"
 tmpdir="$(mktemp -d)"
 
 cleanup() {

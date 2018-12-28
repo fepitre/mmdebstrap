@@ -2,8 +2,32 @@
 
 set -eu
 
-mirrordir="./shared/debian"
-cachedir="./shared/cache"
+# This script fills either cache.A or cache.B with new content and then
+# atomically switches the cache symlink from one to the other at the end.
+# This way, at no point will the cache be in an non-working state, even
+# when this script got canceled at any point.
+# Working with two directories also automatically prunes old packages in
+# the local repository.
+
+if [ -e "./shared/cache.A" ] && [ -e "./shared/cache.B" ]; then
+	echo "both ./shared/cache.A and ./shared/cache.B exist" >&2
+	echo "was a former run of the script aborted?" >&2
+	echo "cache symlink points to $(readlink ./shared/cache)" >&2
+	exit 1
+fi
+
+if [ -e "./shared/cache.A" ]; then
+	oldcache=cache.A
+	newcache=cache.B
+else
+	oldcache=cache.B
+	newcache=cache.A
+fi
+
+oldcachedir="./shared/$oldcache"
+newcachedir="./shared/$newcache"
+oldmirrordir="$oldcachedir/debian"
+newmirrordir="$newcachedir/debian"
 
 mirror="http://deb.debian.org/debian"
 arch1=$(dpkg --print-architecture)
@@ -15,22 +39,14 @@ components=main
 
 : "${HAVE_QEMU:=yes}"
 
-if [ -e "$mirrordir/dists/unstable/Release" ]; then
-	http_code=$(curl --output /dev/null --silent --location --head --time-cond "$mirrordir/dists/unstable/Release" --write-out '%{http_code}' "$mirror/dists/unstable/Release")
+if [ -e "$oldmirrordir/dists/unstable/Release" ]; then
+	http_code=$(curl --output /dev/null --silent --location --head --time-cond "$oldmirrordir/dists/unstable/Release" --write-out '%{http_code}' "$mirror/dists/unstable/Release")
 	case "$http_code" in
 		200) ;; # need update
 		304) echo up-to-date; exit 0;;
 		*) echo "unexpected status: $http_code"; exit 1;;
 	esac
 fi
-
-# use -f because the files might not exist
-for dist in stable testing unstable; do
-	for variant in minbase buildd -; do
-		rm -f "$cachedir/debian-$dist-$variant.tar"
-	done
-done
-rm -f "$cachedir/debian-unstable.qcow"
 
 for nativearch in $arch1 $arch2; do
 	for dist in stable testing unstable; do
@@ -67,12 +83,12 @@ END
 		# file, copy all old *.deb packages from the mirror to
 		# /var/cache/apt/archives so that apt will not re-download *.deb
 		# packages that we already have
-		if [ -e "$mirrordir/dists/$dist/main/binary-$nativearch/Packages.gz" ]; then
-			gzip -dc "$mirrordir/dists/$dist/main/binary-$nativearch/Packages.gz" \
+		if [ -e "$oldmirrordir/dists/$dist/main/binary-$nativearch/Packages.gz" ]; then
+			gzip -dc "$oldmirrordir/dists/$dist/main/binary-$nativearch/Packages.gz" \
 				| grep-dctrl --no-field-names --show-field=Package,Version,Architecture,Filename '' \
 				| paste -sd "    \n" \
 				| while read name ver arch fname; do
-					if [ ! -e "$mirrordir/$fname" ]; then
+					if [ ! -e "$oldmirrordir/$fname" ]; then
 						continue
 					fi
 					# apt stores deb files with the colon encoded as %3a while
@@ -85,7 +101,7 @@ END
 					# doesn't recognize symlinks
 					# we cannot do a hardlink because the two
 					# directories might be on different devices
-					cp -a "$mirrordir/$fname" "$aptname"
+					cp -a "$oldmirrordir/$fname" "$aptname"
 					echo "$aptname" >> "$rootdir/oldaptnames"
 				done
 		fi
@@ -103,10 +119,10 @@ END
 		APT_CONFIG="$rootdir/etc/apt/apt.conf" apt-get --yes install $pkgs
 
 		# to be able to also test gpg verification, we need to create a mirror
-		mkdir -p "$mirrordir/dists/$dist/" "$mirrordir/dists/$dist/main/binary-$nativearch/"
-		curl --location "$mirror/dists/$dist/Release" > "$mirrordir/dists/$dist/Release"
-		curl --location "$mirror/dists/$dist/Release.gpg" > "$mirrordir/dists/$dist/Release.gpg"
-		curl --location "$mirror/dists/$dist/main/binary-$nativearch/Packages.gz" > "$mirrordir/dists/$dist/main/binary-$nativearch/Packages.gz"
+		mkdir -p "$newmirrordir/dists/$dist/" "$newmirrordir/dists/$dist/main/binary-$nativearch/"
+		curl --location "$mirror/dists/$dist/Release" > "$newmirrordir/dists/$dist/Release"
+		curl --location "$mirror/dists/$dist/Release.gpg" > "$newmirrordir/dists/$dist/Release.gpg"
+		curl --location "$mirror/dists/$dist/main/binary-$nativearch/Packages.gz" > "$newmirrordir/dists/$dist/main/binary-$nativearch/Packages.gz"
 
 		# the deb files downloaded by apt must be moved to their right locations in the
 		# pool directory
@@ -117,7 +133,7 @@ END
 		# stripping the epoch from the filename and will break once mirrors change.
 		# This way, it doesn't matter where the mirror ends up storing the package.
 		> "$rootdir/newaptnames"
-		gzip -dc "$mirrordir/dists/$dist/main/binary-$nativearch/Packages.gz" \
+		gzip -dc "$newmirrordir/dists/$dist/main/binary-$nativearch/Packages.gz" \
 			| grep-dctrl --no-field-names --show-field=Package,Version,Architecture,Filename,MD5sum '' \
 			| paste -sd "     \n" \
 			| while read name ver arch fname md5; do
@@ -129,8 +145,8 @@ END
 				if [ -e "$aptname" ]; then
 					# make sure that we found the right file by checking its hash
 					echo "$md5  $aptname" | md5sum --check
-					mkdir -p "$mirrordir/$dir"
-					mv "$aptname" "$mirrordir/$fname"
+					mkdir -p "$newmirrordir/$dir"
+					mv "$aptname" "$newmirrordir/$fname"
 					echo "$aptname" >> "$rootdir/newaptnames"
 				fi
 			done
@@ -153,9 +169,6 @@ END
 		rm -r "$rootdir"
 	done
 done
-
-# now fill the cache with new content
-mkdir -p "$cachedir"
 
 if [ "$HAVE_QEMU" = "yes" ]; then
 	# We must not use any --dpkgopt here because any dpkg options still
@@ -200,6 +213,8 @@ END
 	cat << 'END' > "$tmpdir/worker.sh"
 #!/bin/sh
 mount -t 9p -o trans=virtio,access=any mmdebstrap /mnt
+# need to restart mini-httpd because we mounted different content into www-root
+systemctl restart mini-httpd
 (
 	cd /mnt;
 	if [ -e cover_db.img ]; then
@@ -218,9 +233,11 @@ umount /mnt
 systemctl poweroff
 END
 	chmod +x "$tmpdir/worker.sh"
-	cat << 'END' > "$tmpdir/mini-httpd"
+	# initially we serve from the new cache so that debootstrap can grab
+	# the new package repository and not the old
+	cat << END > "$tmpdir/mini-httpd"
 START=1
-DAEMON_OPTS="-h 127.0.0.1 -p 80 -u nobody -dd /mnt -i /var/run/mini-httpd.pid -T UTF-8"
+DAEMON_OPTS="-h 127.0.0.1 -p 80 -u nobody -dd /mnt/$newcache -i /var/run/mini-httpd.pid -T UTF-8"
 END
 	cat << 'END' > "$tmpdir/hosts"
 127.0.0.1 localhost
@@ -242,13 +259,13 @@ END
 		copy-in "$tmpdir/mini-httpd" /etc/default : \
 		copy-in "$tmpdir/hosts" /etc/ :
 	rm "$tmpdir/extlinux.conf" "$tmpdir/worker.sh" "$tmpdir/mini-httpd" "$tmpdir/hosts" "$tmpdir/debian-unstable.tar" "$tmpdir/mmdebstrap.service"
-	qemu-img convert -O qcow2 "$tmpdir/debian-unstable.img" "$cachedir/debian-unstable.qcow"
+	qemu-img convert -O qcow2 "$tmpdir/debian-unstable.img" "$newcachedir/debian-unstable.qcow"
 	rm "$tmpdir/debian-unstable.img"
 	rmdir "$tmpdir"
 fi
 
 mirror="http://127.0.0.1/debian"
-SOURCE_DATE_EPOCH=$(date --date="$(grep-dctrl -s Date -n '' "$mirrordir/dists/unstable/Release")" +%s)
+SOURCE_DATE_EPOCH=$(date --date="$(grep-dctrl -s Date -n '' "$newmirrordir/dists/unstable/Release")" +%s)
 for dist in stable testing unstable; do
 	for variant in minbase buildd -; do
 		# skip because of different userids for apt/systemd
@@ -266,9 +283,49 @@ set -eu
 export LC_ALL=C.UTF-8
 export SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH
 debootstrap --no-merged-usr --variant=$variant $dist /tmp/debian-$dist-debootstrap $mirror
-tar --sort=name --mtime=@$SOURCE_DATE_EPOCH --clamp-mtime --numeric-owner --one-file-system -C /tmp/debian-$dist-debootstrap -c . > "cache/debian-$dist-$variant.tar"
+tar --sort=name --mtime=@$SOURCE_DATE_EPOCH --clamp-mtime --numeric-owner --one-file-system -C /tmp/debian-$dist-debootstrap -c . > "$newcache/debian-$dist-$variant.tar"
 rm -r /tmp/debian-$dist-debootstrap
 END
-		./run_qemu.sh SUDO
+		if [ "$HAVE_QEMU" = "yes" ]; then
+			cachedir=$newcachedir ./run_qemu.sh
+		else
+			./run_null.sh SUDO
+		fi
 	done
 done
+
+# now replace the minihttpd config with one that serves the new repository
+# create a temporary directory because "copy-in" cannot rename the file
+tmpdir="$(mktemp -d)"
+cat << END > "$tmpdir/mini-httpd"
+START=1
+DAEMON_OPTS="-h 127.0.0.1 -p 80 -u nobody -dd /mnt/cache -i /var/run/mini-httpd.pid -T UTF-8"
+END
+guestfish -a "$newcachedir/debian-unstable.qcow" -i copy-in "$tmpdir/mini-httpd" /etc/default
+rm "$tmpdir/mini-httpd"
+rmdir "$tmpdir"
+
+# delete possibly leftover symlink
+if [ -e ./shared/cache.tmp ]; then
+	rm ./shared/cache.tmp
+fi
+# now atomically switch the symlink to point to the other directory
+ln -s $newcache ./shared/cache.tmp
+mv --no-target-directory ./shared/cache.tmp ./shared/cache
+# be very careful with removing the old directory
+for dist in stable testing unstable; do
+	for variant in minbase buildd -; do
+		if [ -e "$oldcachedir/debian-$dist-$variant.tar" ]; then
+			rm "$oldcachedir/debian-$dist-$variant.tar"
+		fi
+	done
+	if [ -e "$oldcachedir/debian/dists/$dist" ]; then
+		rm --one-file-system --recursive "$oldcachedir/debian/dists/$dist"
+	fi
+done
+if [ -e $oldcachedir/debian-unstable.qcow ]; then
+	rm --one-file-system $oldcachedir/debian-unstable.qcow
+fi
+rm --one-file-system --recursive $oldcachedir/debian/pool/main
+# now the rest should only be empty directories
+find $oldcachedir -depth -print0 | xargs -0 rmdir
