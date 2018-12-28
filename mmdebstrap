@@ -1049,11 +1049,6 @@ sub setup {
 
 	    # copy qemu-user-static binary into chroot or setup proot with --qemu
 	    if (defined $options->{qemu}) {
-		# FIXME: check for
-		#  - binfmt_misc kernel module loaded
-		#  - binfmt_misc filesystem in /proc/filesystems
-		#  - binfmt_misc mounted on /proc/sys/fs/binfmt_misc
-		#  - /usr/sbin/update-binfmts --display qemu-arm
 		if ($options->{mode} eq 'proot') {
 		    push @chrootcmd, "--qemu=qemu-$options->{qemu}";
 		} elsif ($options->{mode} eq 'fakechroot') {
@@ -1588,6 +1583,28 @@ sub main() {
 		    die "no mapping from $nativearch to qemu-user binary";
 		}
 		$options->{qemu} = $deb2qemu->{$nativearch};
+		{
+		    open my $fh, '<', '/proc/filesystems' or die "failed to open /proc/filesystems: $!";
+		    unless (grep /^nodev\tbinfmt_misc$/, (<$fh>)) {
+			die "binfmt_misc not found in /proc/filesystems -- is the module loaded?";
+		    }
+		    close $fh;
+		}
+		{
+		    open my $fh, '<', '/proc/mounts' or die "failed to open /proc/mounts: $!";
+		    unless (grep /^binfmt_misc \/proc\/sys\/fs\/binfmt_misc binfmt_misc/, (<$fh>)) {
+			die "binfmt_misc not found in /proc/mounts -- not mounted?";
+		    }
+		    close $fh;
+		}
+		{
+		    open my $fh, '-|', '/usr/sbin/update-binfmts', '--display', "qemu-$options->{qemu}" // die "failed to fork(): $!";
+		    chomp (my $binfmts = do { local $/; <$fh> });
+		    close $fh;
+		    if ($binfmts eq '') {
+			die "qemu-$options->{qemu} is not a supported binfmt name";
+		    }
+		}
 	    } else {
 		print STDERR "I: $nativearch can be executed on this $hostarch machine\n";
 	    }
