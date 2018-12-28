@@ -1683,6 +1683,11 @@ sub main() {
 	if (any { $_ eq $options->{variant} } ('extract', 'custom') and $options->{mode} eq 'fakechroot') {
 	    print STDERR "I: creating a tarball in fakechroot mode might fail in extract and custom variants because there might be no tar inside the chroot\n";
 	}
+	# try to fail early if target tarball cannot be opened for writing
+	if ($options->{target} ne '-') {
+	    open my $fh, '>', $options->{target} or die "cannot open $options->{target} for writing: $!";
+	    close $fh;
+	}
     }
 
     if ($options->{maketar}) {
@@ -1890,11 +1895,20 @@ sub main() {
     }
 
     close $wfh;
+
     if ($options->{maketar}) {
+	# we cannot die here because that would leave the other thread running
+	# without a parent
 	if ($options->{target} ne '-') {
-	    copy($rfh, $options->{target}) or die "cannot copy to $options->{target}: $!";
+	    if(!copy($rfh, $options->{target})) {
+		print STDERR "E: cannot copy to $options->{target}: $!\n";
+		$exitstatus = 1;
+	    }
 	} else {
-	    copy($rfh, *STDOUT) or die "cannot copy to standard output: $!";
+	    if (!copy($rfh, *STDOUT)) {
+		print STDERR "E: cannot copy to standard output: $!\n";
+		$exitstatus = 1;
+	    }
 	}
     }
     close($rfh);
