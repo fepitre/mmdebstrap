@@ -20,7 +20,7 @@ if [ -e "$mirrordir/dists/unstable/Release" ]; then
 	case "$http_code" in
 		200) ;; # need update
 		304) echo up-to-date; exit 0;;
-		*) echo unexpected status: $http_code; exit 1;;
+		*) echo "unexpected status: $http_code"; exit 1;;
 	esac
 fi
 
