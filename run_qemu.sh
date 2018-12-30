@@ -30,6 +30,8 @@ KVM=
 if [ -e /dev/kvm ]; then
 	KVM="-enable-kvm"
 fi
+# to connect to serial use:
+#   minicom -D 'unix#/tmp/ttyS0'
 qemu-system-x86_64 $KVM -m 512M -nographic \
 	-monitor unix:/tmp/monitor,server,nowait \
 	-serial unix:/tmp/ttyS0,server,nowait \
