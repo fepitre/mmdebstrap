@@ -2,8 +2,6 @@
 
 set -eu
 
-cachedir="./shared/cache"
-
 SUDO=
 while [ "$#" -gt 0 ]; do
 	key="$1"
