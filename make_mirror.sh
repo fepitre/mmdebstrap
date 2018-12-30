@@ -176,7 +176,19 @@ END
 			exit 1
 		fi
 
-		rm -r "$rootdir"
+		# cleanup
+		APT_CONFIG="$rootdir/etc/apt/apt.conf" apt-get --option Dir::Etc::SourceList=/dev/null update
+		APT_CONFIG="$rootdir/etc/apt/apt.conf" apt-get clean
+		rm "$rootdir/var/cache/apt/archives/lock"
+		rm "$rootdir/var/lib/apt/lists/lock"
+		rm "$rootdir/var/lib/dpkg/status"
+		rm "$rootdir/var/lib/dpkg/lock-frontend"
+		rm "$rootdir/var/lib/dpkg/lock"
+		rm "$rootdir/etc/apt/apt.conf"
+		rm "$rootdir/etc/apt/sources.list"
+		rm "$rootdir/oldaptnames"
+		rm "$rootdir/newaptnames"
+		find "$rootdir" -depth -print0 | xargs -0 rmdir
 	done
 done
 
