@@ -202,7 +202,7 @@ if [ "$HAVE_QEMU" = "yes" ]; then
 	tmpdir="$(mktemp -d)"
 	./mmdebstrap --variant=apt --architectures=amd64,armhf --mode=unshare \
 		--include=linux-image-amd64,systemd-sysv,perl,arch-test,fakechroot,fakeroot,mount,uidmap,proot,qemu-user-static,binfmt-support,qemu-user,dpkg-dev,mini-httpd,libdevel-cover-perl,debootstrap,libfakechroot:armhf,libfakeroot:armhf,procps \
-		unstable > "$tmpdir/debian-unstable.tar"
+		unstable - "$mirror" > "$tmpdir/debian-unstable.tar"
 
 	cat << END > "$tmpdir/extlinux.conf"
 default linux
