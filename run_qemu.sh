@@ -13,7 +13,7 @@ cleanup() {
 		head --lines=-1 shared/result.txt
 		res="$(tail --lines=1 shared/result.txt)"
 		rm shared/result.txt
-		if [ "$res" -ne 0 ]; then
+		if [ "$res" != "0" ]; then
 			# this might possibly overwrite another non-zero rv
 			rv=1
 		fi
