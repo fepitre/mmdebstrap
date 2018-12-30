@@ -50,7 +50,10 @@ fi
 
 for nativearch in $arch1 $arch2; do
 	for dist in stable testing unstable; do
-		rootdir=$(mktemp --directory)
+		# use a subdirectory of $newcachedir so that we can use
+		# hardlinks
+		rootdir="$newcachedir/apt"
+		mkdir -p "$rootdir"
 
 		for p in /etc/apt/apt.conf.d /etc/apt/sources.list.d /etc/apt/preferences.d /var/cache/apt/archives /var/lib/apt/lists/partial /var/lib/dpkg; do
 			mkdir -p "$rootdir/$p"
@@ -99,9 +102,7 @@ END
 					# distributions might still need this file
 					# we have to cp and not symlink because apt
 					# doesn't recognize symlinks
-					# we cannot do a hardlink because the two
-					# directories might be on different devices
-					cp -a "$oldmirrordir/$fname" "$aptname"
+					cp --link "$oldmirrordir/$fname" "$aptname"
 					echo "$aptname" >> "$rootdir/oldaptnames"
 				done
 		fi
@@ -146,7 +147,16 @@ END
 					# make sure that we found the right file by checking its hash
 					echo "$md5  $aptname" | md5sum --check
 					mkdir -p "$newmirrordir/$dir"
-					mv "$aptname" "$newmirrordir/$fname"
+					# since we move hardlinks around, the same hardlink might've been
+					# moved already into the same place by another distribution.
+					# mv(1) refuses to copy A to B if both are hardlinks of each other.
+					if [ "$aptname" -ef "$newmirrordir/$fname" ]; then
+						# both files are already the same so we just need to
+						# delete the source
+						rm "$aptname"
+					else
+						mv "$aptname" "$newmirrordir/$fname"
+					fi
 					echo "$aptname" >> "$rootdir/newaptnames"
 				fi
 			done
