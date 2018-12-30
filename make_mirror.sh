@@ -234,6 +234,7 @@ END
 	# https://github.com/pjcj/Devel--Cover/issues/223
 	cat << 'END' > "$tmpdir/worker.sh"
 #!/bin/sh
+echo 'root:root' | chpasswd
 mount -t 9p -o trans=virtio,access=any mmdebstrap /mnt
 # need to restart mini-httpd because we mounted different content into www-root
 systemctl restart mini-httpd
