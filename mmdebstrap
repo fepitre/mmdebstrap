@@ -1963,7 +1963,11 @@ sub main() {
 	    # without unshare, we use the system's rm to recursively remove the
 	    # temporary directory just to make sure that we do not accidentally
 	    # remove more than we should by using --one-file-system.
-	    0 == system('rm', '--recursive', '--preserve-root', '--one-file-system', $options->{root}) or die "rm failed: $!";
+	    #
+	    # --interactive=never is needed when in proot mode, the
+	    # write-protected file /apt/apt.conf.d/01autoremove-kernels is to
+	    # be removed.
+	    0 == system('rm', '--interactive=never', '--recursive', '--preserve-root', '--one-file-system', $options->{root}) or die "rm failed: $!";
 	} else {
 	    die "unknown mode: $options->{mode}";
 	}
