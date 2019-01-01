@@ -496,14 +496,18 @@ END
 		if [ "$variant" = standard ]; then
 			continue
 		fi
-		# FIXME: cannot test fakechroot or proot in any other variant
-		#        than essential because of
-		#        https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=909637
 		case "$mode" in
-			fakechroot|proot)
-				if [ "$variant" != "essential" ]; then
-					continue
-				fi
+			proot)
+				case "$variant" in
+					important|debootstrap|-|standard)
+						# the systemd postint yields:
+						# chfn: PAM: System error
+						# adduser: `/usr/bin/chfn -f systemd Time Synchronization systemd-timesync' returned error code 1. Exiting.
+						# similar error with fakechroot https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=745082#75
+						# https://github.com/proot-me/PRoot/issues/156
+						continue
+						;;
+				esac
 				;;
 		esac
 		print_header "mode=$mode,variant=$variant: create tarball"
@@ -714,28 +718,9 @@ fi
 
 # test foreign architecture with all modes
 # create directory in sudo mode
-# FIXME: once fakechroot and proot are fixed, we have to test more variants
-#        than just essential
-print_header "mode=root,variant=essential: create directory"
-cat << END > shared/test.sh
-#!/bin/sh
-set -eu
-export LC_ALL=C.UTF-8
-$CMD --mode=root --variant=essential unstable /tmp/unstable-chroot.tar $mirror
-tar -tf /tmp/unstable-chroot.tar | sort > tar1.txt
-rm /tmp/unstable-chroot.tar
-END
-if [ "$HAVE_QEMU" = "yes" ]; then
-	./run_qemu.sh
-else
-	./run_null.sh SUDO
-fi
 
-# FIXME: once fakechroot and proot are fixed, we can switch to variant=apt
-# FIXME: cannot test fakechroot or proot because of
-#        https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=909637
 for mode in root unshare fakechroot proot; do
-	print_header "mode=$mode,variant=essential: create armhf tarball"
+	print_header "mode=$mode,variant=apt: create armhf tarball"
 	if [ "$HAVE_BINFMT" != "yes" ]; then
 		echo "HAVE_BINFMT != yes -- Skipping test..."
 		continue
@@ -757,7 +742,7 @@ export LC_ALL=C.UTF-8
 prefix=
 [ "\$(id -u)" -eq 0 ] && [ "$mode" != "root" ] && prefix="runuser -u user --"
 [ "$mode" = "fakechroot" ] && prefix="\$prefix fakechroot fakeroot"
-\$prefix $CMD --mode=$mode --variant=essential --architectures=armhf unstable /tmp/unstable-chroot.tar $mirror
+\$prefix $CMD --mode=$mode --variant=apt --architectures=armhf unstable /tmp/unstable-chroot.tar $mirror
 # we ignore differences between architectures by ignoring some files
 # and renaming others
 # in fakechroot mode, we use a fake ldconfig, so we have to

@@ -1025,22 +1025,75 @@ sub setup {
 	    # nothing to do
 	} elsif (any { $_ eq $options->{variant} } ('custom', 'essential', 'apt', 'standard', 'important', 'required', 'buildd', 'minbase')) {
 	    if ($options->{mode} eq 'fakechroot') {
-		# FIXME: if trouble arises, look into /etc/fakechroot/*.env for
-		#        more interesting variables to set
-		$ENV{FAKECHROOT_CMD_SUBST} = join ':', (
-		    '/bin/mount=/bin/true',
-		    '/usr/bin/ldd=/usr/bin/ldd.fakechroot',
-		    '/usr/bin/mkfifo=/bin/true',
-		    '/sbin/ldconfig=/bin/true',
-		);
+		# this borrows from and extends
+		# /etc/fakechroot/debootstrap.env and /etc/fakechroot/chroot.env
+		{
+		    my @fakechrootsubst = ();
+		    foreach my $dir ('/usr/sbin', '/usr/bin', '/sbin', '/bin') {
+			push @fakechrootsubst, "$dir/chroot=/usr/sbin/chroot.fakechroot";
+			push @fakechrootsubst, "$dir/mkfifo=/bin/true";
+			push @fakechrootsubst, "$dir/ldconfig=/bin/true";
+			push @fakechrootsubst, "$dir/ldd=/usr/bin/ldd.fakechroot";
+			push @fakechrootsubst, "$dir/ischroot=/bin/true";
+		    }
+		    if (defined $ENV{FAKECHROOT_CMD_SUBST}
+			&& $ENV{FAKECHROOT_CMD_SUBST} ne "") {
+			push @fakechrootsubst, split /:/, $ENV{FAKECHROOT_CMD_SUBST};
+		    }
+		    $ENV{FAKECHROOT_CMD_SUBST} = join ':', @fakechrootsubst;
+		}
+		if (defined $ENV{FAKECHROOT_EXCLUDE_PATH}
+		    && $ENV{FAKECHROOT_EXCLUDE_PATH} ne "") {
+		    $ENV{FAKECHROOT_EXCLUDE_PATH} = "$ENV{FAKECHROOT_EXCLUDE_PATH}:/dev:/proc:/sys";
+		} else {
+		    $ENV{FAKECHROOT_EXCLUDE_PATH} = '/dev:/proc:/sys';
+		}
+		# workaround for long unix socket path if FAKECHROOT_BASE
+		# exceeds the limit of 108 bytes
+		$ENV{FAKECHROOT_AF_UNIX_PATH} = "/tmp";
+		{
+		    my @ldsoconf = ('/etc/ld.so.conf');
+		    opendir(my $dh, '/etc/ld.so.conf.d') or die "Can't opendir(/etc/ld.so.conf.d): $!";
+		    while (my $entry = readdir $dh) {
+			# skip the "." and ".." entries
+			next if $entry eq ".";
+			next if $entry eq "..";
+			next if $entry !~ /\.conf$/;
+			push @ldsoconf, "/etc/ld.so.conf.d/$entry";
+		    }
+		    closedir($dh);
+		    my @ldlibpath = ();
+		    if (defined $ENV{LD_LIBRARY_PATH}
+			&& $ENV{LD_LIBRARY_PATH} ne "") {
+			push @ldlibpath, (split /:/, $ENV{LD_LIBRARY_PATH});
+		    }
+		    # FIXME: workaround allowing installation of systemd should
+		    # live in fakechroot, see #917920
+		    push @ldlibpath, "/lib/systemd";
+		    foreach my $fname (@ldsoconf) {
+			open my $fh, "<", $fname or die "cannot open $fname for reading: $!";
+			while (my $line = <$fh>) {
+			    next if $line !~ /^\//;
+			    push @ldlibpath, $line;
+			}
+			close $fh;
+		    }
+		    $ENV{LD_LIBRARY_PATH} = join ':', @ldlibpath;
+		}
 	    }
 
 	    # make sure that APT_CONFIG is not set when executing anything inside the
 	    # chroot
 	    my @chrootcmd = ('env', '--unset=APT_CONFIG');
 	    if ($options->{mode} eq 'proot') {
-		# FIXME: proot currently cannot install apt because of https://github.com/proot-me/PRoot/issues/147
-		push @chrootcmd, ('proot', '--root-id', '--bind=/dev', "--rootfs=$options->{root}", '--cwd=/');
+		push @chrootcmd, (
+		    'proot',
+		    '--root-id',
+		    '--bind=/dev',
+		    '--bind=/proc',
+		    '--bind=/sys',
+		    "--rootfs=$options->{root}",
+		    '--cwd=/');
 	    } elsif (any { $_ eq $options->{mode} } ('root', 'unshare', 'fakechroot')) {
 		push @chrootcmd, ('/usr/sbin/chroot', $options->{root});
 	    } else {
@@ -1223,38 +1276,45 @@ sub setup {
 		    }
 		}
 
-		# if more than essential should be installed, make the system look
-		# more like a real one by creating or bind-mounting the device nodes
-		foreach my $file (@devfiles) {
-		    my ($fname, $mode, $type, $linkname, $devmajor, $devminor) = @{$file};
-		    next if $fname eq './dev/';
-		    if ($type == 0) { # normal file
-			die "type 0 not implemented";
-		    } elsif ($type == 1) { # hardlink
-			die "type 1 not implemented";
-		    } elsif ($type == 2) { # symlink
-			if (!$options->{havemknod}) {
-			    if ($options->{mode} eq 'fakechroot' and $linkname =~ /^\/proc/) {
-				# there is no /proc in fakechroot mode
-				next;
+		if (any { $_ eq $options->{mode} } ('root', 'unshare')) {
+		    # if more than essential should be installed, make the system look
+		    # more like a real one by creating or bind-mounting the device nodes
+		    foreach my $file (@devfiles) {
+			my ($fname, $mode, $type, $linkname, $devmajor, $devminor) = @{$file};
+			next if $fname eq './dev/';
+			if ($type == 0) { # normal file
+			    die "type 0 not implemented";
+			} elsif ($type == 1) { # hardlink
+			    die "type 1 not implemented";
+			} elsif ($type == 2) { # symlink
+			    if (!$options->{havemknod}) {
+				if ($options->{mode} eq 'fakechroot' and $linkname =~ /^\/proc/) {
+				    # there is no /proc in fakechroot mode
+				    next;
+				}
+				symlink $linkname, "$options->{root}/$fname" or die "cannot create symlink $fname";
 			    }
-			    symlink $linkname, "$options->{root}/$fname" or die "cannot create symlink $fname";
-			}
-		    } elsif ($type == 3 or $type == 4) { # character/block special
-			if (!$options->{havemknod}) {
-			    open my $fh, '>', "$options->{root}/$fname" or die "cannot open $options->{root}/$fname: $!";
-			    close $fh;
+			} elsif ($type == 3 or $type == 4) { # character/block special
+			    if (!$options->{havemknod}) {
+				open my $fh, '>', "$options->{root}/$fname" or die "cannot open $options->{root}/$fname: $!";
+				close $fh;
+				0 == system('mount', '-o', 'bind', "/$fname", "$options->{root}/$fname") or die "mount failed: $?";
+			    }
+			} elsif ($type == 5) { # directory
+			    if (!$options->{havemknod}) {
+				make_path "$options->{root}/$fname";
+				chmod $mode, "$options->{root}/$fname" or die "cannot chmod $fname: $!";
+			    }
 			    0 == system('mount', '-o', 'bind', "/$fname", "$options->{root}/$fname") or die "mount failed: $?";
+			} else {
+			    die "unsupported type: $type";
 			}
-		    } elsif ($type == 5) { # directory
-			if (!$options->{havemknod}) {
-			    make_path "$options->{root}/$fname";
-			    chmod $mode, "$options->{root}/$fname" or die "cannot chmod $fname: $!";
-			}
-			0 == system('mount', '-o', 'bind', "/$fname", "$options->{root}/$fname") or die "mount failed: $?";
-		    } else {
-			die "unsupported type: $type";
 		    }
+		} elsif (any { $_ eq $options->{mode} } ('proot', 'fakechroot')) {
+		    # we cannot mount in fakechroot and proot mode
+		    # in proot mode we have /dev bind-mounted already through --bind=/dev
+		} else {
+		    die "unknown mode: $options->{mode}";
 		}
 		# We can only mount /proc and /sys after extracting the essential
 		# set because if we mount it before, then base-files will not be able
@@ -1266,12 +1326,22 @@ sub setup {
 		    # we have to rbind because just using bind results in "wrong fs
 		    # type, bad option, bad superblock" error
 		    0 == system('mount', '-o', 'rbind', '/sys', "$options->{root}/sys") or die "mount failed: $?";
-		} elsif (any { $_ eq $options->{mode} } ('root', 'fakechroot', 'proot')) {
+		} elsif ($options->{mode} eq 'root') {
 		    0 == system('mount', '-t', 'sysfs', '-o', 'nosuid,nodev,noexec', 'sys', "$options->{root}/sys") or die "mount failed: $?";
+		} elsif (any { $_ eq $options->{mode} } ('proot', 'fakechroot')) {
+		    # we cannot mount in fakechroot and proot mode
+		    # in proot mode we have /proc bind-mounted already through --bind=/proc
 		} else {
 		    die "unknown mode: $options->{mode}";
 		}
-		0 == system('mount', '-t', 'proc', 'proc', "$options->{root}/proc") or die "mount failed: $?";
+		if (any { $_ eq $options->{mode} } ('root', 'unshare')) {
+		    0 == system('mount', '-t', 'proc', 'proc', "$options->{root}/proc") or die "mount failed: $?";
+		} elsif (any { $_ eq $options->{mode} } ('proot', 'fakechroot')) {
+		    # we cannot mount in fakechroot and proot mode
+		    # in proot mode we have /sys bind-mounted already through --bind=/sys
+		} else {
+		    die "unknown mode: $options->{mode}";
+		}
 
 		# prevent daemons from starting
 		{
@@ -1302,46 +1372,54 @@ sub setup {
 		move("$options->{root}/sbin/start-stop-daemon.REAL", "$options->{root}/sbin/start-stop-daemon") or die "cannot move start-stop-daemon";
 		unlink "$options->{root}/usr/sbin/policy-rc.d" or die "cannot unlink policy-rc.d";
 
-		foreach my $file (@devfiles) {
-		    my ($fname, undef, $type, $linkname, undef, undef) = @{$file};
-		    next if $fname eq './dev/';
-		    if ($type == 0) { # normal file
-			die "type 0 not implemented";
-		    } elsif ($type == 1) { # hardlink
-			die "type 1 not implemented";
-		    } elsif ($type == 2) { # symlink
-			if (!$options->{havemknod}) {
-			    if ($options->{mode} eq 'fakechroot' and $linkname =~ /^\/proc/) {
-				# there is no /proc in fakechroot mode
-				next;
+		if (any { $_ eq $options->{mode} } ('root', 'unshare')) {
+		    foreach my $file (@devfiles) {
+			my ($fname, undef, $type, $linkname, undef, undef) = @{$file};
+			next if $fname eq './dev/';
+			if ($type == 0) { # normal file
+			    die "type 0 not implemented";
+			} elsif ($type == 1) { # hardlink
+			    die "type 1 not implemented";
+			} elsif ($type == 2) { # symlink
+			    if (!$options->{havemknod}) {
+				unlink "$options->{root}/$fname" or die "cannot unlink $fname: $!";
 			    }
-			    unlink "$options->{root}/$fname" or die "cannot unlink $fname: $!";
-			}
-		    } elsif ($type == 3 or $type == 4) { # character/block special
-			if (!$options->{havemknod}) {
+			} elsif ($type == 3 or $type == 4) { # character/block special
+			    if (!$options->{havemknod}) {
+				if ($options->{mode} eq 'unshare') {
+				    # FIXME: handle umount by a signal handler in
+				    # case of CTRL+C
+				    0 == system('umount', '--no-mtab', "$options->{root}/$fname") or die "umount failed: $?";
+				} elsif ($options->{mode} eq 'root') {
+				    0 == system('umount', "$options->{root}/$fname") or die "umount failed: $?";
+				} elsif (any { $_ eq $options->{mode} } ('fakechroot', 'proot')) {
+				    die "impossible";
+				} else {
+				    die "unknown mode: $options->{mode}";
+				}
+				unlink "$options->{root}/$fname";
+			    }
+			} elsif ($type == 5) { # directory
 			    if ($options->{mode} eq 'unshare') {
 				0 == system('umount', '--no-mtab', "$options->{root}/$fname") or die "umount failed: $?";
-			    } elsif (any { $_ eq $options->{mode} } ('root', 'fakechroot', 'proot')) {
+			    } elsif ($options->{mode} eq 'root') {
 				0 == system('umount', "$options->{root}/$fname") or die "umount failed: $?";
+			    } elsif (any { $_ eq $options->{mode} } ('fakechroot', 'proot')) {
+				die "impossible";
 			    } else {
 				die "unknown mode: $options->{mode}";
 			    }
-			    unlink "$options->{root}/$fname";
-			}
-		    } elsif ($type == 5) { # directory
-			if ($options->{mode} eq 'unshare') {
-			    0 == system('umount', '--no-mtab', "$options->{root}/$fname") or die "umount failed: $?";
-			} elsif (any { $_ eq $options->{mode} } ('root', 'fakechroot', 'proot')) {
-			    0 == system('umount', "$options->{root}/$fname") or die "umount failed: $?";
+			    if (!$options->{havemknod}) {
+				rmdir "$options->{root}/$fname" or die "cannot rmdir $fname: $!";
+			    }
 			} else {
-			    die "unknown mode: $options->{mode}";
+			    die "unsupported type: $type";
 			}
-			if (!$options->{havemknod}) {
-			    rmdir "$options->{root}/$fname" or die "cannot rmdir $fname: $!";
-			}
-		    } else {
-			die "unsupported type: $type";
 		    }
+		} elsif (any { $_ eq $options->{mode} } ('proot', 'fakechroot')) {
+		    # nothing was mounted
+		} else {
+		    die "unknown mode: $options->{mode}";
 		}
 		# naturally we have to clean up after ourselves in sudo mode where we
 		# do a real mount. But we also need to unmount in unshare mode because
@@ -1353,9 +1431,11 @@ sub setup {
 		    # unmounting /sys only seems to be successful with --lazy
 		    0 == system('umount', '--no-mtab', '--lazy', "$options->{root}/sys") or die "umount failed: $?";
 		    0 == system('umount', '--no-mtab', "$options->{root}/proc") or die "umount failed: $?";
-		} elsif (any { $_ eq $options->{mode} } ('root', 'fakechroot', 'proot')) {
+		} elsif ($options->{mode} eq 'root') {
 		    0 == system('umount', "$options->{root}/sys") or die "umount failed: $?";
 		    0 == system('umount', "$options->{root}/proc") or die "umount failed: $?";
+		} elsif (any { $_ eq $options->{mode} } ('proot', 'fakechroot')) {
+		    # nothing was mounted
 		} else {
 		    die "unknown mode: $options->{mode}";
 		}
