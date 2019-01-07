@@ -657,6 +657,13 @@ sub setup {
 	close $fh;
     }
 
+    # /var/lib/dpkg/available is required to exist or otherwise package
+    # removals will fail
+    {
+	open my $fh, '>', "$options->{root}/var/lib/dpkg/available" or die "failed to open(): $!";
+	close $fh;
+    }
+
     if (scalar @{$options->{foreignarchs}} > 0) {
 	open my $fh, '>', "$options->{root}/var/lib/dpkg/arch" or die "cannot open /var/lib/dpkg/arch: $!";
 	print $fh "$options->{nativearch}\n";
