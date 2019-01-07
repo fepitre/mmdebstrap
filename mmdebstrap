@@ -2157,6 +2157,7 @@ Examples:
     --aptopt='Acquire::Languages { "environment"; "en"; }'
     --aptopt='Acquire::Languages "none"'
     --aptopt='Apt::Install-Recommends "true"'
+    --aptopt='Acquire::http { Proxy "http://127.0.0.1:3142"; }'
 
 =item B<--dpkgopt>
 
