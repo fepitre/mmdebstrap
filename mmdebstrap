@@ -1612,6 +1612,7 @@ sub main() {
 		print STDERR "I: /proc/sys/kernel/unprivileged_userns_clone is set to $content\n";
 		print STDERR "I: try running: sudo sysctl -w kernel.unprivileged_userns_clone=1\n";
 		print STDERR "I: or permanently enable unprivileged usernamespaces by putting the setting into /etc/sysctl.d/\n";
+		print STDERR "I: see https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=898446\n";
 	    }
 	    exit 1;
 	}
