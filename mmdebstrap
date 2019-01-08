@@ -1454,6 +1454,24 @@ sub setup {
 	die "unknown mode: $options->{mode}";
     }
 
+    if (scalar @{$options->{customize}} > 0) {
+	# FIXME: should have stuff mounted and start-stop-daemon and
+	# policy-rc.d setup
+	foreach my $script (@{$options->{customize}}) {
+	    if ( -x $script || $script !~ m/[^\w@\%+=:,.\/-]/a) {
+		print STDERR "I: running customize script directly: $script $options->{root}\n";
+		# execute it directly if it's an executable file
+		# or if it there are no shell metacharacters
+		# (the /a regex modifier makes \w match only ASCII)
+		0 == system($script, $options->{root}) or die "customization script failed: $script";
+	    } else {
+		print STDERR "I: running customize script in shell: sh -c '$script' exec $options->{root}\n";
+		# otherwise, wrap everything in sh -c
+		0 == system('sh', '-c', $script, 'exec', $options->{root}) or die "customization script failed: $script";
+	    }
+	}
+    }
+
     # clean up temporary configuration file
     unlink "$options->{root}/etc/apt/apt.conf.d/00mmdebstrap" or die "failed to unlink /etc/apt/apt.conf.d/00mmdebstrap: $!";
 
@@ -1511,6 +1529,7 @@ sub main() {
 	dpkgopts => [],
 	aptopts => [],
 	verbose => 0,
+	customize => [],
     };
     chomp ($options->{architectures} = `dpkg --print-architecture`);
     Getopt::Long::Configure ("bundling");
@@ -1529,6 +1548,8 @@ sub main() {
 	'resolve-deps' => sub {},
 	'merged-usr' => sub {},
 	'no-merged-usr' => sub {},
+	# option is hidden until I'm happy with it
+	'customize=s@' => \$options->{customize},
     ) or pod2usage(-exitval => 2, -verbose => 1);
 
     my @valid_variants = ('extract', 'custom', 'essential', 'apt', 'required',
@@ -2198,6 +2219,27 @@ the foreign dpkg architectures. Without this option, the I<native>
 architecture of the chroot defaults to the native architecture of the system
 running mmdebstrap.
 
+=begin comment
+
+=item B<--customize>=I<command>
+
+Execute arbitrary I<command>s after the chroot is set up and before it is
+cleaned up. Can be specified multiple times. The commands are executed in the
+order in which they are given on the command line. If I<command> is an
+existing executable file or if I<command> does not contain any shell
+metacharacters, then I<command> is directly exec-ed with the path to the
+chroot directory passed as the first argument. Otherwise, I<command> is
+executed under I<sh> and the chroot directory can be accessed via I<$1>.
+
+Examples:
+
+    --customize='chroot "$1" passwd --delete root'
+    --customize='chroot "$1" useradd --home-dir /home/user --create-home user'
+    --customize='chroot "$1" passwd --delete user'
+    --customize='echo host > "$1/etc/hostname"'
+    --customize=/usr/share/autopkgtest/setup-commands/setup-testbed
+
+=end comment
 
 =back
 
@@ -2337,6 +2379,38 @@ Use as debootstrap replacement in sbuild-createchroot:
     $ sbuild-createchroot --debootstrap=mmdebstrap \
         --make-sbuild-tarball ~/.cache/sbuild/unstable-amd64.tar.gz \
         unstable $(mktemp -d)
+
+=begin comment
+
+Use as replacement for autopkgtest-build-qemu and vmdb2:
+
+    $ mmdebstrap --variant=important --include=linux-image-amd64 \
+        --customize='chroot "$1" passwd --delete root' \
+        --customize='chroot "$1" useradd --home-dir /home/user --create-home user' \
+        --customize='chroot "$1" passwd --delete user' \
+        --customize='echo host > "$1/etc/hostname"' \
+        --customize=/usr/share/autopkgtest/setup-commands/setup-testbed \
+        unstable debian-unstable.tar
+    $ cat << END > extlinux.conf
+    > default linux
+    > timeout 0
+    >
+    > label linux
+    > kernel /vmlinuz
+    > append initrd=/initrd.img root=/dev/vda1 rw console=ttyS0
+    END
+    $ echo "127.0.0.1 localhost" > hosts
+    $ guestfish -N debian-unstable.img=disk:2G -- \
+        part-disk /dev/sda mbr : \
+        part-set-bootable /dev/sda 1 true : \
+        mkfs ext2 /dev/sda1 : mount /dev/sda1 / : \
+        tar-in debian-unstable.tar / : \
+        extlinux / : \
+        copy-in extlinux.conf / :
+        copy-in hosts /etc/
+    $ qemu-img convert -O qcow2 debian-unstable.img debian-unstable.qcow2
+
+=end comment
 
 =head1 ENVIRONMENT VARIABLES
 
