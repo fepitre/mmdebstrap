@@ -1759,6 +1759,8 @@ sub main() {
 	    } elsif ($stdindata ne '') {
 		$sourceslist .= $stdindata;
 	    } else {
+		# FIXME: change default mirror depending on $suite
+		#        (for derivatives)
 		$sourceslist .= "deb http://deb.debian.org/debian $suite $options->{components}\n";
 		if (any { $_ eq $suite } ('stable', 'oldstable', 'stretch') ) {
 		    $sourceslist .= "deb http://deb.debian.org/debian $suite-updates $options->{components}\n";
