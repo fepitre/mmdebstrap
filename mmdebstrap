@@ -2097,7 +2097,7 @@ then it is used as a one-line-style format entry for apt's sources.list inside
 the chroot.  If a I<MIRROR> option contains a "://" then it is interpreted as
 a mirror URI and the apt line inside the chroot is assembled as "deb [arch=A]
 B C D" where A is the host's native architecture, B is the I<MIRROR>, C is the
-given I<SUITE> and D is the components given via --components (defaults to
+given I<SUITE> and D is the components given via B<--components> (defaults to
 "main"). If a I<MIRROR> option happens to be an existing file, then its
 contents are pasted into the chroot's sources.list.  This can be used to
 supply a deb822 style sources.list. If I<MIRROR> is C<-> then standard input
@@ -2131,27 +2131,27 @@ file.
 
 Print this help text and exit.
 
-=item B<--variant>
+=item B<--variant>=I<name>
 
-Choose which package set to install. Valid variant names are B<extract>,
+Choose which package set to install. Valid variant I<name>s are B<extract>,
 B<custom>, B<essential>, B<apt>, B<required>, B<minbase>, B<buildd>,
 B<important>, B<debootstrap>, B<->, and B<standard>. The default variant is
 B<required>. See the section B<VARIANTS> for more information.
 
-=item B<--mode>
+=item B<--mode>=I<name>
 
 Choose how to perform the chroot operation and create a filesystem with
-ownership information different from the current user. Valid modes are B<auto>,
+ownership information different from the current user. Valid mode I<name>s are B<auto>,
 B<sudo>, B<root>, B<unshare>, B<fakeroot>, B<fakechroot> and B<proot>. The
 default mode is B<auto>. See the section B<MODES> for more information.
 
-=item B<--aptopt>
+=item B<--aptopt>=I<option>|I<file>
 
-Pass arbitrary options to apt. Will be added to
+Pass arbitrary I<option>s to apt. Will be added to
 F</etc/apt/apt.conf.d/99mmdebstrap> inside the chroot.  Can be specified
-multiple times. Each option with be appended to 99mmdebstrap. A semicolon will
+multiple times. Each I<option> will be appended to 99mmdebstrap. A semicolon will
 be added at the end of the option if necessary. If the command line argument
-is an existing file, the content of the file will be appended to 99mmdebstrap
+is an existing I<file>, the content of the file will be appended to 99mmdebstrap
 verbatim.
 
 Examples:
@@ -2162,17 +2162,17 @@ Examples:
     --aptopt='Apt::Install-Recommends "true"'
     --aptopt='Acquire::http { Proxy "http://127.0.0.1:3142"; }'
 
-=item B<--dpkgopt>
+=item B<--dpkgopt>=I<option>|I<file>
 
-Pass arbitrary options to dpkg. Will be added to
+Pass arbitrary I<option>s to dpkg. Will be added to
 F</etc/dpkg/dpkg.cfg.d/99mmdebstrap> inside the chroot. Can be specified
-multiple times. Each option will be appended to 99mmdebstrap. If the command
-line argument is an existing file, the content of the file will be appended to
+multiple times. Each I<option> will be appended to 99mmdebstrap. If the command
+line argument is an existing I<file>, the content of the file will be appended to
 99mmdebstrap verbatim.
 
 Example: --dpkgopt="path-exclude=/usr/share/man/*"
 
-=item B<--include>
+=item B<--include>=I<pkg1>[,I<pkg2>,...]
 
 Comma separated list of packages which will be installed in addition to the
 packages installed by the specified variant. The direct and indirect hard
@@ -2185,16 +2185,19 @@ B<essential> variant does not include apt and thus, the include option will
 only work when the B<chrootless> mode is selected and thus apt from the outside
 can be used.
 
-=item B<--components>
+=item B<--components>=I<comp1>[,I<comp2>,...]
 
-Comma separated list of components like main, contrib and non-free.
+Comma separated list of components like main, contrib and non-free which will
+be used for all URI-only I<MIRROR> arguments.
 
-=item B<--architectures>
+=item B<--architectures>=I<native>[,I<foreign1>,...]
 
-Comma separated list of architectures. The first architecture is the native
+Comma separated list of architectures. The first architecture is the I<native>
 architecture inside the chroot. The remaining architectures will be added to
-the foreign architectures. This defaults to the native architecture of the
-system running this program.
+the foreign dpkg architectures. Without this option, the I<native>
+architecture of the chroot defaults to the native architecture of the system
+running mmdebstrap.
+
 
 =back
 
@@ -2230,7 +2233,7 @@ permissions. Choose to create a tarball instead.
 
 =item B<fakeroot>, B<fakechroot>
 
-This mode will exec this program again under C<fakechroot fakeroot>. A
+This mode will exec mmdebstrap again under C<fakechroot fakeroot>. A
 directory chroot created with this mode will end up with wrong permissions.
 Choose to create a tarball instead.
 
@@ -2305,21 +2308,21 @@ The B<important> set plus all packages with Priority:standard.
 
 Use like debootstrap:
 
-    sudo mmdebstrap unstable ./unstable-chroot
+    $ sudo mmdebstrap unstable ./unstable-chroot
 
 Without superuser privileges:
 
-    mmdebstrap unstable unstable-chroot.tar
+    $ mmdebstrap unstable unstable-chroot.tar
 
 With complex apt options:
 
-    mmdebstrap < /etc/apt/sources.list > unstable-chroot.tar
+    $ mmdebstrap < /etc/apt/sources.list > unstable-chroot.tar
 
 Drop locales (but not the symlink to the locale name alias database),
 translated manual packages (but not the untranslated ones), and documentation
 (but not copyright and Debian changelog).
 
-    mmdebstrap --variant=essential \
+    $ mmdebstrap --variant=essential \
         --dpkgopt='path-exclude=/usr/share/man/*' \
         --dpkgopt='path-include=/usr/share/man/man[1-9]/*' \
         --dpkgopt='path-exclude=/usr/share/locale/*' \
@@ -2328,6 +2331,12 @@ translated manual packages (but not the untranslated ones), and documentation
         --dpkgopt='path-include=/usr/share/doc/*/copyright' \
         --dpkgopt='path-include=/usr/share/doc/*/changelog.Debian.*' \
         unstable debian-unstable.tar
+
+Use as debootstrap replacement in sbuild-createchroot:
+
+    $ sbuild-createchroot --debootstrap=mmdebstrap \
+        --make-sbuild-tarball ~/.cache/sbuild/unstable-amd64.tar.gz \
+        unstable $(mktemp -d)
 
 =head1 ENVIRONMENT VARIABLES
 
