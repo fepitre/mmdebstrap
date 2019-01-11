@@ -452,8 +452,9 @@ sub run_dpkg_progress {
 	my $fd = fileno $wfh;
 	# redirect dpkg's stderr to stdout so that we can capture it
 	open(STDERR, '>&', STDOUT);
-	exec { $args[0] } @args, "--status-fd=$fd", @debs;
-	die "cannot exec() dpkg";
+	my @execargs = (@args, "--status-fd=$fd", @debs);
+	exec { $args[0] } @execargs;
+	die 'cannot exec() ' . (join ' ', @execargs);
     }
     close $wfh;
 
@@ -523,8 +524,9 @@ sub run_apt_progress {
 	my $fd = fileno $wfh;
 	# redirect apt's stderr to stdout so that we can capture it
 	open(STDERR, '>&', STDOUT);
-	exec { $args[0] } @args, "-oAPT::Status-Fd=$fd", @debs;
-	die "cannot exec apt-get update: $!";
+	my @execargs = (@args, "-oAPT::Status-Fd=$fd", @debs);
+	exec { $args[0] } @execargs;
+	die 'cannot exec() ' . (join ' ', @execargs);
     }
     close $wfh;
 
