@@ -472,6 +472,33 @@ else
 	./run_null.sh SUDO
 fi
 
+print_header "mode=root,variant=apt: test --customize"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+cat << 'SCRIPT' > customize.sh
+#!/bin/sh
+chroot "\$1" whoami > "\$1/output2"
+chroot "\$1" pwd >> "\$1/output2"
+SCRIPT
+chmod +x customize.sh
+$CMD --mode=root --variant=apt --customize='chroot "\$1" sh -c "whoami; pwd" > "\$1/output1"' --customize=./customize.sh unstable /tmp/debian-unstable $mirror
+printf "root\n/\n" | cmp /tmp/debian-unstable/output1
+printf "root\n/\n" | cmp /tmp/debian-unstable/output2
+rm /tmp/debian-unstable/output1
+rm /tmp/debian-unstable/output2
+tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
+diff -u tar1.txt tar2.txt
+rm customize.sh
+rm -r /tmp/debian-unstable
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	./run_null.sh SUDO
+fi
+
 # test all variants
 
 for variant in essential apt required minbase buildd important debootstrap - standard; do
