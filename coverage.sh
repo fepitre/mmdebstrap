@@ -30,7 +30,7 @@ for dist in stable testing unstable; do
 			continue
 		fi
 		# skip because of #917386 and #917407
-		if [ "$dist" = 'unstable' ] && [ "$variant" = '-' ]; then
+		if [ "$dist" = 'unstable' -o "$dist" = 'testing' ] && [ "$variant" = '-' ]; then
 			continue
 		fi
 
@@ -98,7 +98,7 @@ for dist in stable testing unstable; do
 			continue
 		fi
 		# skip because of #917386 and #917407
-		if [ "$dist" = 'unstable' ] && [ "$variant" = '-' ]; then
+		if [ "$dist" = 'unstable' -o "$dist" = 'testing' ] && [ "$variant" = '-' ]; then
 			continue
 		fi
 		print_header "mode=root,variant=$variant: check against debootstrap $dist"
