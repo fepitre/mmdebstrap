@@ -437,16 +437,12 @@ sub print_progress {
     printf STDERR "%6.2f [%s]\r", $perc, $bar;
 }
 
-sub run_dpkg_progress {
-    my $options = shift;
-    my @args = @{$options->{ARGV}};
-    my @debs = @{$options->{PKGS}};
-    my $verbose = $options->{VERBOSE} // 0;
+sub run_progress {
+    my ($get_exec, $line_handler, $line_has_error, $verbose) = @_;
     pipe my $rfh, my $wfh;
     my $got_signal = 0;
     my $ignore = sub {
-	$got_signal = shift;
-	print STDERR "I: run_dpkg_progress() received signal $got_signal: waiting for dpkg...\n";
+	print STDERR "I: run_progress() received signal $_[0]: waiting for child...\n";
     };
 
     # delay signals so that we can fork and change behaviour of the signal
@@ -454,9 +450,9 @@ sub run_dpkg_progress {
     my $sigset = POSIX::SigSet->new(SIGINT, SIGHUP, SIGPIPE, SIGTERM);
     POSIX::sigprocmask(SIG_BLOCK, $sigset) or die "Can't block signals: $!\n";
 
-    my $dpkgpid = open (my $pipe_dpkg, '-|') // die "failed to fork(): $!";
+    my $pid1 = open(my $pipe, '-|') // die "failed to fork(): $!";
 
-    if ($dpkgpid == 0) {
+    if ($pid1 == 0) {
 	# child: default signal handlers
 	$SIG{'INT'} = 'DEFAULT';
 	$SIG{'HUP'} = 'DEFAULT';
@@ -468,129 +464,14 @@ sub run_dpkg_progress {
 
 	close $rfh;
 	# Unset the close-on-exec flag, so that the file descriptor does not
-	# get closed when we exec dpkg
+	# get closed when we exec
 	my $flags = fcntl( $wfh, F_GETFD, 0 ) or die "fcntl F_GETFD: $!";
 	fcntl($wfh, F_SETFD, $flags & ~FD_CLOEXEC ) or die "fcntl F_SETFD: $!";
 	my $fd = fileno $wfh;
-	# redirect dpkg's stderr to stdout so that we can capture it
+	# redirect stderr to stdout so that we can capture it
 	open(STDERR, '>&', STDOUT);
-	my @execargs = (@args, "--status-fd=$fd", @debs);
-	exec { $args[0] } @execargs;
-	die 'cannot exec() ' . (join ' ', @execargs);
-    }
-    close $wfh;
-
-    # spawn two processes:
-    #   parent will parse stdout
-    #   child will parse $rfh for the progress meter
-    my $pid = fork() // die "failed to fork(): $!";
-    if ($pid == 0) {
-	# child: default signal handlers
-	$SIG{'INT'} = 'IGNORE';
-	$SIG{'HUP'} = 'IGNORE';
-	$SIG{'PIPE'} = 'IGNORE';
-	$SIG{'TERM'} = 'IGNORE';
-
-	# unblock all delayed signals (and possibly handle them)
-	POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or die "Can't unblock signals: $!\n";
-
-	print_progress 0.0 if not $verbose;
-	my $num = 0;
-	# each package has one install and one configure step, thus the total
-	# number is twice the number of packages
-	my $total = (scalar @debs) * 2;
-	while (my $line = <$rfh>) {
-	    if ($line =~ /^processing: (install|configure): /) {
-		$num += 1;
-	    }
-	    my $perc = $num/$total*100;
-	    print_progress $perc if not $verbose;
-	}
-	print_progress "done" if not $verbose;
-
-	exit 0;
-    }
-
-    # parent: ignore signals
-    # by using "local", the original is automatically restored once the
-    # function returns
-    local $SIG{'INT'} = $ignore;
-    local $SIG{'HUP'} = $ignore;
-    local $SIG{'PIPE'} = $ignore;
-    local $SIG{'TERM'} = $ignore;
-
-    # unblock all delayed signals (and possibly handle them)
-    POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or die "Can't unblock signals: $!\n";
-
-    my $dpkg_output = '';
-    while (my $line = <$pipe_dpkg>) {
-	if ($verbose) {
-	    print STDERR $line;
-	} else {
-	    # forward captured apt output
-	    $dpkg_output .= $line;
-	}
-    }
-    close $pipe_dpkg;
-    my $fail = 0;
-    if ($? != 0) {
-	$fail = 1;
-    }
-
-    waitpid $pid, 0;
-    $? == 0 or die "progress parsing failed";
-
-    if ($got_signal) {
-	die "run_dpkg_progress() received signal: $got_signal";
-    }
-
-    # only print apt failure after progress output finished or otherwise it
-    # might interfere
-    if ($fail) {
-	print STDERR $dpkg_output;
-	die ((join ' ', @args, @debs) . ' failed');
-    }
-}
-
-sub run_apt_progress {
-    my $options = shift;
-    my @args = @{$options->{ARGV}};
-    my @debs = @{$options->{PKGS} // []};
-    my $verbose = $options->{VERBOSE} // 0;
-    pipe my $rfh, my $wfh;
-    my $got_signal = 0;
-    my $ignore = sub {
-	$got_signal = shift;
-	print STDERR "I: run_apt_progress() received signal $got_signal: waiting for apt...\n";
-    };
-
-    # delay signals so that we can fork and change behaviour of the signal
-    # handler in parent and child without getting interrupted
-    my $sigset = POSIX::SigSet->new(SIGINT, SIGHUP, SIGPIPE, SIGTERM);
-    POSIX::sigprocmask(SIG_BLOCK, $sigset) or die "Can't block signals: $!\n";
-
-    my $aptpid = open(my $pipe_apt, '-|') // die "failed to fork(): $!";
-
-    if ($aptpid == 0) {
-	# child: default signal handlers
-	$SIG{'INT'} = 'DEFAULT';
-	$SIG{'HUP'} = 'DEFAULT';
-	$SIG{'PIPE'} = 'DEFAULT';
-	$SIG{'TERM'} = 'DEFAULT';
-
-	# unblock all delayed signals (and possibly handle them)
-	POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or die "Can't unblock signals: $!\n";
-
-	close $rfh;
-	# Unset the close-on-exec flag, so that the file descriptor does not
-	# get closed when we exec apt-get
-	my $flags = fcntl( $wfh, F_GETFD, 0 ) or die "fcntl F_GETFD: $!";
-	fcntl($wfh, F_SETFD, $flags & ~FD_CLOEXEC ) or die "fcntl F_SETFD: $!";
-	my $fd = fileno $wfh;
-	# redirect apt's stderr to stdout so that we can capture it
-	open(STDERR, '>&', STDOUT);
-	my @execargs = (@args, "-oAPT::Status-Fd=$fd", @debs);
-	exec { $args[0] } @execargs;
+	my @execargs = $get_exec->($fd);
+	exec { $execargs[0] } @execargs;
 	die 'cannot exec() ' . (join ' ', @execargs);
     }
     close $wfh;
@@ -598,8 +479,8 @@ sub run_apt_progress {
     # spawn two processes:
     #   parent will parse stdout to look for errors
     #   child will parse $rfh for the progress meter
-    my $pid = fork() // die "failed to fork(): $!";
-    if ($pid == 0) {
+    my $pid2 = fork() // die "failed to fork(): $!";
+    if ($pid2 == 0) {
 	# child: default signal handlers
 	$SIG{'INT'} = 'IGNORE';
 	$SIG{'HUP'} = 'IGNORE';
@@ -611,10 +492,10 @@ sub run_apt_progress {
 
 	print_progress 0.0 if not $verbose;
 	while (my $line = <$rfh>) {
-	    if ($line =~ /(pmstatus|dlstatus):[^:]+:(\d+\.\d+):.*/) {
-		print_progress $2 if not $verbose;
-	    }
-	    #print STDERR "apt: $line";
+	    next if $verbose;
+	    my $output = $line_handler->($line);
+	    next unless $output;
+	    print_progress $output;
 	}
 	print_progress "done" if not $verbose;
 
@@ -632,42 +513,78 @@ sub run_apt_progress {
     # unblock all delayed signals (and possibly handle them)
     POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or die "Can't unblock signals: $!\n";
 
+    my $output = '';
     my $has_error = 0;
-    # apt-get doesn't report a non-zero exit if the update failed. Thus, we
-    # have to parse its output. See #778357, #776152, #696335 and #745735
-    my $apt_output = '';
-    while (my $line = <$pipe_apt>) {
-	if ($line =~ '^W: ') {
-	    $has_error = 1;
-	} elsif ($line =~ '^Err:') {
-	    $has_error = 1;
-	}
+    while (my $line = <$pipe>) {
+	$has_error = $line_has_error->($line);
 	if ($verbose) {
 	    print STDERR $line;
 	} else {
 	    # forward captured apt output
-	    $apt_output .= $line;
+	    $output .= $line;
 	}
     }
-    close($pipe_apt);
+
+    close($pipe);
     my $fail = 0;
     if ($? != 0 or $has_error) {
 	$fail = 1;
     }
 
-    waitpid $pid, 0;
+    waitpid $pid2, 0;
     $? == 0 or die "progress parsing failed";
 
     if ($got_signal) {
-	die "run_apt_progress() received signal: $got_signal";
+	die "run_progress() received signal: $got_signal";
     }
 
-    # only print apt failure after progress output finished or otherwise it
-    # might interfere
+    # only print failure after progress output finished or otherwise it
+    # might interfere with the remaining output
     if ($fail) {
-	print STDERR $apt_output;
-	die ((join ' ', @args, @debs) . ' failed');
+	print STDERR $output;
+	die ((join ' ', $get_exec->('<$fd>')) . ' failed');
     }
+}
+
+sub run_dpkg_progress {
+    my $options = shift;
+    my @debs = @{$options->{PKGS} // []};
+    my $verbose = $options->{VERBOSE} // 0;
+    my $get_exec = sub { return @{$options->{ARGV}}, "--status-fd=$_[0]", @debs; };
+    my $line_has_error = sub { return 0; };
+    my $num = 0;
+    # each package has one install and one configure step, thus the total
+    # number is twice the number of packages
+    my $total = (scalar @debs) * 2;
+    my $line_handler = sub {
+	if ($_[0] =~ /^processing: (install|configure): /) {
+	    $num += 1;
+	}
+	return $num/$total*100;
+    };
+    run_progress $get_exec, $line_handler, $line_has_error, $verbose;
+}
+
+sub run_apt_progress {
+    my $options = shift;
+    my @debs = @{$options->{PKGS} // []};
+    my $verbose = $options->{VERBOSE} // 0;
+    my $get_exec = sub {
+	return @{$options->{ARGV}}, "-oAPT::Status-Fd=$_[0]", @debs; };
+    my $line_has_error = sub {
+	# apt-get doesn't report a non-zero exit if the update failed. Thus, we
+	# have to parse its output. See #778357, #776152, #696335 and #745735
+	if ($_[0] =~ /^(W: |Err:)/) {
+	    return 1;
+	}
+	return 0;
+    };
+    my $line_handler = sub {
+	if ($_[0] =~ /(pmstatus|dlstatus):[^:]+:(\d+\.\d+):.*/) {
+	    return $2;
+	}
+    };
+    run_progress $get_exec, $line_handler, $line_has_error, $verbose;
 }
 
 sub run_chroot(&$) {
