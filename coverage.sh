@@ -143,6 +143,7 @@ rm /tmp/debian-$dist-debootstrap/var/lib/dpkg/status-old \
 # remove dpkg files
 rm /tmp/debian-$dist-debootstrap/var/lib/dpkg/available \
 	/tmp/debian-$dist-debootstrap/var/lib/dpkg/cmethopt
+touch /tmp/debian-$dist-debootstrap/var/lib/dpkg/available
 # since we installed packages directly from the .deb files, Priorities differ
 # thus we first check for equality and then remove the files
 chroot /tmp/debian-$dist-debootstrap dpkg --list > dpkg1
@@ -641,6 +642,7 @@ rm /tmp/debian-unstable/etc/fstab
 rm /tmp/debian-unstable/etc/hostname
 rm /tmp/debian-unstable/etc/resolv.conf
 rm /tmp/debian-unstable/var/lib/dpkg/status
+rm /tmp/debian-unstable/var/lib/dpkg/available
 ## delete merged usr symlinks
 #rm /tmp/debian-unstable/libx32
 #rm /tmp/debian-unstable/lib64
@@ -692,6 +694,7 @@ rm /tmp/debian-unstable/etc/fstab
 rm /tmp/debian-unstable/etc/hostname
 rm /tmp/debian-unstable/etc/resolv.conf
 rm /tmp/debian-unstable/var/lib/dpkg/status
+rm /tmp/debian-unstable/var/lib/dpkg/available
 ## delete merged usr symlinks
 #rm /tmp/debian-unstable/libx32
 #rm /tmp/debian-unstable/lib64
