@@ -25,6 +25,7 @@ use Cwd qw(abs_path);
 require "syscall.ph";
 use Fcntl qw(S_IFCHR S_IFBLK FD_CLOEXEC F_GETFD F_SETFD);
 use List::Util qw(any none);
+use POSIX qw(SIGINT SIGHUP SIGPIPE SIGTERM SIG_BLOCK SIG_UNBLOCK);
 
 # from sched.h
 use constant {
@@ -442,8 +443,29 @@ sub run_dpkg_progress {
     my @debs = @{$options->{PKGS}};
     my $verbose = $options->{VERBOSE} // 0;
     pipe my $rfh, my $wfh;
+    my $got_signal = 0;
+    my $ignore = sub {
+	$got_signal = shift;
+	print STDERR "I: run_dpkg_progress() received signal $got_signal: waiting for dpkg...\n";
+    };
+
+    # delay signals so that we can fork and change behaviour of the signal
+    # handler in parent and child without getting interrupted
+    my $sigset = POSIX::SigSet->new(SIGINT, SIGHUP, SIGPIPE, SIGTERM);
+    POSIX::sigprocmask(SIG_BLOCK, $sigset) or die "Can't block signals: $!\n";
+
     my $dpkgpid = open (my $pipe_dpkg, '-|') // die "failed to fork(): $!";
+
     if ($dpkgpid == 0) {
+	# child: default signal handlers
+	$SIG{'INT'} = 'DEFAULT';
+	$SIG{'HUP'} = 'DEFAULT';
+	$SIG{'PIPE'} = 'DEFAULT';
+	$SIG{'TERM'} = 'DEFAULT';
+
+	# unblock all delayed signals (and possibly handle them)
+	POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or die "Can't unblock signals: $!\n";
+
 	close $rfh;
 	# Unset the close-on-exec flag, so that the file descriptor does not
 	# get closed when we exec dpkg
@@ -463,7 +485,15 @@ sub run_dpkg_progress {
     #   child will parse $rfh for the progress meter
     my $pid = fork() // die "failed to fork(): $!";
     if ($pid == 0) {
-	# child
+	# child: default signal handlers
+	$SIG{'INT'} = 'IGNORE';
+	$SIG{'HUP'} = 'IGNORE';
+	$SIG{'PIPE'} = 'IGNORE';
+	$SIG{'TERM'} = 'IGNORE';
+
+	# unblock all delayed signals (and possibly handle them)
+	POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or die "Can't unblock signals: $!\n";
+
 	print_progress 0.0 if not $verbose;
 	my $num = 0;
 	# each package has one install and one configure step, thus the total
@@ -481,7 +511,17 @@ sub run_dpkg_progress {
 	exit 0;
     }
 
-    # parent
+    # parent: ignore signals
+    # by using "local", the original is automatically restored once the
+    # function returns
+    local $SIG{'INT'} = $ignore;
+    local $SIG{'HUP'} = $ignore;
+    local $SIG{'PIPE'} = $ignore;
+    local $SIG{'TERM'} = $ignore;
+
+    # unblock all delayed signals (and possibly handle them)
+    POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or die "Can't unblock signals: $!\n";
+
     my $dpkg_output = '';
     while (my $line = <$pipe_dpkg>) {
 	if ($verbose) {
@@ -500,6 +540,10 @@ sub run_dpkg_progress {
     waitpid $pid, 0;
     $? == 0 or die "progress parsing failed";
 
+    if ($got_signal) {
+	die "run_dpkg_progress() received signal: $got_signal";
+    }
+
     # only print apt failure after progress output finished or otherwise it
     # might interfere
     if ($fail) {
@@ -514,8 +558,29 @@ sub run_apt_progress {
     my @debs = @{$options->{PKGS} // []};
     my $verbose = $options->{VERBOSE} // 0;
     pipe my $rfh, my $wfh;
+    my $got_signal = 0;
+    my $ignore = sub {
+	$got_signal = shift;
+	print STDERR "I: run_apt_progress() received signal $got_signal: waiting for apt...\n";
+    };
+
+    # delay signals so that we can fork and change behaviour of the signal
+    # handler in parent and child without getting interrupted
+    my $sigset = POSIX::SigSet->new(SIGINT, SIGHUP, SIGPIPE, SIGTERM);
+    POSIX::sigprocmask(SIG_BLOCK, $sigset) or die "Can't block signals: $!\n";
+
     my $aptpid = open(my $pipe_apt, '-|') // die "failed to fork(): $!";
+
     if ($aptpid == 0) {
+	# child: default signal handlers
+	$SIG{'INT'} = 'DEFAULT';
+	$SIG{'HUP'} = 'DEFAULT';
+	$SIG{'PIPE'} = 'DEFAULT';
+	$SIG{'TERM'} = 'DEFAULT';
+
+	# unblock all delayed signals (and possibly handle them)
+	POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or die "Can't unblock signals: $!\n";
+
 	close $rfh;
 	# Unset the close-on-exec flag, so that the file descriptor does not
 	# get closed when we exec apt-get
@@ -535,7 +600,15 @@ sub run_apt_progress {
     #   child will parse $rfh for the progress meter
     my $pid = fork() // die "failed to fork(): $!";
     if ($pid == 0) {
-	# child
+	# child: default signal handlers
+	$SIG{'INT'} = 'IGNORE';
+	$SIG{'HUP'} = 'IGNORE';
+	$SIG{'PIPE'} = 'IGNORE';
+	$SIG{'TERM'} = 'IGNORE';
+
+	# unblock all delayed signals (and possibly handle them)
+	POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or die "Can't unblock signals: $!\n";
+
 	print_progress 0.0 if not $verbose;
 	while (my $line = <$rfh>) {
 	    if ($line =~ /(pmstatus|dlstatus):[^:]+:(\d+\.\d+):.*/) {
@@ -548,7 +621,17 @@ sub run_apt_progress {
 	exit 0;
     }
 
-    # parent
+    # parent: ignore signals
+    # by using "local", the original is automatically restored once the
+    # function returns
+    local $SIG{'INT'} = $ignore;
+    local $SIG{'HUP'} = $ignore;
+    local $SIG{'PIPE'} = $ignore;
+    local $SIG{'TERM'} = $ignore;
+
+    # unblock all delayed signals (and possibly handle them)
+    POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or die "Can't unblock signals: $!\n";
+
     my $has_error = 0;
     # apt-get doesn't report a non-zero exit if the update failed. Thus, we
     # have to parse its output. See #778357, #776152, #696335 and #745735
@@ -575,11 +658,202 @@ sub run_apt_progress {
     waitpid $pid, 0;
     $? == 0 or die "progress parsing failed";
 
+    if ($got_signal) {
+	die "run_apt_progress() received signal: $got_signal";
+    }
+
     # only print apt failure after progress output finished or otherwise it
     # might interfere
     if ($fail) {
 	print STDERR $apt_output;
 	die ((join ' ', @args, @debs) . ' failed');
+    }
+}
+
+sub run_chroot(&$) {
+    my $cmd = shift;
+    my $options = shift;
+
+    my @cleanup_tasks = ();
+
+    my $cleanup = sub {
+	my $signal = $_[0];
+	while (my $task = pop @cleanup_tasks) {
+	    $task->();
+	}
+	if ($signal) {
+	    print STDERR "W: pid $PID cought signal: $signal\n";
+	    exit 1;
+	}
+    };
+
+    local $SIG{INT} = $cleanup;
+    local $SIG{HUP} = $cleanup;
+    local $SIG{PIPE} = $cleanup;
+    local $SIG{TERM} = $cleanup;
+
+    eval {
+	if (any { $_ eq $options->{mode} } ('root', 'unshare')) {
+	    # if more than essential should be installed, make the system look
+	    # more like a real one by creating or bind-mounting the device nodes
+	    foreach my $file (@devfiles) {
+		my ($fname, $mode, $type, $linkname, $devmajor, $devminor) = @{$file};
+		next if $fname eq './dev/';
+		if ($type == 0) { # normal file
+		    die "type 0 not implemented";
+		} elsif ($type == 1) { # hardlink
+		    die "type 1 not implemented";
+		} elsif ($type == 2) { # symlink
+		    if (!$options->{havemknod}) {
+			if ($options->{mode} eq 'fakechroot' and $linkname =~ /^\/proc/) {
+			    # there is no /proc in fakechroot mode
+			    next;
+			}
+			if (any { $_ eq $options->{mode} } ('root', 'unshare')) {
+			    push @cleanup_tasks, sub {
+				unlink "$options->{root}/$fname" or warn "cannot unlink $fname: $!";
+			    }
+			}
+			symlink $linkname, "$options->{root}/$fname" or die "cannot create symlink $fname";
+		    }
+		} elsif ($type == 3 or $type == 4) { # character/block special
+		    if (!$options->{havemknod}) {
+			open my $fh, '>', "$options->{root}/$fname" or die "cannot open $options->{root}/$fname: $!";
+			close $fh;
+			if ($options->{mode} eq 'unshare') {
+			    push @cleanup_tasks, sub {
+				0 == system('umount', '--no-mtab', "$options->{root}/$fname") or warn "umount $fname failed: $?";
+				unlink "$options->{root}/$fname" or warn "cannot unlink $fname: $!";
+			    };
+			} elsif ($options->{mode} eq 'root') {
+			    push @cleanup_tasks, sub {
+				0 == system('umount', "$options->{root}/$fname") or warn "umount failed: $?";
+				unlink "$options->{root}/$fname" or warn "cannot unlink $fname: $!";
+			    };
+			} else {
+			    die "unknown mode: $options->{mode}";
+			}
+			0 == system('mount', '-o', 'bind', "/$fname", "$options->{root}/$fname") or die "mount $fname failed: $?";
+		    }
+		} elsif ($type == 5) { # directory
+		    if (!$options->{havemknod}) {
+			if (any { $_ eq $options->{mode} } ('root', 'unshare')) {
+			    push @cleanup_tasks, sub {
+				rmdir "$options->{root}/$fname" or warn "cannot rmdir $fname: $!";
+			    }
+			}
+			make_path "$options->{root}/$fname" or die "cannot make_path $fname";
+			chmod $mode, "$options->{root}/$fname" or die "cannot chmod $fname: $!";
+		    }
+		    if ($options->{mode} eq 'unshare') {
+			push @cleanup_tasks, sub {
+			    0 == system('umount', '--no-mtab', "$options->{root}/$fname") or warn "umount $fname failed: $?";
+			};
+		    } elsif ($options->{mode} eq 'root') {
+			push @cleanup_tasks, sub {
+			    0 == system('umount', "$options->{root}/$fname") or warn "umount $fname failed: $?";
+			};
+		    } else {
+			die "unknown mode: $options->{mode}";
+		    }
+		    0 == system('mount', '-o', 'bind', "/$fname", "$options->{root}/$fname") or die "mount $fname failed: $?";
+		} else {
+		    die "unsupported type: $type";
+		}
+	    }
+	} elsif (any { $_ eq $options->{mode} } ('proot', 'fakechroot')) {
+	    # we cannot mount in fakechroot and proot mode
+	    # in proot mode we have /dev bind-mounted already through --bind=/dev
+	} else {
+	    die "unknown mode: $options->{mode}";
+	}
+	# We can only mount /proc and /sys after extracting the essential
+	# set because if we mount it before, then base-files will not be able
+	# to extract those
+	if ($options->{mode} eq 'root') {
+	    push @cleanup_tasks, sub {
+		0 == system('umount', "$options->{root}/sys") or warn "umount /sys failed: $?";
+	    };
+	    0 == system('mount', '-t', 'sysfs', '-o', 'nosuid,nodev,noexec', 'sys', "$options->{root}/sys") or die "mount /sys failed: $?";
+	} elsif ($options->{mode} eq 'unshare') {
+	    # naturally we have to clean up after ourselves in sudo mode where we
+	    # do a real mount. But we also need to unmount in unshare mode because
+	    # otherwise, even with the --one-file-system tar option, the
+	    # permissions of the mount source will be stored and not the mount
+	    # target (the directory)
+	    push @cleanup_tasks, sub {
+		# since we cannot write to /etc/mtab we need --no-mtab
+		# unmounting /sys only seems to be successful with --lazy
+		0 == system('umount', '--no-mtab', '--lazy', "$options->{root}/sys") or warn "umount /sys failed: $?";
+	    };
+	    # without the network namespace unshared, we cannot mount a new
+	    # sysfs. Since we need network, we just bind-mount.
+	    #
+	    # we have to rbind because just using bind results in "wrong fs
+	    # type, bad option, bad superblock" error
+	    0 == system('mount', '-o', 'rbind', '/sys', "$options->{root}/sys") or die "mount /sys failed: $?";
+	} elsif (any { $_ eq $options->{mode} } ('proot', 'fakechroot')) {
+	    # we cannot mount in fakechroot and proot mode
+	    # in proot mode we have /proc bind-mounted already through --bind=/proc
+	} else {
+	    die "unknown mode: $options->{mode}";
+	}
+	if ($options->{mode} eq 'root') {
+	    push @cleanup_tasks, sub {
+		0 == system('umount', "$options->{root}/proc") or die "umount /proc failed: $?";
+	    };
+	    0 == system('mount', '-t', 'proc', 'proc', "$options->{root}/proc") or die "mount /proc failed: $?";
+	} elsif ($options->{mode} eq 'unshare') {
+	    # naturally we have to clean up after ourselves in sudo mode where we
+	    # do a real mount. But we also need to unmount in unshare mode because
+	    # otherwise, even with the --one-file-system tar option, the
+	    # permissions of the mount source will be stored and not the mount
+	    # target (the directory)
+	    push @cleanup_tasks, sub {
+		# since we cannot write to /etc/mtab we need --no-mtab
+		0 == system('umount', '--no-mtab', "$options->{root}/proc") or die "umount /proc failed: $?";
+	    };
+	    0 == system('mount', '-t', 'proc', 'proc', "$options->{root}/proc") or die "mount /proc failed: $?";
+	} elsif (any { $_ eq $options->{mode} } ('proot', 'fakechroot')) {
+	    # we cannot mount in fakechroot and proot mode
+	    # in proot mode we have /sys bind-mounted already through --bind=/sys
+	} else {
+	    die "unknown mode: $options->{mode}";
+	}
+
+	# prevent daemons from starting
+	{
+	    open my $fh, '>', "$options->{root}/usr/sbin/policy-rc.d" or die "cannot open policy-rc.d: $!";
+	    print $fh "#!/bin/sh\n";
+	    print $fh "exit 101\n";
+	    close $fh;
+	    chmod 0755, "$options->{root}/usr/sbin/policy-rc.d" or die "cannot chmod policy-rc.d: $!";
+	}
+
+	{
+	    move("$options->{root}/sbin/start-stop-daemon", "$options->{root}/sbin/start-stop-daemon.REAL") or die "cannot move start-stop-daemon";
+	    open my $fh, '>', "$options->{root}/sbin/start-stop-daemon" or die "cannot open policy-rc.d: $!";
+	    print $fh "#!/bin/sh\n";
+	    print $fh "echo \"Warning: Fake start-stop-daemon called, doing nothing\">&2\n";
+	    close $fh;
+	    chmod 0755, "$options->{root}/sbin/start-stop-daemon" or die "cannot chmod start-stop-daemon: $!";
+	}
+
+	&{$cmd}();
+
+	# cleanup
+	move("$options->{root}/sbin/start-stop-daemon.REAL", "$options->{root}/sbin/start-stop-daemon") or die "cannot move start-stop-daemon";
+	unlink "$options->{root}/usr/sbin/policy-rc.d" or die "cannot unlink policy-rc.d";
+
+    };
+
+    my $error = $@;
+
+    # we use the cleanup function to do the unmounting
+    $cleanup->(0);
+
+    if ($error) {
+	die "run_chroot failed: $error";
     }
 }
 
@@ -1285,169 +1559,15 @@ sub setup {
 		    }
 		}
 
-		if (any { $_ eq $options->{mode} } ('root', 'unshare')) {
-		    # if more than essential should be installed, make the system look
-		    # more like a real one by creating or bind-mounting the device nodes
-		    foreach my $file (@devfiles) {
-			my ($fname, $mode, $type, $linkname, $devmajor, $devminor) = @{$file};
-			next if $fname eq './dev/';
-			if ($type == 0) { # normal file
-			    die "type 0 not implemented";
-			} elsif ($type == 1) { # hardlink
-			    die "type 1 not implemented";
-			} elsif ($type == 2) { # symlink
-			    if (!$options->{havemknod}) {
-				if ($options->{mode} eq 'fakechroot' and $linkname =~ /^\/proc/) {
-				    # there is no /proc in fakechroot mode
-				    next;
-				}
-				symlink $linkname, "$options->{root}/$fname" or die "cannot create symlink $fname";
-			    }
-			} elsif ($type == 3 or $type == 4) { # character/block special
-			    if (!$options->{havemknod}) {
-				open my $fh, '>', "$options->{root}/$fname" or die "cannot open $options->{root}/$fname: $!";
-				close $fh;
-				0 == system('mount', '-o', 'bind', "/$fname", "$options->{root}/$fname") or die "mount failed: $?";
-			    }
-			} elsif ($type == 5) { # directory
-			    if (!$options->{havemknod}) {
-				make_path "$options->{root}/$fname";
-				chmod $mode, "$options->{root}/$fname" or die "cannot chmod $fname: $!";
-			    }
-			    0 == system('mount', '-o', 'bind', "/$fname", "$options->{root}/$fname") or die "mount failed: $?";
-			} else {
-			    die "unsupported type: $type";
-			}
-		    }
-		} elsif (any { $_ eq $options->{mode} } ('proot', 'fakechroot')) {
-		    # we cannot mount in fakechroot and proot mode
-		    # in proot mode we have /dev bind-mounted already through --bind=/dev
-		} else {
-		    die "unknown mode: $options->{mode}";
-		}
-		# We can only mount /proc and /sys after extracting the essential
-		# set because if we mount it before, then base-files will not be able
-		# to extract those
-		if ($options->{mode} eq 'unshare') {
-		    # without the network namespace unshared, we cannot mount a new
-		    # sysfs. Since we need network, we just bind-mount.
-		    #
-		    # we have to rbind because just using bind results in "wrong fs
-		    # type, bad option, bad superblock" error
-		    0 == system('mount', '-o', 'rbind', '/sys', "$options->{root}/sys") or die "mount failed: $?";
-		} elsif ($options->{mode} eq 'root') {
-		    0 == system('mount', '-t', 'sysfs', '-o', 'nosuid,nodev,noexec', 'sys', "$options->{root}/sys") or die "mount failed: $?";
-		} elsif (any { $_ eq $options->{mode} } ('proot', 'fakechroot')) {
-		    # we cannot mount in fakechroot and proot mode
-		    # in proot mode we have /proc bind-mounted already through --bind=/proc
-		} else {
-		    die "unknown mode: $options->{mode}";
-		}
-		if (any { $_ eq $options->{mode} } ('root', 'unshare')) {
-		    0 == system('mount', '-t', 'proc', 'proc', "$options->{root}/proc") or die "mount failed: $?";
-		} elsif (any { $_ eq $options->{mode} } ('proot', 'fakechroot')) {
-		    # we cannot mount in fakechroot and proot mode
-		    # in proot mode we have /sys bind-mounted already through --bind=/sys
-		} else {
-		    die "unknown mode: $options->{mode}";
-		}
+		run_chroot {
+		    print STDERR "I: installing remaining packages inside the chroot...\n";
+		    run_apt_progress({
+			    ARGV => [@chrootcmd, 'apt-get', '--yes', 'install'],
+			    PKGS => [keys %pkgs_to_install],
+			    VERBOSE => $options->{verbose}
+			});
+		} $options;
 
-		# prevent daemons from starting
-		{
-		    open my $fh, '>', "$options->{root}/usr/sbin/policy-rc.d" or die "cannot open policy-rc.d: $!";
-		    print $fh "#!/bin/sh\n";
-		    print $fh "exit 101\n";
-		    close $fh;
-		    chmod 0755, "$options->{root}/usr/sbin/policy-rc.d" or die "cannot chmod policy-rc.d: $!";
-		}
-
-		{
-		    move("$options->{root}/sbin/start-stop-daemon", "$options->{root}/sbin/start-stop-daemon.REAL") or die "cannot move start-stop-daemon";
-		    open my $fh, '>', "$options->{root}/sbin/start-stop-daemon" or die "cannot open policy-rc.d: $!";
-		    print $fh "#!/bin/sh\n";
-		    print $fh "echo \"Warning: Fake start-stop-daemon called, doing nothing\">&2\n";
-		    close $fh;
-		    chmod 0755, "$options->{root}/sbin/start-stop-daemon" or die "cannot chmod start-stop-daemon: $!";
-		}
-
-		print STDERR "I: installing remaining packages inside the chroot...\n";
-		run_apt_progress({
-			ARGV => [@chrootcmd, 'apt-get', '--yes', 'install'],
-			PKGS => [keys %pkgs_to_install],
-			VERBOSE => $options->{verbose}
-		    });
-
-		# cleanup
-		move("$options->{root}/sbin/start-stop-daemon.REAL", "$options->{root}/sbin/start-stop-daemon") or die "cannot move start-stop-daemon";
-		unlink "$options->{root}/usr/sbin/policy-rc.d" or die "cannot unlink policy-rc.d";
-
-		if (any { $_ eq $options->{mode} } ('root', 'unshare')) {
-		    foreach my $file (@devfiles) {
-			my ($fname, undef, $type, $linkname, undef, undef) = @{$file};
-			next if $fname eq './dev/';
-			if ($type == 0) { # normal file
-			    die "type 0 not implemented";
-			} elsif ($type == 1) { # hardlink
-			    die "type 1 not implemented";
-			} elsif ($type == 2) { # symlink
-			    if (!$options->{havemknod}) {
-				unlink "$options->{root}/$fname" or die "cannot unlink $fname: $!";
-			    }
-			} elsif ($type == 3 or $type == 4) { # character/block special
-			    if (!$options->{havemknod}) {
-				if ($options->{mode} eq 'unshare') {
-				    # FIXME: handle umount by a signal handler in
-				    # case of CTRL+C
-				    0 == system('umount', '--no-mtab', "$options->{root}/$fname") or die "umount failed: $?";
-				} elsif ($options->{mode} eq 'root') {
-				    0 == system('umount', "$options->{root}/$fname") or die "umount failed: $?";
-				} elsif (any { $_ eq $options->{mode} } ('fakechroot', 'proot')) {
-				    die "impossible";
-				} else {
-				    die "unknown mode: $options->{mode}";
-				}
-				unlink "$options->{root}/$fname";
-			    }
-			} elsif ($type == 5) { # directory
-			    if ($options->{mode} eq 'unshare') {
-				0 == system('umount', '--no-mtab', "$options->{root}/$fname") or die "umount failed: $?";
-			    } elsif ($options->{mode} eq 'root') {
-				0 == system('umount', "$options->{root}/$fname") or die "umount failed: $?";
-			    } elsif (any { $_ eq $options->{mode} } ('fakechroot', 'proot')) {
-				die "impossible";
-			    } else {
-				die "unknown mode: $options->{mode}";
-			    }
-			    if (!$options->{havemknod}) {
-				rmdir "$options->{root}/$fname" or die "cannot rmdir $fname: $!";
-			    }
-			} else {
-			    die "unsupported type: $type";
-			}
-		    }
-		} elsif (any { $_ eq $options->{mode} } ('proot', 'fakechroot')) {
-		    # nothing was mounted
-		} else {
-		    die "unknown mode: $options->{mode}";
-		}
-		# naturally we have to clean up after ourselves in sudo mode where we
-		# do a real mount. But we also need to unmount in unshare mode because
-		# otherwise, even with the --one-file-system tar option, the
-		# permissions of the mount source will be stored and not the mount
-		# target (the directory)
-		if ($options->{mode} eq 'unshare') {
-		    # since we cannot write to /etc/mtab we need --no-mtab
-		    # unmounting /sys only seems to be successful with --lazy
-		    0 == system('umount', '--no-mtab', '--lazy', "$options->{root}/sys") or die "umount failed: $?";
-		    0 == system('umount', '--no-mtab', "$options->{root}/proc") or die "umount failed: $?";
-		} elsif ($options->{mode} eq 'root') {
-		    0 == system('umount', "$options->{root}/sys") or die "umount failed: $?";
-		    0 == system('umount', "$options->{root}/proc") or die "umount failed: $?";
-		} elsif (any { $_ eq $options->{mode} } ('proot', 'fakechroot')) {
-		    # nothing was mounted
-		} else {
-		    die "unknown mode: $options->{mode}";
-		}
 	    }
 	} else {
 	    die "unknown variant: $options->{variant}";
@@ -1457,21 +1577,21 @@ sub setup {
     }
 
     if (scalar @{$options->{customize}} > 0) {
-	# FIXME: should have stuff mounted and start-stop-daemon and
-	# policy-rc.d setup
-	foreach my $script (@{$options->{customize}}) {
-	    if ( -x $script || $script !~ m/[^\w@\%+=:,.\/-]/a) {
-		print STDERR "I: running customize script directly: $script $options->{root}\n";
-		# execute it directly if it's an executable file
-		# or if it there are no shell metacharacters
-		# (the /a regex modifier makes \w match only ASCII)
-		0 == system($script, $options->{root}) or die "customization script failed: $script";
-	    } else {
-		print STDERR "I: running customize script in shell: sh -c '$script' exec $options->{root}\n";
-		# otherwise, wrap everything in sh -c
-		0 == system('sh', '-c', $script, 'exec', $options->{root}) or die "customization script failed: $script";
+	run_chroot {
+	    foreach my $script (@{$options->{customize}}) {
+		if ( -x $script || $script !~ m/[^\w@\%+=:,.\/-]/a) {
+		    print STDERR "I: running customize script directly: $script $options->{root}\n";
+		    # execute it directly if it's an executable file
+		    # or if it there are no shell metacharacters
+		    # (the /a regex modifier makes \w match only ASCII)
+		    0 == system($script, $options->{root}) or die "customization script failed: $script";
+		} else {
+		    print STDERR "I: running customize script in shell: sh -c '$script' exec $options->{root}\n";
+		    # otherwise, wrap everything in sh -c
+		    0 == system('sh', '-c', $script, 'exec', $options->{root}) or die "customization script failed: $script";
+		}
 	    }
-	}
+	} $options;
     }
 
     # clean up temporary configuration file
@@ -1951,10 +2071,25 @@ sub main() {
     my $exitstatus = 0;
     my @taropts = ('--sort=name', "--mtime=\@$mtime", '--clamp-mtime', '--numeric-owner', '--one-file-system', '-c', '--exclude=./dev');
     push @taropts, @tar_compress_opts;
+
+    # disable signals so that we can fork and change behaviour of the signal
+    # handler in the parent and child without getting interrupted
+    my $sigset = POSIX::SigSet->new(SIGINT, SIGHUP, SIGPIPE, SIGTERM);
+    POSIX::sigprocmask(SIG_BLOCK, $sigset) or die "Can't block signals: $!\n";
+
     my $pid;
     pipe my $rfh, my $wfh;
     if ($options->{mode} eq 'unshare') {
 	$pid = get_unshare_cmd {
+	    # child
+	    $SIG{'INT'} = 'DEFAULT';
+	    $SIG{'HUP'} = 'DEFAULT';
+	    $SIG{'PIPE'} = 'DEFAULT';
+	    $SIG{'TERM'} = 'DEFAULT';
+
+	    # unblock all delayed signals (and possibly handle them)
+	    POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or die "Can't unblock signals: $!\n";
+
 	    close $rfh;
 	    open(STDOUT, '>&', STDERR);
 
@@ -1983,6 +2118,14 @@ sub main() {
     } elsif (any { $_ eq $options->{mode} } ('root', 'fakechroot', 'proot', 'chrootless')) {
 	$pid = fork() // die "fork() failed: $!";
 	if ($pid == 0) {
+	    $SIG{'INT'} = 'DEFAULT';
+	    $SIG{'HUP'} = 'DEFAULT';
+	    $SIG{'PIPE'} = 'DEFAULT';
+	    $SIG{'TERM'} = 'DEFAULT';
+
+	    # unblock all delayed signals (and possibly handle them)
+	    POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or die "Can't unblock signals: $!\n";
+
 	    close $rfh;
 	    open(STDOUT, '>&', STDERR);
 
@@ -2029,6 +2172,23 @@ sub main() {
 	die "unknown mode: $options->{mode}";
     }
 
+    # parent
+
+    my $got_signal = 0;
+    my $waiting_for = "setup";
+    my $ignore = sub {
+	$got_signal = shift;
+	print STDERR "I: main() received signal $got_signal: waiting for $waiting_for...\n";
+    };
+
+    $SIG{'INT'} = $ignore;
+    $SIG{'HUP'} = $ignore;
+    $SIG{'PIPE'} = $ignore;
+    $SIG{'TERM'} = $ignore;
+
+    # unblock all delayed signals (and possibly handle them)
+    POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or die "Can't unblock signals: $!\n";
+
     close $wfh;
 
     if ($options->{maketar}) {
@@ -2051,6 +2211,9 @@ sub main() {
     if ($? != 0) {
 	$exitstatus = 1;
     }
+
+    # change signal handler message
+    $waiting_for = "cleanup";
 
     if ($options->{maketar} and -e $options->{root}) {
 	if ($options->{mode} eq 'unshare') {
@@ -2086,6 +2249,10 @@ sub main() {
 	} else {
 	    die "unknown mode: $options->{mode}";
 	}
+    }
+
+    if ($got_signal) {
+	$exitstatus = 1;
     }
 
     exit $exitstatus;
