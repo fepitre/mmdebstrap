@@ -570,7 +570,15 @@ sub run_apt_progress {
     my @debs = @{$options->{PKGS} // []};
     my $verbose = $options->{VERBOSE} // 0;
     my $get_exec = sub {
-	return @{$options->{ARGV}}, "-oAPT::Status-Fd=$_[0]", @debs; };
+	return (
+	    @{$options->{ARGV}},
+	    "-oAPT::Status-Fd=$_[0]",
+	    # prevent apt from messing up the terminal and allow dpkg to
+	    # receive SIGINT and quit immediately without waiting for
+	    # maintainer script to finish
+	    '-oDpkg::Use-Pty=false',
+	    @debs
+	)};
     my $line_has_error = sub {
 	# apt-get doesn't report a non-zero exit if the update failed. Thus, we
 	# have to parse its output. See #778357, #776152, #696335 and #745735
