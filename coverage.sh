@@ -251,17 +251,17 @@ else
 	./run_null.sh SUDO
 fi
 
-print_header "mode=unshare,variant=apt: create tarball"
+print_header "mode=unshare,variant=apt: create gzip compressed tarball"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
 adduser --gecos user --disabled-password user
 sysctl -w kernel.unprivileged_userns_clone=1
-runuser -u user -- $CMD --mode=unshare --variant=apt unstable /tmp/unstable-chroot.tar $mirror
-tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
+runuser -u user -- $CMD --mode=unshare --variant=apt unstable /tmp/unstable-chroot.tar.gz $mirror
+tar -tf /tmp/unstable-chroot.tar.gz | sort > tar2.txt
 diff -u tar1.txt tar2.txt
-rm /tmp/unstable-chroot.tar
+rm /tmp/unstable-chroot.tar.gz
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh

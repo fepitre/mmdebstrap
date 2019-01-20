@@ -130,26 +130,32 @@ sub error {
 # tar cannot figure out the decompression program when receiving data on
 # standard input, thus we do it ourselves. This is copied from tar's
 # src/suffix.c
-sub get_tar_compress_options($) {
+sub get_tar_compressor($) {
     my $filename = shift;
-    if ($filename =~ /\.(gz|tgz|taz)$/) {
-	return ('--gzip');
+    if ($filename eq '-') {
+	return undef
+    } elsif ($filename =~ /\.tar$/) {
+	return undef
+    } elsif ($filename =~ /\.(gz|tgz|taz)$/) {
+	return 'gzip';
     } elsif ($filename =~ /\.(Z|taZ)$/) {
-	return ('--compress');
+	return 'compress';
     } elsif ($filename =~ /\.(bz2|tbz|tbz2|tz2)$/) {
-	return ('--bzip2');
+	return 'bzip2';
     } elsif ($filename =~ /\.lz$/) {
-	return ('--lzip');
+	return 'lzip';
     } elsif ($filename =~ /\.(lzma|tlz)$/) {
-	return ('--lzma');
+	return 'lzma';
     } elsif ($filename =~ /\.lzo$/) {
-	return ('--lzop');
+	return 'lzop';
     } elsif ($filename =~ /\.lz4$/) {
-	return ('--use-compress-program', 'lz4');
+	return 'lz4';
     } elsif ($filename =~ /\.(xz|txz)$/) {
-	return ('--xz');
+	return 'xz';
+    } elsif ($filename =~ /\.zst$/) {
+	return 'zstd';
     }
-    return ();
+    return undef
 }
 
 sub test_unshare($) {
@@ -1931,11 +1937,11 @@ sub main() {
 	error "refusing to use the filesystem root as output directory";
     }
 
-    my @tar_compress_opts = get_tar_compress_options($options->{target});
+    my $tar_compressor = get_tar_compressor($options->{target});
 
     # figure out whether a tarball has to be created in the end
     $options->{maketar} = 0;
-    if (scalar @tar_compress_opts > 0 or $options->{target} =~ /\.tar$/ or $options->{target} eq '-') {
+    if (defined $tar_compressor or $options->{target} =~ /\.tar$/ or $options->{target} eq '-') {
 	$options->{maketar} = 1;
 	if (any { $_ eq $options->{variant} } ('extract', 'custom') and $options->{mode} eq 'fakechroot') {
 	    info "creating a tarball in fakechroot mode might fail in extract and custom variants because there might be no tar inside the chroot";
@@ -1944,6 +1950,19 @@ sub main() {
 	if ($options->{target} ne '-') {
 	    open my $fh, '>', $options->{target} or error "cannot open $options->{target} for writing: $!";
 	    close $fh;
+	}
+	# check if the compressor is installed
+	if (defined $tar_compressor) {
+	    my $pid = fork();
+	    if ($pid == 0) {
+		open(STDOUT, '>', '/dev/null') or error "cannot open /dev/null for writing: $!";
+		open(STDIN, '<', '/dev/null') or error "cannot open /dev/null for reading: $!";
+		exec $tar_compressor or error "cannot exec $tar_compressor: $!";
+	    }
+	    waitpid $pid, 0;
+	    if ($? != 0) {
+		error "failed to start $tar_compressor";
+	    }
 	}
     }
 
@@ -2074,7 +2093,6 @@ sub main() {
 
     my $exitstatus = 0;
     my @taropts = ('--sort=name', "--mtime=\@$mtime", '--clamp-mtime', '--numeric-owner', '--one-file-system', '-c', '--exclude=./dev');
-    push @taropts, @tar_compress_opts;
 
     # disable signals so that we can fork and change behaviour of the signal
     # handler in the parent and child without getting interrupted
@@ -2196,18 +2214,47 @@ sub main() {
     close $wfh;
 
     if ($options->{maketar}) {
-	# we cannot die here because that would leave the other thread running
-	# without a parent
-	if ($options->{target} ne '-') {
-	    if(!copy($rfh, $options->{target})) {
-		warning "cannot copy to $options->{target}: $!";
-		$exitstatus = 1;
+	# we use eval() so that error() doesn't take this process down and
+	# thus leaves the setup() process without a parent
+	eval {
+	    if ($options->{target} eq '-') {
+		if (!copy($rfh, *STDOUT)) {
+		    error "cannot copy to standard output: $!";
+		}
+	    } else {
+		if (defined $tar_compressor) {
+		    POSIX::sigprocmask(SIG_BLOCK, $sigset) or error "Can't block signals: $!";
+		    my $cpid = fork();
+		    if ($cpid == 0) {
+			# child: default signal handlers
+			$SIG{'INT'} = 'DEFAULT';
+			$SIG{'HUP'} = 'DEFAULT';
+			$SIG{'PIPE'} = 'DEFAULT';
+			$SIG{'TERM'} = 'DEFAULT';
+
+			# unblock all delayed signals (and possibly handle them)
+			POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or error "Can't unblock signals: $!";
+			open(STDOUT, '>', $options->{target}) or error "cannot open $options->{target} for writing: $!";
+			open(STDIN, '<&', $rfh) or error "cannot open file handle for reading: $!";
+			exec $tar_compressor or error "cannot exec $tar_compressor: $!";
+		    }
+		    POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or error "Can't unblock signals: $!";
+		    waitpid $cpid, 0;
+		    if ($? != 0) {
+			error "failed to start $tar_compressor";
+		    }
+		} else {
+		    if(!copy($rfh, $options->{target})) {
+			error "cannot copy to $options->{target}: $!";
+		    }
+		}
 	    }
-	} else {
-	    if (!copy($rfh, *STDOUT)) {
-		warning "cannot copy to standard output: $!";
-		$exitstatus = 1;
-	    }
+	};
+	if ($@) {
+	    # we cannot die here because that would leave the other thread
+	    # running without a parent
+	    warning "run_chroot failed: $@";
+	    $exitstatus = 1;
 	}
     }
     close($rfh);
@@ -2302,13 +2349,24 @@ specified and are appended to the chroot's sources.list in the given order. If
 any mirror contains a https URI, then the packages apt-transport-https and
 ca-certificates will be installed inside the chroot.
 
-The I<TARGET> argument can either be a directory or a tarball filename. If
-I<TARGET> is a directory, then it must not exist beforehand. A tarball
-filename is detected by the filename extension of I<TARGET>. Choosing a
-directory only makes sense with the B<sudo> mode because otherwise the
-contents of the chroot will not be owned by the superuser. If no I<TARGET> was
-specified or if I<TARGET> is C<->, then a tarball of the chroot is written to
-standard output.
+The optional I<TARGET> argument can either be the path to a directory, the
+path to a tarball filename or C<->. If I<TARGET> ends with C<.tar>, or with
+any of the filename extensions listed in the section B<COMPRESSION>, then
+I<TARGET> will be interpreted as a path to a tarball filename. If I<TARGET> is
+the path to a tarball filename or if I<TARGET> is C<-> or if no I<TARGET> was
+specified, B<mmdebstrap> will create a temporary chroot directory in
+C<$TMPDIR> or F</tmp>. If I<TARGET> is the path to a tarball filename,
+B<mmdebstrap> will create a tarball of that directory and store it as
+I<TARGET>, optionally applying a compression algorithm as indicated by its
+filename extension. If I<TARGET> is C<-> or if no I<TARGET> was specified,
+then an uncompressed tarball of that directory will be sent to standard
+output. If I<TARGET> does not end in C<.tar> or with any of the filename
+extensions listed in the section B<COMPRESSION>, then I<TARGET> will be
+interpreted as the path to a directory. If the directory already exists, it
+must either be empty or only contain an empty C<lost+found> directory.  If a
+directory is chosen as output in any other mode than B<sudo>, then its
+contents will have wrong ownership information and special device files will
+be missing.
 
 The I<SUITE> may be a valid release code name (eg, sid, stretch, jessie) or a
 symbolic name (eg, unstable, testing, stable, oldstable). Any suite name that
@@ -2641,6 +2699,33 @@ Limitations in comparison to debootstrap:
 =item * No I<--second-stage> option.
 
 =back
+
+=head1 COMPRESSION
+
+B<mmdebstrap> will choose a suitable compressor for the output tarball
+depending on the filename extension. The following mapping from filename
+extension to compressor applies:
+
+ extension compressor
+ --------------------
+ .tar      none
+ .gz       gzip
+ .tgz      gzip
+ .taz      gzip
+ .Z        compress
+ .taZ      compress
+ .bz2      bzip2
+ .tbz      bzip2
+ .tbz2     bzip2
+ .tz2      bzip2
+ .lz       lzip
+ .lzma     lzma
+ .tlz      lzma
+ .lzo      lzop
+ .lz4      lz4
+ .xz       xz
+ .txz      xz
+ .zst      zstd
 
 =head1 SEE ALSO
 
