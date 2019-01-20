@@ -1377,7 +1377,7 @@ sub setup {
 
 	    # make sure that APT_CONFIG is not set when executing anything inside the
 	    # chroot
-	    my @chrootcmd = ('env', '--unset=APT_CONFIG');
+	    my @chrootcmd = ('env', '--unset=APT_CONFIG', '--unset=TMPDIR');
 	    if ($options->{mode} eq 'proot') {
 		push @chrootcmd, (
 		    'proot',
