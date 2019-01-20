@@ -26,6 +26,8 @@ require "syscall.ph";
 use Fcntl qw(S_IFCHR S_IFBLK FD_CLOEXEC F_GETFD F_SETFD);
 use List::Util qw(any none);
 use POSIX qw(SIGINT SIGHUP SIGPIPE SIGTERM SIG_BLOCK SIG_UNBLOCK);
+use Carp;
+use Term::ANSIColor;
 
 # from sched.h
 use constant {
@@ -63,6 +65,68 @@ my @devfiles = (
     [ "./dev/zero",    0666, 3,   '',                1,     5 ],
 );
 
+# verbosity levels:
+#   0 -> print nothing
+#   1 -> normal output and progress bars
+#   2 -> verbose output
+#   3 -> debug output
+my $verbosity_level = 1;
+
+sub debug {
+    if ($verbosity_level < 3) {
+	return;
+    }
+    my $msg = shift;
+    $msg = "D: $msg";
+    if ( -t STDERR ) {
+	$msg = colored($msg, 'clear')
+    }
+    print STDERR "$msg\n";
+}
+
+sub info {
+    if ($verbosity_level == 0) {
+	return;
+    }
+    my $msg = shift;
+    $msg = "I: $msg";
+    if ( -t STDERR ) {
+	$msg = colored($msg, 'green')
+    }
+    print STDERR "$msg\n";
+}
+
+sub warning {
+    if ($verbosity_level == 0) {
+	return;
+    }
+    my $msg = shift;
+    $msg = "W: $msg";
+    if ( -t STDERR ) {
+	$msg = colored($msg, 'bold yellow')
+    }
+    print STDERR "$msg\n";
+}
+
+sub error {
+    if ($verbosity_level == 0) {
+	return;
+    }
+    # if error() is called with the string from a previous error() that was
+    # caught inside an eval(), then the string will have a newline which we
+    # are stripping here
+    chomp (my $msg = shift);
+    $msg = "E: $msg";
+    if ( -t STDERR ) {
+	$msg = colored($msg, 'bold red')
+    }
+    if ($verbosity_level == 3) {
+	croak $msg; # produces a backtrace
+    } else {
+	die "$msg\n";
+    }
+}
+
 # tar cannot figure out the decompression program when receiving data on
 # standard input, thus we do it ourselves. This is copied from tar's
 # src/suffix.c
@@ -91,8 +155,11 @@ sub get_tar_compress_options($) {
 sub test_unshare($) {
     my $verbose = shift;
     if ($EFFECTIVE_USER_ID == 0) {
+	my $msg = "cannot use unshare mode when executing as root";
 	if ($verbose) {
-	    print STDERR "E: cannot use unshare mode when executing as root\n";
+	    warning $msg;
+	} else {
+	    debug $msg;
 	}
 	return 0;
     }
@@ -101,14 +168,17 @@ sub test_unshare($) {
     my $unshare_flags = CLONE_NEWUSER;
     # we spawn a new per process because if unshare succeeds, we would
     # otherwise have unshared the mmdebstrap process itself which we don't want
-    my $pid = fork() // die "fork() failed: $!";
+    my $pid = fork() // error "fork() failed: $!";
     if ($pid == 0) {
 	my $ret = syscall &SYS_unshare, $unshare_flags;
 	if ($ret == 0) {
 	    exit 0;
 	} else {
+	    my $msg = "unshare syscall failed: $!";
 	    if ($verbose) {
-		print STDERR "E: unshare syscall failed: $!\n";
+		warning $msg;
+	    } else {
+		debug $msg;
 	    }
 	    exit 1;
 	}
@@ -121,22 +191,38 @@ sub test_unshare($) {
     # executed without parameters
     system "newuidmap 2>/dev/null";
     if (($? >> 8) != 1) {
-	if ($verbose) {
-	    if (($? >> 8) == 127) {
-		print STDERR "E: cannot find newuidmap\n";
+	if (($? >> 8) == 127) {
+	    my $msg = "cannot find newuidmap";
+	    if ($verbose) {
+		warning $msg;
 	    } else {
-		print STDERR "E: newuidmap returned unknown exit status\n";
+		debug $msg;
+	    }
+	} else {
+	    my $msg = "newuidmap returned unknown exit status: $?";
+	    if ($verbose) {
+		warning $msg;
+	    } else {
+		debug $msg;
 	    }
 	}
 	return 0;
     }
     system "newgidmap 2>/dev/null";
     if (($? >> 8) != 1) {
-	if ($verbose) {
-	    if (($? >> 8) == 127) {
-		print STDERR "E: cannot find newgidmap\n";
+	if (($? >> 8) == 127) {
+	    my $msg = "cannot find newgidmap";
+	    if ($verbose) {
+		warning $msg;
 	    } else {
-		print STDERR "E: newgidmap returned unknown exit status\n";
+		debug $msg;
+	    }
+	} else {
+	    my $msg = "newgidmap returned unknown exit status: $?";
+	    if ($verbose) {
+		warning $msg;
+	    } else {
+		debug $msg;
 	    }
 	}
 	return 0;
@@ -150,15 +236,15 @@ sub read_subuid_subgid() {
     my @result = ();
 
     if (! -e "/etc/subuid") {
-	printf STDERR "/etc/subuid doesn't exist\n";
+	warning "/etc/subuid doesn't exist";
 	return;
     }
     if (! -r "/etc/subuid") {
-	printf STDERR "/etc/subuid is not readable\n";
+	warning "/etc/subuid is not readable";
 	return;
     }
 
-    open $fh, "<", "/etc/subuid" or die "cannot open /etc/subuid for reading: $!";
+    open $fh, "<", "/etc/subuid" or error "cannot open /etc/subuid for reading: $!";
     while (my $line = <$fh>) {
 	($n, $subid, $num_subid) = split(/:/, $line, 3);
 	last if ($n eq $username);
@@ -167,15 +253,15 @@ sub read_subuid_subgid() {
     push @result, ["u", 0, $subid, $num_subid];
 
     if (scalar(@result) < 1) {
-	printf STDERR "/etc/subuid does not contain an entry for $username\n";
+	warning "/etc/subuid does not contain an entry for $username";
 	return;
     }
     if (scalar(@result) > 1) {
-	printf STDERR "/etc/subuid contains multiple entries for $username\n";
+	warning "/etc/subuid contains multiple entries for $username";
 	return;
     }
 
-    open $fh, "<", "/etc/subgid" or die "cannot open /etc/subgid for reading: $!";
+    open $fh, "<", "/etc/subgid" or error "cannot open /etc/subgid for reading: $!";
     while (my $line = <$fh>) {
 	($n, $subid, $num_subid) = split(/:/, $line, 3);
 	last if ($n eq $username);
@@ -184,11 +270,11 @@ sub read_subuid_subgid() {
     push @result, ["g", 0, $subid, $num_subid];
 
     if (scalar(@result) < 2) {
-	printf STDERR "/etc/subgid does not contain an entry for $username\n";
+	warning "/etc/subgid does not contain an entry for $username";
 	return;
     }
     if (scalar(@result) > 2) {
-	printf STDERR "/etc/subgid contains multiple entries for $username\n";
+	warning "/etc/subgid contains multiple entries for $username";
 	return;
     }
 
@@ -250,7 +336,7 @@ sub get_unshare_cmd(&$) {
 
     # fork a new process and let the child get unshare()ed
     # we don't want to unshare the parent process
-    my $gcpid = fork() // die "fork() failed: $!";
+    my $gcpid = fork() // error "fork() failed: $!";
     if ($gcpid == 0) {
 	# Create a pipe for the parent process to signal the child process that it is
 	# done with calling unshare() so that the child can go ahead setting up
@@ -273,7 +359,7 @@ sub get_unshare_cmd(&$) {
 	# child that it is done with calling new[ug]idmap. The way it is done here,
 	# this signaling can instead be done by wait()-ing for the exit of the child.
 	my $ppid = $$;
-	my $cpid = fork() // die "fork() failed: $!";
+	my $cpid = fork() // error "fork() failed: $!";
 	if ($cpid == 0) {
 	    # child
 
@@ -283,7 +369,7 @@ sub get_unshare_cmd(&$) {
 
 	    # Wait for the parent process to finish its unshare() call by
 	    # waiting for an EOF.
-	    0 == sysread $rfh, my $c, 1 or die "read() did not receive EOF";
+	    0 == sysread $rfh, my $c, 1 or error "read() did not receive EOF";
 
 	    # The program's new[ug]idmap have to be used because they are
 	    # setuid root.  These privileges are needed to map the ids from
@@ -306,7 +392,7 @@ sub get_unshare_cmd(&$) {
 	    foreach (@{$idmap}) {
 		my ($t, $hostid, $nsid, $range) = @{$_};
 		if ($t ne "u" and $t ne "g" and $t ne "b") {
-		    die "invalid idmap type: $t";
+		    error "invalid idmap type: $t";
 		}
 		if ($t eq "u" or $t eq "b") {
 		    $uidmapcmd .= " $hostid $nsid $range";
@@ -317,10 +403,10 @@ sub get_unshare_cmd(&$) {
 	    }
 	    my $idmapcmd = '';
 	    if ($uidmapcmd ne "") {
-		0 == system "newuidmap $ppid $uidmapcmd" or die "newuidmap $ppid $uidmapcmd failed: $!";
+		0 == system "newuidmap $ppid $uidmapcmd" or error "newuidmap $ppid $uidmapcmd failed: $!";
 	    }
 	    if ($gidmapcmd ne "") {
-		0 == system "newgidmap $ppid $gidmapcmd" or die "newgidmap $ppid $gidmapcmd failed: $!";
+		0 == system "newgidmap $ppid $gidmapcmd" or error "newgidmap $ppid $gidmapcmd failed: $!";
 	    }
 	    exit 0;
 	}
@@ -328,7 +414,7 @@ sub get_unshare_cmd(&$) {
 	# parent
 
 	# After fork()-ing, the parent immediately calls unshare...
-	0 == syscall &SYS_unshare, $unshare_flags or die "unshare() failed: $!";
+	0 == syscall &SYS_unshare, $unshare_flags or error "unshare() failed: $!";
 
 	# .. and then signals the child process that we are done with the
 	# unshare() call by sending an EOF.
@@ -336,10 +422,10 @@ sub get_unshare_cmd(&$) {
 
 	# Wait for the child process to finish its setup by waiting for its
 	# exit.
-	$cpid == waitpid $cpid, 0 or die "waitpid() failed: $!";
+	$cpid == waitpid $cpid, 0 or error "waitpid() failed: $!";
 	my $exit = $? >> 8;
 	if ($exit != 0) {
-	    die "child had a non-zero exit status: $exit";
+	    error "child had a non-zero exit status: $exit";
 	}
 
 	# Currently we are nobody (uid and gid are 65534). So we become root
@@ -350,9 +436,9 @@ sub get_unshare_cmd(&$) {
 	# want here, like checking /proc/sys/kernel/ngroups_max (which might
 	# not exist). It would also also call setgroups() in a way that makes
 	# the root user be part of the group unknown.
-	0 == syscall &SYS_setgid, 0 or die "setgid failed: $!";
-	0 == syscall &SYS_setuid, 0 or die "setuid failed: $!";
-	0 == syscall &SYS_setgroups, 0, 0 or die "setgroups failed: $!";
+	0 == syscall &SYS_setgid, 0 or error "setgid failed: $!";
+	0 == syscall &SYS_setuid, 0 or error "setuid failed: $!";
+	0 == syscall &SYS_setgroups, 0, 0 or error "setgroups failed: $!";
 
 	if (1) {
 	    # When the pid namespace is also unshared, then processes expect a
@@ -363,13 +449,13 @@ sub get_unshare_cmd(&$) {
 	    #
 	    # Otherwise, without a pid 1, new processes cannot be forked
 	    # anymore after pid 1 finished.
-	    my $cpid = fork() // die "fork() failed: $!";
+	    my $cpid = fork() // error "fork() failed: $!";
 	    if ($cpid != 0) {
 		# The parent process will stay alive as pid 1 in this
 		# namespace until the child finishes executing. This is
 		# important because pid 1 must never die or otherwise nothing
 		# new can be forked.
-		$cpid == waitpid $cpid, 0 or die "waitpid() failed: $!";
+		$cpid == waitpid $cpid, 0 or error "waitpid() failed: $!";
 		exit ($? >> 8);
 	    }
 	}
@@ -387,11 +473,11 @@ sub havemknod($) {
     my $root = shift;
     my $havemknod = 0;
     if (-e "$root/test-dev-null") {
-	die "/test-dev-null already exists";
+	error "/test-dev-null already exists";
     }
     TEST: {
 	# we fork so that we can read STDERR
-	my $pid = open my $fh, '-|' // die "failed to fork(): $!";
+	my $pid = open my $fh, '-|' // error "failed to fork(): $!";
 	if ($pid == 0) {
 	    open(STDERR, '>&', STDOUT);
 	    # we use mknod(1) instead of the system call because creating the
@@ -409,12 +495,15 @@ sub havemknod($) {
 	$havemknod = 1;
     }
     if (-e "$root/test-dev-null") {
-	unlink "$root/test-dev-null" or die "cannot unlink /test-dev-null";
+	unlink "$root/test-dev-null" or error "cannot unlink /test-dev-null";
     }
     return $havemknod;
 }
 
 sub print_progress {
+    if ($verbosity_level != 1) {
+	return;
+    }
     my $perc = shift;
     if (!-t STDERR) {
 	return;
@@ -438,19 +527,19 @@ sub print_progress {
 }
 
 sub run_progress {
-    my ($get_exec, $line_handler, $line_has_error, $verbose) = @_;
+    my ($get_exec, $line_handler, $line_has_error) = @_;
     pipe my $rfh, my $wfh;
     my $got_signal = 0;
     my $ignore = sub {
-	print STDERR "I: run_progress() received signal $_[0]: waiting for child...\n";
+	info "run_progress() received signal $_[0]: waiting for child...";
     };
 
     # delay signals so that we can fork and change behaviour of the signal
     # handler in parent and child without getting interrupted
     my $sigset = POSIX::SigSet->new(SIGINT, SIGHUP, SIGPIPE, SIGTERM);
-    POSIX::sigprocmask(SIG_BLOCK, $sigset) or die "Can't block signals: $!\n";
+    POSIX::sigprocmask(SIG_BLOCK, $sigset) or error "Can't block signals: $!";
 
-    my $pid1 = open(my $pipe, '-|') // die "failed to fork(): $!";
+    my $pid1 = open(my $pipe, '-|') // error "failed to fork(): $!";
 
     if ($pid1 == 0) {
 	# child: default signal handlers
@@ -460,26 +549,25 @@ sub run_progress {
 	$SIG{'TERM'} = 'DEFAULT';
 
 	# unblock all delayed signals (and possibly handle them)
-	POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or die "Can't unblock signals: $!\n";
+	POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or error "Can't unblock signals: $!";
 
 	close $rfh;
 	# Unset the close-on-exec flag, so that the file descriptor does not
 	# get closed when we exec
-	my $flags = fcntl( $wfh, F_GETFD, 0 ) or die "fcntl F_GETFD: $!";
-	fcntl($wfh, F_SETFD, $flags & ~FD_CLOEXEC ) or die "fcntl F_SETFD: $!";
+	my $flags = fcntl( $wfh, F_GETFD, 0 ) or error "fcntl F_GETFD: $!";
+	fcntl($wfh, F_SETFD, $flags & ~FD_CLOEXEC ) or error "fcntl F_SETFD: $!";
 	my $fd = fileno $wfh;
 	# redirect stderr to stdout so that we can capture it
 	open(STDERR, '>&', STDOUT);
 	my @execargs = $get_exec->($fd);
-	exec { $execargs[0] } @execargs;
-	die 'cannot exec() ' . (join ' ', @execargs);
+	exec { $execargs[0] } @execargs or error 'cannot exec() ' . (join ' ', @execargs);
     }
     close $wfh;
 
     # spawn two processes:
     #   parent will parse stdout to look for errors
     #   child will parse $rfh for the progress meter
-    my $pid2 = fork() // die "failed to fork(): $!";
+    my $pid2 = fork() // error "failed to fork(): $!";
     if ($pid2 == 0) {
 	# child: default signal handlers
 	$SIG{'INT'} = 'IGNORE';
@@ -488,16 +576,15 @@ sub run_progress {
 	$SIG{'TERM'} = 'IGNORE';
 
 	# unblock all delayed signals (and possibly handle them)
-	POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or die "Can't unblock signals: $!\n";
+	POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or error "Can't unblock signals: $!";
 
-	print_progress 0.0 if not $verbose;
+	print_progress 0.0;
 	while (my $line = <$rfh>) {
-	    next if $verbose;
 	    my $output = $line_handler->($line);
 	    next unless $output;
 	    print_progress $output;
 	}
-	print_progress "done" if not $verbose;
+	print_progress "done";
 
 	exit 0;
     }
@@ -511,13 +598,13 @@ sub run_progress {
     local $SIG{'TERM'} = $ignore;
 
     # unblock all delayed signals (and possibly handle them)
-    POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or die "Can't unblock signals: $!\n";
+    POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or error "Can't unblock signals: $!";
 
     my $output = '';
     my $has_error = 0;
     while (my $line = <$pipe>) {
 	$has_error = $line_has_error->($line);
-	if ($verbose) {
+	if ($verbosity_level >= 2) {
 	    print STDERR $line;
 	} else {
 	    # forward captured apt output
@@ -532,24 +619,25 @@ sub run_progress {
     }
 
     waitpid $pid2, 0;
-    $? == 0 or die "progress parsing failed";
+    $? == 0 or error "progress parsing failed";
 
     if ($got_signal) {
-	die "run_progress() received signal: $got_signal";
+	error "run_progress() received signal: $got_signal";
     }
 
     # only print failure after progress output finished or otherwise it
     # might interfere with the remaining output
     if ($fail) {
-	print STDERR $output;
-	die ((join ' ', $get_exec->('<$fd>')) . ' failed');
+	if ($verbosity_level >= 1) {
+	    print STDERR $output;
+	}
+	error ((join ' ', $get_exec->('<$fd>')) . ' failed');
     }
 }
 
 sub run_dpkg_progress {
     my $options = shift;
     my @debs = @{$options->{PKGS} // []};
-    my $verbose = $options->{VERBOSE} // 0;
     my $get_exec = sub { return @{$options->{ARGV}}, "--status-fd=$_[0]", @debs; };
     my $line_has_error = sub { return 0; };
     my $num = 0;
@@ -562,13 +650,12 @@ sub run_dpkg_progress {
 	}
 	return $num/$total*100;
     };
-    run_progress $get_exec, $line_handler, $line_has_error, $verbose;
+    run_progress $get_exec, $line_handler, $line_has_error;
 }
 
 sub run_apt_progress {
     my $options = shift;
     my @debs = @{$options->{PKGS} // []};
-    my $verbose = $options->{VERBOSE} // 0;
     my $get_exec = sub {
 	return (
 	    @{$options->{ARGV}},
@@ -592,7 +679,7 @@ sub run_apt_progress {
 	    return $2;
 	}
     };
-    run_progress $get_exec, $line_handler, $line_has_error, $verbose;
+    run_progress $get_exec, $line_handler, $line_has_error;
 }
 
 sub run_chroot(&$) {
@@ -607,7 +694,7 @@ sub run_chroot(&$) {
 	    $task->();
 	}
 	if ($signal) {
-	    print STDERR "W: pid $PID cought signal: $signal\n";
+	    warning "pid $PID cought signal: $signal";
 	    exit 1;
 	}
     };
@@ -625,9 +712,9 @@ sub run_chroot(&$) {
 		my ($fname, $mode, $type, $linkname, $devmajor, $devminor) = @{$file};
 		next if $fname eq './dev/';
 		if ($type == 0) { # normal file
-		    die "type 0 not implemented";
+		    error "type 0 not implemented";
 		} elsif ($type == 1) { # hardlink
-		    die "type 1 not implemented";
+		    error "type 1 not implemented";
 		} elsif ($type == 2) { # symlink
 		    if (!$options->{havemknod}) {
 			if ($options->{mode} eq 'fakechroot' and $linkname =~ /^\/proc/) {
@@ -639,11 +726,11 @@ sub run_chroot(&$) {
 				unlink "$options->{root}/$fname" or warn "cannot unlink $fname: $!";
 			    }
 			}
-			symlink $linkname, "$options->{root}/$fname" or die "cannot create symlink $fname";
+			symlink $linkname, "$options->{root}/$fname" or error "cannot create symlink $fname";
 		    }
 		} elsif ($type == 3 or $type == 4) { # character/block special
 		    if (!$options->{havemknod}) {
-			open my $fh, '>', "$options->{root}/$fname" or die "cannot open $options->{root}/$fname: $!";
+			open my $fh, '>', "$options->{root}/$fname" or error "cannot open $options->{root}/$fname: $!";
 			close $fh;
 			if ($options->{mode} eq 'unshare') {
 			    push @cleanup_tasks, sub {
@@ -656,9 +743,9 @@ sub run_chroot(&$) {
 				unlink "$options->{root}/$fname" or warn "cannot unlink $fname: $!";
 			    };
 			} else {
-			    die "unknown mode: $options->{mode}";
+			    error "unknown mode: $options->{mode}";
 			}
-			0 == system('mount', '-o', 'bind', "/$fname", "$options->{root}/$fname") or die "mount $fname failed: $?";
+			0 == system('mount', '-o', 'bind', "/$fname", "$options->{root}/$fname") or error "mount $fname failed: $?";
 		    }
 		} elsif ($type == 5) { # directory
 		    if (!$options->{havemknod}) {
@@ -667,8 +754,8 @@ sub run_chroot(&$) {
 				rmdir "$options->{root}/$fname" or warn "cannot rmdir $fname: $!";
 			    }
 			}
-			make_path "$options->{root}/$fname" or die "cannot make_path $fname";
-			chmod $mode, "$options->{root}/$fname" or die "cannot chmod $fname: $!";
+			make_path "$options->{root}/$fname" or error "cannot make_path $fname";
+			chmod $mode, "$options->{root}/$fname" or error "cannot chmod $fname: $!";
 		    }
 		    if ($options->{mode} eq 'unshare') {
 			push @cleanup_tasks, sub {
@@ -679,18 +766,18 @@ sub run_chroot(&$) {
 			    0 == system('umount', "$options->{root}/$fname") or warn "umount $fname failed: $?";
 			};
 		    } else {
-			die "unknown mode: $options->{mode}";
+			error "unknown mode: $options->{mode}";
 		    }
-		    0 == system('mount', '-o', 'bind', "/$fname", "$options->{root}/$fname") or die "mount $fname failed: $?";
+		    0 == system('mount', '-o', 'bind', "/$fname", "$options->{root}/$fname") or error "mount $fname failed: $?";
 		} else {
-		    die "unsupported type: $type";
+		    error "unsupported type: $type";
 		}
 	    }
 	} elsif (any { $_ eq $options->{mode} } ('proot', 'fakechroot')) {
 	    # we cannot mount in fakechroot and proot mode
 	    # in proot mode we have /dev bind-mounted already through --bind=/dev
 	} else {
-	    die "unknown mode: $options->{mode}";
+	    error "unknown mode: $options->{mode}";
 	}
 	# We can only mount /proc and /sys after extracting the essential
 	# set because if we mount it before, then base-files will not be able
@@ -699,7 +786,7 @@ sub run_chroot(&$) {
 	    push @cleanup_tasks, sub {
 		0 == system('umount', "$options->{root}/sys") or warn "umount /sys failed: $?";
 	    };
-	    0 == system('mount', '-t', 'sysfs', '-o', 'nosuid,nodev,noexec', 'sys', "$options->{root}/sys") or die "mount /sys failed: $?";
+	    0 == system('mount', '-t', 'sysfs', '-o', 'nosuid,nodev,noexec', 'sys', "$options->{root}/sys") or error "mount /sys failed: $?";
 	} elsif ($options->{mode} eq 'unshare') {
 	    # naturally we have to clean up after ourselves in sudo mode where we
 	    # do a real mount. But we also need to unmount in unshare mode because
@@ -716,18 +803,18 @@ sub run_chroot(&$) {
 	    #
 	    # we have to rbind because just using bind results in "wrong fs
 	    # type, bad option, bad superblock" error
-	    0 == system('mount', '-o', 'rbind', '/sys', "$options->{root}/sys") or die "mount /sys failed: $?";
+	    0 == system('mount', '-o', 'rbind', '/sys', "$options->{root}/sys") or error "mount /sys failed: $?";
 	} elsif (any { $_ eq $options->{mode} } ('proot', 'fakechroot')) {
 	    # we cannot mount in fakechroot and proot mode
 	    # in proot mode we have /proc bind-mounted already through --bind=/proc
 	} else {
-	    die "unknown mode: $options->{mode}";
+	    error "unknown mode: $options->{mode}";
 	}
 	if ($options->{mode} eq 'root') {
 	    push @cleanup_tasks, sub {
-		0 == system('umount', "$options->{root}/proc") or die "umount /proc failed: $?";
+		0 == system('umount', "$options->{root}/proc") or error "umount /proc failed: $?";
 	    };
-	    0 == system('mount', '-t', 'proc', 'proc', "$options->{root}/proc") or die "mount /proc failed: $?";
+	    0 == system('mount', '-t', 'proc', 'proc', "$options->{root}/proc") or error "mount /proc failed: $?";
 	} elsif ($options->{mode} eq 'unshare') {
 	    # naturally we have to clean up after ourselves in sudo mode where we
 	    # do a real mount. But we also need to unmount in unshare mode because
@@ -736,39 +823,39 @@ sub run_chroot(&$) {
 	    # target (the directory)
 	    push @cleanup_tasks, sub {
 		# since we cannot write to /etc/mtab we need --no-mtab
-		0 == system('umount', '--no-mtab', "$options->{root}/proc") or die "umount /proc failed: $?";
+		0 == system('umount', '--no-mtab', "$options->{root}/proc") or error "umount /proc failed: $?";
 	    };
-	    0 == system('mount', '-t', 'proc', 'proc', "$options->{root}/proc") or die "mount /proc failed: $?";
+	    0 == system('mount', '-t', 'proc', 'proc', "$options->{root}/proc") or error "mount /proc failed: $?";
 	} elsif (any { $_ eq $options->{mode} } ('proot', 'fakechroot')) {
 	    # we cannot mount in fakechroot and proot mode
 	    # in proot mode we have /sys bind-mounted already through --bind=/sys
 	} else {
-	    die "unknown mode: $options->{mode}";
+	    error "unknown mode: $options->{mode}";
 	}
 
 	# prevent daemons from starting
 	{
-	    open my $fh, '>', "$options->{root}/usr/sbin/policy-rc.d" or die "cannot open policy-rc.d: $!";
+	    open my $fh, '>', "$options->{root}/usr/sbin/policy-rc.d" or error "cannot open policy-rc.d: $!";
 	    print $fh "#!/bin/sh\n";
 	    print $fh "exit 101\n";
 	    close $fh;
-	    chmod 0755, "$options->{root}/usr/sbin/policy-rc.d" or die "cannot chmod policy-rc.d: $!";
+	    chmod 0755, "$options->{root}/usr/sbin/policy-rc.d" or error "cannot chmod policy-rc.d: $!";
 	}
 
 	{
-	    move("$options->{root}/sbin/start-stop-daemon", "$options->{root}/sbin/start-stop-daemon.REAL") or die "cannot move start-stop-daemon";
-	    open my $fh, '>', "$options->{root}/sbin/start-stop-daemon" or die "cannot open policy-rc.d: $!";
+	    move("$options->{root}/sbin/start-stop-daemon", "$options->{root}/sbin/start-stop-daemon.REAL") or error "cannot move start-stop-daemon";
+	    open my $fh, '>', "$options->{root}/sbin/start-stop-daemon" or error "cannot open policy-rc.d: $!";
 	    print $fh "#!/bin/sh\n";
 	    print $fh "echo \"Warning: Fake start-stop-daemon called, doing nothing\">&2\n";
 	    close $fh;
-	    chmod 0755, "$options->{root}/sbin/start-stop-daemon" or die "cannot chmod start-stop-daemon: $!";
+	    chmod 0755, "$options->{root}/sbin/start-stop-daemon" or error "cannot chmod start-stop-daemon: $!";
 	}
 
 	&{$cmd}();
 
 	# cleanup
-	move("$options->{root}/sbin/start-stop-daemon.REAL", "$options->{root}/sbin/start-stop-daemon") or die "cannot move start-stop-daemon";
-	unlink "$options->{root}/usr/sbin/policy-rc.d" or die "cannot unlink policy-rc.d";
+	move("$options->{root}/sbin/start-stop-daemon.REAL", "$options->{root}/sbin/start-stop-daemon") or error "cannot move start-stop-daemon";
+	unlink "$options->{root}/usr/sbin/policy-rc.d" or error "cannot unlink policy-rc.d";
 
     };
 
@@ -778,30 +865,28 @@ sub run_chroot(&$) {
     $cleanup->(0);
 
     if ($error) {
-	die "run_chroot failed: $error";
+	error "run_chroot failed: $error";
     }
 }
 
 sub setup {
     my $options = shift;
 
-    if (0) {
-	foreach my $key (sort keys %{$options}) {
-	    my $value = $options->{$key};
-	    if (!defined $value) {
-		next;
-	    }
-	    if (ref $value eq '') {
-		print STDERR "I: $key: $options->{$key}\n";
-	    } elsif (ref $value eq 'ARRAY') {
-		print STDERR "I: $key: [" . (join ', ', @{$value}) . "]\n";
-	    } else {
-		die "unknown type";
-	    }
+    foreach my $key (sort keys %{$options}) {
+	my $value = $options->{$key};
+	if (!defined $value) {
+	    next;
+	}
+	if (ref $value eq '') {
+	    debug "$key: $options->{$key}";
+	} elsif (ref $value eq 'ARRAY') {
+	    debug "$key: [" . (join ', ', @{$value}) . "]";
+	} else {
+	    error "unknown type";
 	}
     }
 
-    my ($conf, $tmpfile) = tempfile(UNLINK => 1) or die "cannot open apt.conf: $!";
+    my ($conf, $tmpfile) = tempfile(UNLINK => 1) or error "cannot open apt.conf: $!";
     print $conf "Apt::Architecture \"$options->{nativearch}\";\n";
     # the host system might have configured additional architectures
     # force only the native architecture
@@ -837,7 +922,7 @@ sub setup {
 		'/var/lib/dpkg/updates');
 	}
 	foreach my $dir (@directories) {
-	    make_path("$options->{root}/$dir") or die "failed to create $dir: $!";
+	    make_path("$options->{root}/$dir") or error "failed to create $dir: $!";
 	}
     }
 
@@ -847,26 +932,26 @@ sub setup {
     # The config filename is chosen such that any settings in it will be
     # overridden by what the user specified with --aptopt.
     {
-	open my $fh, '>', "$options->{root}/etc/apt/apt.conf.d/00mmdebstrap" or die "cannot open /etc/apt/apt.conf.d/00mmdebstrap: $!";
+	open my $fh, '>', "$options->{root}/etc/apt/apt.conf.d/00mmdebstrap" or error "cannot open /etc/apt/apt.conf.d/00mmdebstrap: $!";
 	print $fh "Apt::Install-Recommends false;\n";
 	print $fh "Acquire::Languages \"none\";\n";
 	close $fh;
     }
 
     {
-	open my $fh, '>', "$options->{root}/var/lib/dpkg/status" or die "failed to open(): $!";
+	open my $fh, '>', "$options->{root}/var/lib/dpkg/status" or error "failed to open(): $!";
 	close $fh;
     }
 
     # /var/lib/dpkg/available is required to exist or otherwise package
     # removals will fail
     {
-	open my $fh, '>', "$options->{root}/var/lib/dpkg/available" or die "failed to open(): $!";
+	open my $fh, '>', "$options->{root}/var/lib/dpkg/available" or error "failed to open(): $!";
 	close $fh;
     }
 
     if (scalar @{$options->{foreignarchs}} > 0) {
-	open my $fh, '>', "$options->{root}/var/lib/dpkg/arch" or die "cannot open /var/lib/dpkg/arch: $!";
+	open my $fh, '>', "$options->{root}/var/lib/dpkg/arch" or error "cannot open /var/lib/dpkg/arch: $!";
 	print $fh "$options->{nativearch}\n";
 	foreach my $arch (@{$options->{foreignarchs}}) {
 	    print $fh "$arch\n";
@@ -875,10 +960,10 @@ sub setup {
     }
 
     if (scalar @{$options->{aptopts}} > 0) {
-	open my $fh, '>', "$options->{root}/etc/apt/apt.conf.d/99mmdebstrap" or die "cannot open /etc/apt/apt.conf.d/99mmdebstrap: $!";
+	open my $fh, '>', "$options->{root}/etc/apt/apt.conf.d/99mmdebstrap" or error "cannot open /etc/apt/apt.conf.d/99mmdebstrap: $!";
 	foreach my $opt (@{$options->{aptopts}}) {
 	    if (-r $opt) {
-		copy $opt, $fh or die "cannot copy $opt: $!";
+		copy $opt, $fh or error "cannot copy $opt: $!";
 	    } else {
 		print $fh $opt;
 		if ($opt !~ /;$/) {
@@ -895,10 +980,10 @@ sub setup {
     if (scalar @{$options->{dpkgopts}} > 0) {
 	# FIXME: in chrootless mode, dpkg will only read the configuration
 	# from the host
-	open my $fh, '>', "$options->{root}/etc/dpkg/dpkg.cfg.d/99mmdebstrap" or die "cannot open /etc/dpkg/dpkg.cfg.d/99mmdebstrap: $!";
+	open my $fh, '>', "$options->{root}/etc/dpkg/dpkg.cfg.d/99mmdebstrap" or error "cannot open /etc/dpkg/dpkg.cfg.d/99mmdebstrap: $!";
 	foreach my $opt (@{$options->{dpkgopts}}) {
 	    if (-r $opt) {
-		copy $opt, $fh or die "cannot copy $opt: $!";
+		copy $opt, $fh or error "cannot copy $opt: $!";
 	    } else {
 		print $fh $opt;
 		if ($opt !~ /\n$/) {
@@ -917,50 +1002,50 @@ sub setup {
     #}
 
     {
-	open my $fh, '>', "$options->{root}/etc/fstab" or die "cannot open fstab: $!";
+	open my $fh, '>', "$options->{root}/etc/fstab" or error "cannot open fstab: $!";
 	print $fh "# UNCONFIGURED FSTAB FOR BASE SYSTEM\n";
 	close $fh;
-	chmod 0644, "$options->{root}/etc/fstab" or die "cannot chmod fstab: $!";
+	chmod 0644, "$options->{root}/etc/fstab" or error "cannot chmod fstab: $!";
     }
 
     # write /etc/apt/sources.list
     {
-	open my $fh, '>', "$options->{root}/etc/apt/sources.list" or die "cannot open /etc/apt/sources.list: $!";
+	open my $fh, '>', "$options->{root}/etc/apt/sources.list" or error "cannot open /etc/apt/sources.list: $!";
 	print $fh $options->{sourceslist};
 	close $fh;
     }
 
     # allow network access from within
-    copy("/etc/resolv.conf", "$options->{root}/etc/resolv.conf") or die "cannot copy /etc/resolv.conf: $!";
-    copy("/etc/hostname", "$options->{root}/etc/hostname") or die "cannot copy /etc/hostname: $!";
+    copy("/etc/resolv.conf", "$options->{root}/etc/resolv.conf") or error "cannot copy /etc/resolv.conf: $!";
+    copy("/etc/hostname", "$options->{root}/etc/hostname") or error "cannot copy /etc/hostname: $!";
 
     if ($options->{havemknod}) {
 	foreach my $file (@devfiles) {
 	    my ($fname, $mode, $type, $linkname, $devmajor, $devminor) = @{$file};
 	    if ($type == 0) { # normal file
-		die "type 0 not implemented";
+		error "type 0 not implemented";
 	    } elsif ($type == 1) { # hardlink
-		die "type 1 not implemented";
+		error "type 1 not implemented";
 	    } elsif ($type == 2) { # symlink
 		if ($options->{mode} eq 'fakechroot' and $linkname =~ /^\/proc/) {
 		    # there is no /proc in fakechroot mode
 		    next;
 		}
-		symlink $linkname, "$options->{root}/$fname" or die "cannot create symlink $fname";
+		symlink $linkname, "$options->{root}/$fname" or error "cannot create symlink $fname";
 		next; # chmod cannot work on symlinks
 	    } elsif ($type == 3) { # character special
-		0 == system('mknod', "$options->{root}/$fname", 'c', $devmajor, $devminor) or die "mknod failed: $?";
+		0 == system('mknod', "$options->{root}/$fname", 'c', $devmajor, $devminor) or error "mknod failed: $?";
 	    } elsif ($type == 4) { # block special
-		0 == system('mknod', "$options->{root}/$fname", 'b', $devmajor, $devminor) or die "mknod failed: $?";
+		0 == system('mknod', "$options->{root}/$fname", 'b', $devmajor, $devminor) or error "mknod failed: $?";
 	    } elsif ($type == 5) { # directory
 		make_path "$options->{root}/$fname", { error => \my $err };
 		if (@$err) {
-		    die "cannot create $fname";
+		    error "cannot create $fname";
 		}
 	    } else {
-		die "unsupported type: $type";
+		error "unsupported type: $type";
 	    }
-	    chmod $mode, "$options->{root}/$fname" or die "cannot chmod $fname: $!";
+	    chmod $mode, "$options->{root}/$fname" or error "cannot chmod $fname: $!";
 	}
     }
 
@@ -971,21 +1056,20 @@ sub setup {
     # into account.
     $ENV{"APT_CONFIG"} = "$tmpfile";
 
-    print STDERR "I: running apt-get update...\n";
-    run_apt_progress({
-	    ARGV => ['apt-get', 'update'],
-	    VERBOSE => $options->{verbose}
-	});
+    info "running apt-get update...";
+    run_apt_progress({ ARGV => ['apt-get', 'update'] });
 
     # check if anything was downloaded at all
     {
-	open my $fh, '-|', 'apt-get', 'indextargets' // die "failed to fork(): $!";
+	open my $fh, '-|', 'apt-get', 'indextargets' // error "failed to fork(): $!";
 	chomp (my $indextargets = do { local $/; <$fh> });
 	close $fh;
 	if ($indextargets eq '') {
-	    print STDERR "content of /etc/apt/sources.list:\n";
-	    copy("$options->{root}/etc/apt/sources.list", *STDERR);
-	    die "apt-get update didn't download anything";
+	    info "content of /etc/apt/sources.list:";
+	    if ($verbosity_level >= 1) {
+		copy("$options->{root}/etc/apt/sources.list", *STDERR);
+	    }
+	    error "apt-get update didn't download anything";
 	}
     }
 
@@ -1012,13 +1096,12 @@ sub setup {
     # (essential variant) then we have to compute the package set ourselves.
     # Same if we want to install priority based variants.
     if (any { $_ eq $options->{variant} } ('extract', 'custom')) {
-	print STDERR "I: downloading packages with apt...\n";
+	info "downloading packages with apt...";
 	run_apt_progress({
 		ARGV => ['apt-get', '--yes',
 		    '-oApt::Get::Download-Only=true',
 		    'install'],
 		PKGS => [keys %pkgs_to_install],
-		VERBOSE => $options->{verbose}
 	    });
     } elsif ($options->{variant} eq 'apt') {
 	# if we just want to install Essential:yes packages, apt and their
@@ -1034,19 +1117,18 @@ sub setup {
 	#                  remind me in 5+ years that I said that after I wrote
 	#                  in the bugreport: "Are you crazy?!? Nobody in his
 	#                  right mind would even suggest depending on it!")
-	print STDERR "I: downloading packages with apt...\n";
+	info "downloading packages with apt...";
 	run_apt_progress({
 		ARGV => ['apt-get', '--yes',
 		    '-oApt::Get::Download-Only=true',
 		    'dist-upgrade'],
-		VERBOSE => $options->{verbose}
 	    });
     } elsif (any { $_ eq $options->{variant} } ('essential', 'standard', 'important', 'required', 'buildd', 'minbase')) {
 	my %ess_pkgs;
-	open(my $pipe_apt, '-|', 'apt-get', 'indextargets', '--format', '$(FILENAME)', 'Created-By: Packages') or die "cannot start apt-get indextargets: $!";
+	open(my $pipe_apt, '-|', 'apt-get', 'indextargets', '--format', '$(FILENAME)', 'Created-By: Packages') or error "cannot start apt-get indextargets: $!";
 	while (my $fname = <$pipe_apt>) {
 	    chomp $fname;
-	    open (my $pipe_cat, '-|', '/usr/lib/apt/apt-helper', 'cat-file', $fname) or die "cannot start apt-helper cat-file: $!";
+	    open (my $pipe_cat, '-|', '/usr/lib/apt/apt-helper', 'cat-file', $fname) or error "cannot start apt-helper cat-file: $!";
 
 	    my $pkgname;
 	    my $ess = '';
@@ -1095,10 +1177,10 @@ sub setup {
 			    # essential and apt
 			    $pkgs_to_install{$pkgname} = ();
 			} else {
-			    die "unknown priority: $prio";
+			    error "unknown priority: $prio";
 			}
 		    } else {
-			die "unknown variant: $options->{variant}";
+			error "unknown variant: $options->{variant}";
 		    }
 		}
 		# reset values
@@ -1109,28 +1191,27 @@ sub setup {
 	    }
 
 	    close $pipe_cat;
-	    $? == 0 or die "apt-helper cat-file failed: $?";
+	    $? == 0 or error "apt-helper cat-file failed: $?";
 	}
 	close $pipe_apt;
-	$? == 0 or die "apt-get indextargets failed: $?";
+	$? == 0 or error "apt-get indextargets failed: $?";
 
-	print STDERR "I: downloading packages with apt...\n";
+	info "downloading packages with apt...";
 	run_apt_progress({
 		ARGV => ['apt-get', '--yes',
 		    '-oApt::Get::Download-Only=true',
 		    'install'],
 		PKGS => [keys %ess_pkgs],
-		VERBOSE => $options->{verbose}
 	    });
     } else {
-	die "unknown variant: $options->{variant}";
+	error "unknown variant: $options->{variant}";
     }
 
     # extract the downloaded packages
     my @essential_pkgs;
     {
 	my $apt_archives = "/var/cache/apt/archives/";
-	opendir my $dh, "$options->{root}/$apt_archives" or die "cannot read $apt_archives";
+	opendir my $dh, "$options->{root}/$apt_archives" or error "cannot read $apt_archives";
 	while (my $deb = readdir $dh) {
 	    if ($deb !~ /\.deb$/) {
 		next;
@@ -1146,13 +1227,13 @@ sub setup {
 
     if (scalar @essential_pkgs == 0) {
 	# check if a file:// URI was used
-	open(my $pipe_apt, '-|', 'apt-get', 'indextargets', '--format', '$(URI)', 'Created-By: Packages') or die "cannot start apt-get indextargets: $!";
+	open(my $pipe_apt, '-|', 'apt-get', 'indextargets', '--format', '$(URI)', 'Created-By: Packages') or error "cannot start apt-get indextargets: $!";
 	while (my $uri = <$pipe_apt>) {
 	    if ($uri =~ /^file:\/\//) {
-		die "nothing got downloaded -- use copy:// instead of file://";
+		error "nothing got downloaded -- use copy:// instead of file://";
 	    }
 	}
-	die "nothing got downloaded";
+	error "nothing got downloaded";
     }
 
     # We have to extract the packages from @essential_pkgs either if we run in
@@ -1162,7 +1243,7 @@ sub setup {
     if ($options->{mode} eq 'chrootless' and $options->{variant} ne 'extract') {
 	# nothing to do
     } else {
-	print STDERR "I: extracting archives...\n";
+	info "extracting archives...";
 	print_progress 0.0;
 	my $counter = 0;
 	my $total = scalar @essential_pkgs;
@@ -1171,27 +1252,27 @@ sub setup {
 	    # not using dpkg-deb --extract as that would replace the
 	    # merged-usr symlinks with plain directories
 	    pipe my $rfh, my $wfh;
-	    my $pid1 = fork() // die "fork() failed: $!";
+	    my $pid1 = fork() // error "fork() failed: $!";
 	    if ($pid1 == 0) {
 		open(STDOUT, '>&', $wfh);
 		exec 'dpkg-deb', '--fsys-tarfile', "$options->{root}/$deb";
 	    }
-	    my $pid2 = fork() // die "fork() failed: $!";
+	    my $pid2 = fork() // error "fork() failed: $!";
 	    if ($pid2 == 0) {
 		open(STDIN, '<&', $rfh);
 		exec 'tar', '-C', $options->{root}, '--keep-directory-symlink', '--extract', '--file', '-';
 	    }
 	    waitpid($pid1, 0);
-	    $? == 0 or die "dpkg-deb --fsys-tarfile failed: $?";
+	    $? == 0 or error "dpkg-deb --fsys-tarfile failed: $?";
 	    waitpid($pid2, 0);
-	    $? == 0 or die "tar --extract failed: $?";
+	    $? == 0 or error "tar --extract failed: $?";
 	    print_progress ($counter/$total*100);
 	}
 	print_progress "done";
     }
 
     if ($options->{mode} eq 'chrootless') {
-	print STDERR "I: installing packages...\n";
+	info "installing packages...";
 	# FIXME: the dpkg config from the host is parsed before the command
 	# line arguments are parsed and might break this mode
 	# Example: if the host has --path-exclude set, then this will also
@@ -1209,7 +1290,6 @@ sub setup {
 			@chrootless_opts,
 			'install'],
 		    PKGS => [map { "$options->{root}/$_" } @essential_pkgs],
-		    VERBOSE => $options->{verbose}
 		});
 	}
 	if (any { $_ eq $options->{variant} } ('extract', 'custom')) {
@@ -1221,11 +1301,10 @@ sub setup {
 			    @chrootless_opts,
 			    'install'],
 			PKGS => [keys %pkgs_to_install],
-			VERBOSE => $options->{verbose}
 		    });
 	    }
 	} else {
-	    die "unknown variant: $options->{variant}";
+	    error "unknown variant: $options->{variant}";
 	}
     } elsif (any { $_ eq $options->{mode} } ('root', 'unshare', 'fakechroot', 'proot')) {
 
@@ -1261,7 +1340,7 @@ sub setup {
 		$ENV{FAKECHROOT_AF_UNIX_PATH} = "/tmp";
 		{
 		    my @ldsoconf = ('/etc/ld.so.conf');
-		    opendir(my $dh, '/etc/ld.so.conf.d') or die "Can't opendir(/etc/ld.so.conf.d): $!";
+		    opendir(my $dh, '/etc/ld.so.conf.d') or error "Can't opendir(/etc/ld.so.conf.d): $!";
 		    while (my $entry = readdir $dh) {
 			# skip the "." and ".." entries
 			next if $entry eq ".";
@@ -1279,7 +1358,7 @@ sub setup {
 		    # live in fakechroot, see #917920
 		    push @ldlibpath, "/lib/systemd";
 		    foreach my $fname (@ldsoconf) {
-			open my $fh, "<", $fname or die "cannot open $fname for reading: $!";
+			open my $fh, "<", $fname or error "cannot open $fname for reading: $!";
 			while (my $line = <$fh>) {
 			    next if $line !~ /^\//;
 			    push @ldlibpath, $line;
@@ -1305,7 +1384,7 @@ sub setup {
 	    } elsif (any { $_ eq $options->{mode} } ('root', 'unshare', 'fakechroot')) {
 		push @chrootcmd, ('/usr/sbin/chroot', $options->{root});
 	    } else {
-		die "unknown mode: $options->{mode}";
+		error "unknown mode: $options->{mode}";
 	    }
 
 	    # copy qemu-user-static binary into chroot or setup proot with --qemu
@@ -1318,19 +1397,19 @@ sub setup {
 		    $ENV{QEMU_LD_PREFIX} = $options->{root};
 		    # Make sure that the fakeroot and fakechroot shared libraries
 		    # exist for the right architecture
-		    open my $fh, '-|', 'dpkg-architecture', '-a', $options->{nativearch}, '-qDEB_HOST_MULTIARCH' // die "failed to fork(): $!";
+		    open my $fh, '-|', 'dpkg-architecture', '-a', $options->{nativearch}, '-qDEB_HOST_MULTIARCH' // error "failed to fork(): $!";
 		    chomp (my $deb_host_multiarch = do { local $/; <$fh> });
 		    close $fh;
 		    if ($? != 0 or !$deb_host_multiarch) {
-			die "dpkg-architecture failed: $?";
+			error "dpkg-architecture failed: $?";
 		    }
 		    my $fakechrootdir = "/usr/lib/$deb_host_multiarch/fakechroot";
 		    if (!-e "$fakechrootdir/libfakechroot.so") {
-			die "$fakechrootdir/libfakechroot.so doesn't exist. Install libfakechroot:$options->{nativearch} outside the chroot";
+			error "$fakechrootdir/libfakechroot.so doesn't exist. Install libfakechroot:$options->{nativearch} outside the chroot";
 		    }
 		    my $fakerootdir = "/usr/lib/$deb_host_multiarch/libfakeroot";
 		    if (!-e "$fakerootdir/libfakeroot-sysv.so") {
-			die "$fakerootdir/libfakeroot-sysv.so doesn't exist. Install libfakeroot:$options->{nativearch} outside the chroot";
+			error "$fakerootdir/libfakeroot-sysv.so doesn't exist. Install libfakeroot:$options->{nativearch} outside the chroot";
 		    }
 		    # fakechroot only fills LD_LIBRARY_PATH with the directories of
 		    # the host's architecture. We append the directories of the chroot
@@ -1340,11 +1419,11 @@ sub setup {
 		    # other modes require a static qemu-user binary
 		    my $qemubin = "/usr/bin/qemu-$options->{qemu}-static";
 		    if (!-e $qemubin) {
-			die "cannot find $qemubin";
+			error "cannot find $qemubin";
 		    }
-		    copy $qemubin, "$options->{root}/$qemubin" or die "cannot copy $qemubin: $!";
+		    copy $qemubin, "$options->{root}/$qemubin" or error "cannot copy $qemubin: $!";
 		} else {
-		    die "unknown mode: $options->{mode}";
+		    error "unknown mode: $options->{mode}";
 		}
 	    }
 
@@ -1352,23 +1431,22 @@ sub setup {
 	    # This breaks certain versions of fakechroot and proot. Here we do
 	    # a sanity check and warn the user in case things might break.
 	    if (any { $_ eq $options->{mode} } ('fakechroot', 'proot') and -e "$options->{root}/bin/mv") {
-		mkdir "$options->{root}/000-move-me" or die "cannot create directory: $!";
+		mkdir "$options->{root}/000-move-me" or error "cannot create directory: $!";
 		my $ret = system @chrootcmd, '/bin/mv', '/000-move-me', '/001-delete-me';
 		if ($ret != 0) {
-		    print STDERR "I: the /bin/mv binary inside the chroot doesn't work under ";
 		    if ($options->{mode} eq 'proot') {
-			print STDERR "proot\n";
-			print STDERR "I: this is likely due to missing support for renameat2 in proot\n";
-			print STDERR "I: see https://github.com/proot-me/PRoot/issues/147\n";
+			info "the /bin/mv binary inside the chroot doesn't work under proot";
+			info "this is likely due to missing support for renameat2 in proot";
+			info "see https://github.com/proot-me/PRoot/issues/147";
 		    } else {
-			print STDERR "fakechroot\n";
-			print STDERR "I: with certain versions of coreutils and glibc, this is due to missing support for renameat2 in fakechroot\n";
-			print STDERR "I: see https://github.com/dex4er/fakechroot/issues/60\n";
+			info "the /bin/mv binary inside the chroot doesn't work under fakechroot";
+			info "with certain versions of coreutils and glibc, this is due to missing support for renameat2 in fakechroot";
+			info "see https://github.com/dex4er/fakechroot/issues/60";
 		    }
-		    print STDERR "I: expect package post installation scripts not to work\n";
-		    rmdir "$options->{root}/000-move-me" or die "cannot rmdir: $!";
+		    info "expect package post installation scripts not to work";
+		    rmdir "$options->{root}/000-move-me" or error "cannot rmdir: $!";
 		} else {
-		    rmdir "$options->{root}/001-delete-me" or die "cannot rmdir: $!";
+		    rmdir "$options->{root}/001-delete-me" or error "cannot rmdir: $!";
 		}
 	    }
 
@@ -1376,33 +1454,31 @@ sub setup {
 	    # we need --force-depends because dpkg does not take Pre-Depends into
 	    # account and thus doesn't install them in the right order
 	    # And the --predep-package option is broken: #539133
-	    print STDERR "I: installing packages...\n";
+	    info "installing packages...";
 	    run_dpkg_progress({
 		    ARGV => [@chrootcmd, 'dpkg', '--install', '--force-depends'],
 		    PKGS => \@essential_pkgs,
-		    VERBOSE => $options->{verbose}
 		});
 
 	    # if the path-excluded option was added to the dpkg config, reinstall all
 	    # packages
 	    if (-e "$options->{root}/etc/dpkg/dpkg.cfg.d/99mmdebstrap") {
-		open(my $fh, '<', "$options->{root}/etc/dpkg/dpkg.cfg.d/99mmdebstrap") or die "cannot open /etc/dpkg/dpkg.cfg.d/99mmdebstrap: $!";
+		open(my $fh, '<', "$options->{root}/etc/dpkg/dpkg.cfg.d/99mmdebstrap") or error "cannot open /etc/dpkg/dpkg.cfg.d/99mmdebstrap: $!";
 		my $num_matches = grep /^path-exclude=/, <$fh>;
 		close $fh;
 		if ($num_matches > 0) {
 		    # without --skip-same-version, dpkg will install the given
 		    # packages even though they are already installed
-		    print STDERR "I: re-installing packages because of path-exclude...\n";
+		    info "re-installing packages because of path-exclude...";
 		    run_dpkg_progress({
 			    ARGV => [@chrootcmd, 'dpkg', '--install', '--force-depends'],
 			    PKGS => \@essential_pkgs,
-			    VERBOSE => $options->{verbose}
 			});
 		}
 	    }
 
 	    foreach my $deb (@essential_pkgs) {
-		unlink "$options->{root}/$deb" or die "cannot unlink $deb";
+		unlink "$options->{root}/$deb" or error "cannot unlink $deb";
 	    }
 
 	    if (%pkgs_to_install) {
@@ -1428,7 +1504,7 @@ sub setup {
 		# since apt will be run inside the chroot, make sure that
 		# apt-transport-https and ca-certificates gets installed first if any
 		# mirror is a https URI
-		open(my $pipe_apt, '-|', 'apt-get', 'indextargets', '--format', '$(URI)', 'Created-By: Packages') or die "cannot start apt-get indextargets: $!";
+		open(my $pipe_apt, '-|', 'apt-get', 'indextargets', '--format', '$(URI)', 'Created-By: Packages') or error "cannot start apt-get indextargets: $!";
 		while (my $uri = <$pipe_apt>) {
 		    if ($uri =~ /^https:\/\//) {
 			# FIXME: support for https is part of apt >= 1.5
@@ -1443,20 +1519,19 @@ sub setup {
 		    }
 		}
 		close $pipe_apt;
-		$? == 0 or die "apt-get indextargets failed";
+		$? == 0 or error "apt-get indextargets failed";
 
 		if (%pkgs_to_install_from_outside) {
-		    print STDERR 'I: downloading ' . (join ', ', keys %pkgs_to_install_from_outside) . "...\n";
+		    info 'downloading ' . (join ', ', keys %pkgs_to_install_from_outside) . "...";
 		    run_apt_progress({
 			    ARGV => ['apt-get', '--yes',
 				'-oApt::Get::Download-Only=true',
 				'install'],
 			    PKGS => [keys %pkgs_to_install_from_outside],
-			    VERBOSE => $options->{verbose}
 			});
 		    my @debs_to_install;
 		    my $apt_archives = "/var/cache/apt/archives/";
-		    opendir my $dh, "$options->{root}/$apt_archives" or die "cannot read $apt_archives";
+		    opendir my $dh, "$options->{root}/$apt_archives" or error "cannot read $apt_archives";
 		    while (my $deb = readdir $dh) {
 			if ($deb !~ /\.deb$/) {
 			    next;
@@ -1469,71 +1544,65 @@ sub setup {
 		    }
 		    close $dh;
 		    if (scalar @debs_to_install == 0) {
-			die "nothing got downloaded";
+			error "nothing got downloaded";
 		    }
 		    # we need --force-depends because dpkg does not take Pre-Depends
 		    # into account and thus doesn't install them in the right order
-		    print STDERR 'I: installing ' . (join ', ', keys %pkgs_to_install_from_outside) . "...\n";
+		    info 'installing ' . (join ', ', keys %pkgs_to_install_from_outside) . "...";
 		    run_dpkg_progress({
 			    ARGV => [@chrootcmd, 'dpkg',  '--install', '--force-depends'],
 			    PKGS => \@debs_to_install,
-			    VERBOSE => $options->{verbose}
 			});
 		    foreach my $deb (@debs_to_install) {
-			unlink "$options->{root}/$deb" or die "cannot unlink $deb";
+			unlink "$options->{root}/$deb" or error "cannot unlink $deb";
 		    }
 		}
 
 		run_chroot {
-		    print STDERR "I: installing remaining packages inside the chroot...\n";
+		    info "installing remaining packages inside the chroot...";
 		    run_apt_progress({
 			    ARGV => [@chrootcmd, 'apt-get', '--yes', 'install'],
 			    PKGS => [keys %pkgs_to_install],
-			    VERBOSE => $options->{verbose}
 			});
 		} $options;
 
 	    }
 	} else {
-	    die "unknown variant: $options->{variant}";
+	    error "unknown variant: $options->{variant}";
 	}
     } else {
-	die "unknown mode: $options->{mode}";
+	error "unknown mode: $options->{mode}";
     }
 
     if (scalar @{$options->{customize}} > 0) {
 	run_chroot {
 	    foreach my $script (@{$options->{customize}}) {
 		if ( -x $script || $script !~ m/[^\w@\%+=:,.\/-]/a) {
-		    print STDERR "I: running customize script directly: $script $options->{root}\n";
+		    info "running customize script directly: $script $options->{root}";
 		    # execute it directly if it's an executable file
 		    # or if it there are no shell metacharacters
 		    # (the /a regex modifier makes \w match only ASCII)
-		    0 == system($script, $options->{root}) or die "customization script failed: $script";
+		    0 == system($script, $options->{root}) or error "customization script failed: $script";
 		} else {
-		    print STDERR "I: running customize script in shell: sh -c '$script' exec $options->{root}\n";
+		    info "running customize script in shell: sh -c '$script' exec $options->{root}";
 		    # otherwise, wrap everything in sh -c
-		    0 == system('sh', '-c', $script, 'exec', $options->{root}) or die "customization script failed: $script";
+		    0 == system('sh', '-c', $script, 'exec', $options->{root}) or error "customization script failed: $script";
 		}
 	    }
 	} $options;
     }
 
     # clean up temporary configuration file
-    unlink "$options->{root}/etc/apt/apt.conf.d/00mmdebstrap" or die "failed to unlink /etc/apt/apt.conf.d/00mmdebstrap: $!";
+    unlink "$options->{root}/etc/apt/apt.conf.d/00mmdebstrap" or error "failed to unlink /etc/apt/apt.conf.d/00mmdebstrap: $!";
 
-    print STDERR "I: cleaning package lists and apt cache...\n";
+    info "cleaning package lists and apt cache...";
     run_apt_progress({
 	    ARGV => ['apt-get', '--option', 'Dir::Etc::SourceList=/dev/null', 'update'],
-	    VERBOSE => $options->{verbose}
 	});
-    run_apt_progress({
-	    ARGV => ['apt-get', 'clean'],
-	    VERBOSE => $options->{verbose}
-	});
+    run_apt_progress({ ARGV => ['apt-get', 'clean'] });
 
     if (defined $options->{qemu} and $options->{mode} ne 'proot' and $options->{mode} ne 'fakechroot') {
-	unlink "$options->{root}/usr/bin/qemu-$options->{qemu}-static" or die "cannot unlink /usr/bin/qemu-$options->{qemu}-static";
+	unlink "$options->{root}/usr/bin/qemu-$options->{qemu}-static" or error "cannot unlink /usr/bin/qemu-$options->{qemu}-static";
     }
 
     # clean up certain files to make output reproducible
@@ -1575,7 +1644,6 @@ sub main() {
 	mode => 'auto',
 	dpkgopts => [],
 	aptopts => [],
-	verbose => 0,
 	customize => [],
     };
     chomp ($options->{architectures} = `dpkg --print-architecture`);
@@ -1589,7 +1657,10 @@ sub main() {
 	'mode=s' => \$options->{mode},
 	'dpkgopt=s@' => \$options->{dpkgopts},
 	'aptopt=s@' => \$options->{aptopts},
-	'verbose' => \$options->{verbose},
+	'silent' => sub { $verbosity_level = 0; },
+	'quiet' => sub { $verbosity_level = 0; },
+	'verbose' => sub { $verbosity_level = 2; },
+	'debug' => sub { $verbosity_level = 3; },
 	# no-op options so that mmdebstrap can be used with
 	# sbuild-createchroot --debootstrap=mmdebstrap
 	'resolve-deps' => sub {},
@@ -1602,7 +1673,7 @@ sub main() {
     my @valid_variants = ('extract', 'custom', 'essential', 'apt', 'required',
 	'minbase', 'buildd', 'important', 'debootstrap', '-', 'standard');
     if (none { $_ eq $options->{variant}} @valid_variants) {
-	die "invalid variant. Choose from " . (join ', ', @valid_variants);
+	error "invalid variant. Choose from " . (join ', ', @valid_variants);
     }
     # debootstrap and - are an alias for important
     if (any { $_ eq $options->{variant} } ('-', 'debootstrap')) {
@@ -1610,7 +1681,7 @@ sub main() {
     }
 
     if ($options->{variant} eq 'essential' and defined $options->{include}) {
-	die "cannot install extra packages with variant essential because apt is missing";
+	error "cannot install extra packages with variant essential because apt is missing";
     }
 
     # fakeroot is an alias for fakechroot
@@ -1624,7 +1695,7 @@ sub main() {
     my @valid_modes = ('auto', 'root', 'unshare', 'fakechroot', 'proot',
 	'chrootless');
     if (none { $_ eq $options->{mode} } @valid_modes) {
-	die "invalid mode. Choose from " . (join ', ', @valid_modes);
+	error "invalid mode. Choose from " . (join ', ', @valid_modes);
     }
 
     # figure out the mode to use or test whether the chosen mode is legal
@@ -1638,22 +1709,22 @@ sub main() {
 	} elsif (system('fakechroot --version>/dev/null') == 0) {
 	    $options->{mode} = 'fakechroot';
 	} else {
-	    die "unable to pick chroot mode automatically";
+	    error "unable to pick chroot mode automatically";
 	}
-	print STDERR "I: automatically chosen mode: $options->{mode}\n";
+	info "automatically chosen mode: $options->{mode}";
     } elsif ($options->{mode} eq 'root') {
 	if ($EFFECTIVE_USER_ID != 0) {
-	    die "need to be root";
+	    error "need to be root";
 	}
     } elsif ($options->{mode} eq 'proot') {
 	if (system('proot --version>/dev/null') != 0) {
-	    die "need working proot binary";
+	    error "need working proot binary";
 	}
     } elsif ($options->{mode} eq 'fakechroot') {
 	# test if we are inside fakechroot already
 	# We fork a child process because setting FAKECHROOT_DETECT seems to
 	# be an irreversible operation for fakechroot.
-	my $pid = open my $rfh, '-|' // die "failed to fork(): $!";
+	my $pid = open my $rfh, '-|' // error "failed to fork(): $!";
 	if ($pid == 0) {
 	    # with the FAKECHROOT_DETECT environment variable set, any program
 	    # execution will be replaced with the output "fakeroot [version]"
@@ -1665,7 +1736,7 @@ sub main() {
 	if ($? == 0 and $content =~ /^fakechroot \d\.\d+$/) {
 	    # fakechroot is already running
 	} elsif (system('fakechroot --version>/dev/null') != 0) {
-	    die "need working fakechroot binary";
+	    error "need working fakechroot binary";
 	} else {
 	    # exec ourselves again but within fakechroot
 	    exec 'fakechroot', 'fakeroot', $PROGRAM_NAME, @ARGVORIG;
@@ -1673,21 +1744,21 @@ sub main() {
     } elsif ($options->{mode} eq 'unshare') {
 	if (!test_unshare(1)) {
 	    my $procfile = '/proc/sys/kernel/unprivileged_userns_clone';
-	    open(my $fh, '<', $procfile) or die "failed to open $procfile: $!";
+	    open(my $fh, '<', $procfile) or error "failed to open $procfile: $!";
 	    chomp(my $content = do { local $/; <$fh> });
 	    close($fh);
 	    if ($content ne "1") {
-		print STDERR "I: /proc/sys/kernel/unprivileged_userns_clone is set to $content\n";
-		print STDERR "I: try running: sudo sysctl -w kernel.unprivileged_userns_clone=1\n";
-		print STDERR "I: or permanently enable unprivileged usernamespaces by putting the setting into /etc/sysctl.d/\n";
-		print STDERR "I: see https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=898446\n";
+		info "/proc/sys/kernel/unprivileged_userns_clone is set to $content";
+		info "try running: sudo sysctl -w kernel.unprivileged_userns_clone=1";
+		info "or permanently enable unprivileged usernamespaces by putting the setting into /etc/sysctl.d/";
+		info "see https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=898446";
 	    }
 	    exit 1;
 	}
     } elsif ($options->{mode} eq 'chrootless') {
 	# nothing to do
     } else {
-	die "unknown mode: $options->{mode}";
+	error "unknown mode: $options->{mode}";
     }
 
     my ($nativearch, @foreignarchs) = split /,/, $options->{architectures};
@@ -1721,7 +1792,7 @@ sub main() {
 	};
 	chomp (my $hostarch = `dpkg --print-architecture`);
 	if ($hostarch ne $nativearch) {
-	    my $pid = open my $fh, '-|' // die "failed to fork(): $!";
+	    my $pid = open my $fh, '-|' // error "failed to fork(): $!";
 	    if ($pid == 0) {
 		{
 		    no warnings; # don't print a warning if the following fails
@@ -1736,38 +1807,38 @@ sub main() {
 	    chomp (my $content = do { local $/; <$fh> });
 	    close $fh;
 	    if ($? != 0 or $content ne "$nativearch: ok") {
-		print STDERR "I: $nativearch cannot be executed, falling back to qemu-user\n";
+		info "$nativearch cannot be executed, falling back to qemu-user";
 		if (!exists $deb2qemu->{$nativearch}) {
-		    die "no mapping from $nativearch to qemu-user binary";
+		    error "no mapping from $nativearch to qemu-user binary";
 		}
 		$options->{qemu} = $deb2qemu->{$nativearch};
 		{
-		    open my $fh, '<', '/proc/filesystems' or die "failed to open /proc/filesystems: $!";
+		    open my $fh, '<', '/proc/filesystems' or error "failed to open /proc/filesystems: $!";
 		    unless (grep /^nodev\tbinfmt_misc$/, (<$fh>)) {
-			die "binfmt_misc not found in /proc/filesystems -- is the module loaded?";
+			error "binfmt_misc not found in /proc/filesystems -- is the module loaded?";
 		    }
 		    close $fh;
 		}
 		{
-		    open my $fh, '<', '/proc/mounts' or die "failed to open /proc/mounts: $!";
+		    open my $fh, '<', '/proc/mounts' or error "failed to open /proc/mounts: $!";
 		    unless (grep /^binfmt_misc \/proc\/sys\/fs\/binfmt_misc binfmt_misc/, (<$fh>)) {
-			die "binfmt_misc not found in /proc/mounts -- not mounted?";
+			error "binfmt_misc not found in /proc/mounts -- not mounted?";
 		    }
 		    close $fh;
 		}
 		{
-		    open my $fh, '-|', '/usr/sbin/update-binfmts', '--display', "qemu-$options->{qemu}" // die "failed to fork(): $!";
+		    open my $fh, '-|', '/usr/sbin/update-binfmts', '--display', "qemu-$options->{qemu}" // error "failed to fork(): $!";
 		    chomp (my $binfmts = do { local $/; <$fh> });
 		    close $fh;
 		    if ($binfmts eq '') {
-			die "qemu-$options->{qemu} is not a supported binfmt name";
+			error "qemu-$options->{qemu} is not a supported binfmt name";
 		    }
 		}
 	    } else {
-		print STDERR "I: $nativearch can be executed on this $hostarch machine\n";
+		info "$nativearch can be executed on this $hostarch machine";
 	    }
 	} else {
-	    print STDERR "I: chroot architecture $nativearch is equal to the host's architecture\n";
+	    info "chroot architecture $nativearch is equal to the host's architecture";
 	}
     }
 
@@ -1781,7 +1852,7 @@ sub main() {
 		$options->{target} = '-';
 	    }
 	} else {
-	    print STDERR "I: No SUITE specified, expecting sources.list on standard input\n";
+	    info "No SUITE specified, expecting sources.list on standard input";
 	    $options->{target} = '-';
 	}
 
@@ -1791,7 +1862,7 @@ sub main() {
 	# connected to the terminal (because we don't expect the user to type
 	# the sources.list file
 	if (! -t STDIN) {
-	    print STDERR "I: Reading sources.list from standard input...\n";
+	    info "Reading sources.list from standard input...";
 	    $stdindata = do { local $/; <STDIN> };
 	}
 	if (! defined $suite) {
@@ -1808,13 +1879,13 @@ sub main() {
 		    } elsif ($arg =~ /:\/\//) {
 			$sourceslist .= "deb $arg $suite $options->{components}\n";
 		    } elsif (-f $arg) {
-			open my $fh, '<', $arg or die "cannot open $arg: $!";
+			open my $fh, '<', $arg or error "cannot open $arg: $!";
 			while (my $line = <$fh>) {
 			    $sourceslist .= $line;
 			}
 			close $fh;
 		    } else {
-			die "invalid mirror: $arg";
+			error "invalid mirror: $arg";
 		    }
 		}
 		# if there was no explicit '-' mirror listed and something was
@@ -1837,7 +1908,7 @@ sub main() {
 	    }
 	}
 	if ($sourceslist eq '') {
-	    die "empty apt sources.list";
+	    error "empty apt sources.list";
 	}
 	$options->{sourceslist} = $sourceslist;
     }
@@ -1845,13 +1916,13 @@ sub main() {
     if ($options->{target} ne '-') {
 	my $abs_path = abs_path($options->{target});
 	if (!defined $abs_path) {
-	    die "unable to get absolute path of target directory $options->{target}";
+	    error "unable to get absolute path of target directory $options->{target}";
 	}
 	$options->{target} = $abs_path;
     }
 
     if ($options->{target} eq '/') {
-	die "refusing to use the filesystem root as output directory";
+	error "refusing to use the filesystem root as output directory";
     }
 
     my @tar_compress_opts = get_tar_compress_options($options->{target});
@@ -1861,11 +1932,11 @@ sub main() {
     if (scalar @tar_compress_opts > 0 or $options->{target} =~ /\.tar$/ or $options->{target} eq '-') {
 	$options->{maketar} = 1;
 	if (any { $_ eq $options->{variant} } ('extract', 'custom') and $options->{mode} eq 'fakechroot') {
-	    print STDERR "I: creating a tarball in fakechroot mode might fail in extract and custom variants because there might be no tar inside the chroot\n";
+	    info "creating a tarball in fakechroot mode might fail in extract and custom variants because there might be no tar inside the chroot";
 	}
 	# try to fail early if target tarball cannot be opened for writing
 	if ($options->{target} ne '-') {
-	    open my $fh, '>', $options->{target} or die "cannot open $options->{target} for writing: $!";
+	    open my $fh, '>', $options->{target} or error "cannot open $options->{target} for writing: $!";
 	    close $fh;
 	}
     }
@@ -1881,7 +1952,7 @@ sub main() {
 	# access the rootfs, most prominently, the _apt user. Thus, make the
 	# temporary directory world readable.
 	if (any { $_ eq $options->{mode} } ('unshare', 'root')) {
-	    chmod 0755, $options->{root} or die "cannot chmod root: $!";
+	    chmod 0755, $options->{root} or error "cannot chmod root: $!";
 	}
     } else {
 	# user does not seem to have specified a tarball as output, thus work
@@ -1889,13 +1960,13 @@ sub main() {
 	$options->{root} = $options->{target};
 	if (-e $options->{root}) {
 	    if (!-d $options->{root}) {
-		die "$options->{root} exists and is not a directory";
+		error "$options->{root} exists and is not a directory";
 	    }
 	    # check if the directory is empty or contains nothing more than an
 	    # empty lost+found directory. The latter exists on freshly created
 	    # ext3 and ext4 partitions.
 	    # rationale for requiring an empty directory: https://bugs.debian.org/833525
-	    opendir(my $dh, $options->{root}) or die "Can't opendir($options->{root}): $!";
+	    opendir(my $dh, $options->{root}) or error "Can't opendir($options->{root}): $!";
 	    while (my $entry = readdir $dh) {
 		# skip the "." and ".." entries
 		next if $entry eq ".";
@@ -1912,23 +1983,23 @@ sub main() {
 		    # rationale for requiring an empty directory:
 		    # https://bugs.debian.org/833525
 		    if (readdir $dh2) {
-			die "$options->{root} contains a non-empty lost+found directory";
+			error "$options->{root} contains a non-empty lost+found directory";
 		    }
 		    closedir($dh2);
 		} else {
-		    die "$options->{root} is not empty";
+		    error "$options->{root} is not empty";
 		}
 	    }
 	    closedir($dh);
 	} else {
-	    make_path($options->{root}) or die "cannot create root: $!";
+	    make_path($options->{root}) or error "cannot create root: $!";
 	}
     }
 
     # check for double quotes because apt doesn't allow to escape them and
     # thus paths with double quotes are invalid in the apt config
     if ($options->{root} =~ /"/) {
-	die "apt cannot handle paths with double quotes";
+	error "apt cannot handle paths with double quotes";
     }
 
     my @idmap;
@@ -1938,8 +2009,7 @@ sub main() {
 	@idmap = read_subuid_subgid;
 	# sanity check
 	if (scalar(@idmap) != 2 || $idmap[0][0] ne 'u' || $idmap[1][0] ne 'g') {
-	    printf STDERR "invalid idmap\n";
-	    return 0;
+	    error "invalid idmap";
 	}
 
 	my $outer_gid = $REAL_GROUP_ID+0;
@@ -1951,7 +2021,7 @@ sub main() {
 	    ['u', '1', $idmap[0][2], '1'],
 	    ['g', '1', $idmap[1][2], '1']];
 	waitpid $pid, 0;
-	$? == 0 or die "chown failed";
+	$? == 0 or error "chown failed";
     }
 
     # figure out whether we have mknod
@@ -1961,11 +2031,11 @@ sub main() {
 	    $options->{havemknod} = havemknod($options->{root});
 	} \@idmap;
 	waitpid $pid, 0;
-	$? == 0 or die "havemknod failed";
+	$? == 0 or error "havemknod failed";
     } elsif (any { $_ eq $options->{mode} } ('root', 'fakechroot', 'proot', 'chrootless')) {
 	$options->{havemknod} = havemknod($options->{root});
     } else {
-	die "unknown mode: $options->{mode}";
+	error "unknown mode: $options->{mode}";
     }
 
     my $devtar = '';
@@ -2003,7 +2073,7 @@ sub main() {
     # disable signals so that we can fork and change behaviour of the signal
     # handler in the parent and child without getting interrupted
     my $sigset = POSIX::SigSet->new(SIGINT, SIGHUP, SIGPIPE, SIGTERM);
-    POSIX::sigprocmask(SIG_BLOCK, $sigset) or die "Can't block signals: $!\n";
+    POSIX::sigprocmask(SIG_BLOCK, $sigset) or error "Can't block signals: $!";
 
     my $pid;
     pipe my $rfh, my $wfh;
@@ -2016,7 +2086,7 @@ sub main() {
 	    $SIG{'TERM'} = 'DEFAULT';
 
 	    # unblock all delayed signals (and possibly handle them)
-	    POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or die "Can't unblock signals: $!\n";
+	    POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or error "Can't unblock signals: $!";
 
 	    close $rfh;
 	    open(STDOUT, '>&', STDERR);
@@ -2024,7 +2094,7 @@ sub main() {
 	    setup($options);
 
 	    if ($options->{maketar}) {
-		print STDERR "I: creating tarball...\n";
+		info "creating tarball...";
 
 		# redirect tar output to the writing end of the pipe so that the
 		# parent process can capture the output
@@ -2036,15 +2106,15 @@ sub main() {
 		print $devtar;
 
 		# pack everything except ./dev
-		0 == system('tar', @taropts, '-C', $options->{root}, '.') or die "tar failed: $?";
+		0 == system('tar', @taropts, '-C', $options->{root}, '.') or error "tar failed: $?";
 
-		print STDERR "done\n";
+		info "done";
 	    }
 
 	    exit 0;
 	} \@idmap;
     } elsif (any { $_ eq $options->{mode} } ('root', 'fakechroot', 'proot', 'chrootless')) {
-	$pid = fork() // die "fork() failed: $!";
+	$pid = fork() // error "fork() failed: $!";
 	if ($pid == 0) {
 	    $SIG{'INT'} = 'DEFAULT';
 	    $SIG{'HUP'} = 'DEFAULT';
@@ -2052,7 +2122,7 @@ sub main() {
 	    $SIG{'TERM'} = 'DEFAULT';
 
 	    # unblock all delayed signals (and possibly handle them)
-	    POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or die "Can't unblock signals: $!\n";
+	    POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or error "Can't unblock signals: $!";
 
 	    close $rfh;
 	    open(STDOUT, '>&', STDERR);
@@ -2060,7 +2130,7 @@ sub main() {
 	    setup($options);
 
 	    if ($options->{maketar}) {
-		print STDERR "I: creating tarball...\n";
+		info "creating tarball...";
 
 		# redirect tar output to the writing end of the pipe so that the
 		# parent process can capture the output
@@ -2075,7 +2145,7 @@ sub main() {
 		    # Fakechroot requires tar to run inside the chroot or
 		    # otherwise absolute symlinks will include the path to the
 		    # root directory
-		    0 == system('/usr/sbin/chroot', $options->{root}, 'tar', @taropts, '-C', '/', '.') or die "tar failed: $?";
+		    0 == system('/usr/sbin/chroot', $options->{root}, 'tar', @taropts, '-C', '/', '.') or error "tar failed: $?";
 		} elsif ($options->{mode} eq 'proot') {
 		    # proot requires tar to run inside proot or otherwise
 		    # permissions will be completely off
@@ -2084,20 +2154,20 @@ sub main() {
 			push @qemuopt, "--qemu=qemu-$options->{qemu}";
 			push @taropts, "--exclude=./host-rootfs"
 		    }
-		    0 == system('proot', '--root-id', "--rootfs=$options->{root}", '--cwd=/', @qemuopt, 'tar', @taropts, '-C', '/', '.') or die "tar failed: $?";
+		    0 == system('proot', '--root-id', "--rootfs=$options->{root}", '--cwd=/', @qemuopt, 'tar', @taropts, '-C', '/', '.') or error "tar failed: $?";
 		} elsif (any { $_ eq $options->{mode} } ('root', 'chrootless')) {
-		    0 == system('tar', @taropts, '-C', $options->{root}, '.') or die "tar failed: $?";
+		    0 == system('tar', @taropts, '-C', $options->{root}, '.') or error "tar failed: $?";
 		} else {
-		    die "unknown mode: $options->{mode}";
+		    error "unknown mode: $options->{mode}";
 		}
 
-		print STDERR "done\n";
+		info "done";
 	    }
 
 	    exit 0;
 	}
     } else {
-	die "unknown mode: $options->{mode}";
+	error "unknown mode: $options->{mode}";
     }
 
     # parent
@@ -2106,7 +2176,7 @@ sub main() {
     my $waiting_for = "setup";
     my $ignore = sub {
 	$got_signal = shift;
-	print STDERR "I: main() received signal $got_signal: waiting for $waiting_for...\n";
+	info "main() received signal $got_signal: waiting for $waiting_for...";
     };
 
     $SIG{'INT'} = $ignore;
@@ -2115,7 +2185,7 @@ sub main() {
     $SIG{'TERM'} = $ignore;
 
     # unblock all delayed signals (and possibly handle them)
-    POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or die "Can't unblock signals: $!\n";
+    POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or error "Can't unblock signals: $!";
 
     close $wfh;
 
@@ -2124,12 +2194,12 @@ sub main() {
 	# without a parent
 	if ($options->{target} ne '-') {
 	    if(!copy($rfh, $options->{target})) {
-		print STDERR "E: cannot copy to $options->{target}: $!\n";
+		warning "cannot copy to $options->{target}: $!";
 		$exitstatus = 1;
 	    }
 	} else {
 	    if (!copy($rfh, *STDOUT)) {
-		print STDERR "E: cannot copy to standard output: $!\n";
+		warning "cannot copy to standard output: $!";
 		$exitstatus = 1;
 	    }
 	}
@@ -2155,16 +2225,16 @@ sub main() {
 		    for my $diag (@$err) {
 			my ($file, $message) = %$diag;
 			if ($file eq '') {
-			    print "general error: $message\n";
+			    warning "general error: $message";
 			}
 			else {
-			    print "problem unlinking $file: $message\n";
+			    warning "problem unlinking $file: $message";
 			}
 		    }
 		}
 	    } \@idmap;
 	    waitpid $pid, 0;
-	    $? == 0 or die "remove_tree failed";
+	    $? == 0 or error "remove_tree failed";
 	} elsif (any { $_ eq $options->{mode} } ('root', 'fakechroot', 'proot', 'chrootless')) {
 	    # without unshare, we use the system's rm to recursively remove the
 	    # temporary directory just to make sure that we do not accidentally
@@ -2173,9 +2243,9 @@ sub main() {
 	    # --interactive=never is needed when in proot mode, the
 	    # write-protected file /apt/apt.conf.d/01autoremove-kernels is to
 	    # be removed.
-	    0 == system('rm', '--interactive=never', '--recursive', '--preserve-root', '--one-file-system', $options->{root}) or die "rm failed: $!";
+	    0 == system('rm', '--interactive=never', '--recursive', '--preserve-root', '--one-file-system', $options->{root}) or error "rm failed: $!";
 	} else {
-	    die "unknown mode: $options->{mode}";
+	    error "unknown mode: $options->{mode}";
 	}
     }
 
@@ -2337,6 +2407,20 @@ Examples:
     --customize=/usr/share/autopkgtest/setup-commands/setup-testbed
 
 =end comment
+
+=item B<--quiet>, B<--silent>
+
+Do not write anything to standard error.
+
+=item B<--verbose>
+
+Instead of progress bars, write the dpkg and apt output directly to standard
+error.
+
+=item B<--debug>
+
+In addition to the output produced by B<--verbose>, write detailed debugging
+information to standard error. Errors will print a backtrace.
 
 =back
 
