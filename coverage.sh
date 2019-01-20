@@ -419,8 +419,9 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-$CMD --mode=root --variant=apt --aptopt="Acquire::Check-Valid-Until false" unstable /tmp/debian-unstable $mirror
-echo "Acquire::Check-Valid-Until false;" | cmp /tmp/debian-unstable/etc/apt/apt.conf.d/99mmdebstrap -
+echo 'Acquire::Languages "none";' > config
+$CMD --mode=root --variant=apt --aptopt='Acquire::Check-Valid-Until "false"' --aptopt=config unstable /tmp/debian-unstable $mirror
+printf 'Acquire::Check-Valid-Until "false";\nAcquire::Languages "none";\n' | cmp /tmp/debian-unstable/etc/apt/apt.conf.d/99mmdebstrap -
 rm /tmp/debian-unstable/etc/apt/apt.conf.d/99mmdebstrap
 tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
 diff -u tar1.txt tar2.txt
@@ -437,8 +438,9 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-$CMD --mode=root --variant=apt --dpkgopt="path-exclude=/usr/share/doc/*" unstable /tmp/debian-unstable $mirror
-echo "path-exclude=/usr/share/doc/*" | cmp /tmp/debian-unstable/etc/dpkg/dpkg.cfg.d/99mmdebstrap -
+echo no-pager > config
+$CMD --mode=root --variant=apt --dpkgopt="path-exclude=/usr/share/doc/*" --dpkgopt=config unstable /tmp/debian-unstable $mirror
+printf 'path-exclude=/usr/share/doc/*\nno-pager\n' | cmp /tmp/debian-unstable/etc/dpkg/dpkg.cfg.d/99mmdebstrap -
 rm /tmp/debian-unstable/etc/dpkg/dpkg.cfg.d/99mmdebstrap
 tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
 grep -v '^./usr/share/doc/.' tar1.txt | diff -u - tar2.txt

@@ -963,6 +963,9 @@ sub setup {
 	open my $fh, '>', "$options->{root}/etc/apt/apt.conf.d/99mmdebstrap" or error "cannot open /etc/apt/apt.conf.d/99mmdebstrap: $!";
 	foreach my $opt (@{$options->{aptopts}}) {
 	    if (-r $opt) {
+		# flush handle because copy() uses syswrite() which bypasses
+		# buffered IO
+		$fh->flush();
 		copy $opt, $fh or error "cannot copy $opt: $!";
 	    } else {
 		print $fh $opt;
@@ -983,6 +986,9 @@ sub setup {
 	open my $fh, '>', "$options->{root}/etc/dpkg/dpkg.cfg.d/99mmdebstrap" or error "cannot open /etc/dpkg/dpkg.cfg.d/99mmdebstrap: $!";
 	foreach my $opt (@{$options->{dpkgopts}}) {
 	    if (-r $opt) {
+		# flush handle because copy() uses syswrite() which bypasses
+		# buffered IO
+		$fh->flush();
 		copy $opt, $fh or error "cannot copy $opt: $!";
 	    } else {
 		print $fh $opt;
