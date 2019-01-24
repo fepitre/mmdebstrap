@@ -1716,10 +1716,10 @@ sub main() {
 	    $options->{mode} = 'root';
 	} elsif (test_unshare(0)) {
 	    $options->{mode} = 'unshare';
-	} elsif (system('proot --version>/dev/null') == 0) {
-	    $options->{mode} = 'proot';
 	} elsif (system('fakechroot --version>/dev/null') == 0) {
 	    $options->{mode} = 'fakechroot';
+	} elsif (system('proot --version>/dev/null') == 0) {
+	    $options->{mode} = 'proot';
 	} else {
 	    error "unable to pick chroot mode automatically";
 	}
