@@ -30,6 +30,7 @@ oldmirrordir="$oldcachedir/debian"
 newmirrordir="$newcachedir/debian"
 
 mirror="http://deb.debian.org/debian"
+security_mirror="http://security.debian.org/debian-security"
 arch1=$(dpkg --print-architecture)
 arch2=armhf
 if [ "$arch1" = "$arch2" ]; then
@@ -48,18 +49,79 @@ if [ -e "$oldmirrordir/dists/unstable/Release" ]; then
 	esac
 fi
 
-for nativearch in $arch1 $arch2; do
-	for dist in stable testing unstable; do
-		# use a subdirectory of $newcachedir so that we can use
-		# hardlinks
-		rootdir="$newcachedir/apt"
-		mkdir -p "$rootdir"
-
-		for p in /etc/apt/apt.conf.d /etc/apt/sources.list.d /etc/apt/preferences.d /var/cache/apt/archives /var/lib/apt/lists/partial /var/lib/dpkg; do
-			mkdir -p "$rootdir/$p"
+get_oldaptnames() {
+	if [ ! -e "$1/$2" ]; then
+		return
+	fi
+	gzip -dc "$1/$2" \
+		| grep-dctrl --no-field-names --show-field=Package,Version,Architecture,Filename '' \
+		| paste -sd "    \n" \
+		| while read name ver arch fname; do
+			if [ ! -e "$1/$fname" ]; then
+				continue
+			fi
+			# apt stores deb files with the colon encoded as %3a while
+			# mirrors do not contain the epoch at all #645895
+			case "$ver" in *:*) ver="${ver%%:*}%3a${ver#*:}";; esac
+			aptname="$rootdir/var/cache/apt/archives/${name}_${ver}_${arch}.deb"
+			# we have to cp and not mv because other
+			# distributions might still need this file
+			# we have to cp and not symlink because apt
+			# doesn't recognize symlinks
+			cp --link "$1/$fname" "$aptname"
+			echo "$aptname"
 		done
+}
 
-		cat << END > "$rootdir/etc/apt/apt.conf"
+get_newaptnames() {
+	if [ ! -e "$1/$2" ]; then
+		return
+	fi
+	gzip -dc "$1/$2" \
+		| grep-dctrl --no-field-names --show-field=Package,Version,Architecture,Filename,MD5sum '' \
+		| paste -sd "     \n" \
+		| while read name ver arch fname md5; do
+			dir="${fname%/*}"
+			# apt stores deb files with the colon encoded as %3a while
+			# mirrors do not contain the epoch at all #645895
+			case "$ver" in *:*) ver="${ver%%:*}%3a${ver#*:}";; esac
+			aptname="$rootdir/var/cache/apt/archives/${name}_${ver}_${arch}.deb"
+			if [ -e "$aptname" ]; then
+				# make sure that we found the right file by checking its hash
+				echo "$md5  $aptname" | md5sum --check >&2
+				mkdir -p "$1/$dir"
+				# since we move hardlinks around, the same hardlink might've been
+				# moved already into the same place by another distribution.
+				# mv(1) refuses to copy A to B if both are hardlinks of each other.
+				if [ "$aptname" -ef "$1/$fname" ]; then
+					# both files are already the same so we just need to
+					# delete the source
+					rm "$aptname"
+				else
+					mv "$aptname" "$1/$fname"
+				fi
+				echo "$aptname"
+			fi
+		done
+}
+
+update_cache() {
+	dist="$1"
+	nativearch="$2"
+
+	# use a subdirectory of $newcachedir so that we can use
+	# hardlinks
+	rootdir="$newcachedir/apt"
+	mkdir -p "$rootdir"
+
+	for p in /etc/apt/apt.conf.d /etc/apt/sources.list.d /etc/apt/preferences.d /var/cache/apt/archives /var/lib/apt/lists/partial /var/lib/dpkg; do
+		mkdir -p "$rootdir/$p"
+	done
+
+	# read sources.list content from stdin
+	cat > "$rootdir/etc/apt/sources.list"
+
+	cat << END > "$rootdir/etc/apt/apt.conf"
 Apt::Architecture "$nativearch";
 Apt::Architectures "$nativearch";
 Dir::Etc "$rootdir/etc/apt";
@@ -72,123 +134,105 @@ Dir::Etc::Trusted "/etc/apt/trusted.gpg";
 Dir::Etc::TrustedParts "/etc/apt/trusted.gpg.d";
 END
 
-		> "$rootdir/var/lib/dpkg/status"
+	> "$rootdir/var/lib/dpkg/status"
 
-		cat << END > "$rootdir/etc/apt/sources.list"
+
+	APT_CONFIG="$rootdir/etc/apt/apt.conf" apt-get update
+
+	# before downloading packages and before replacing the old Packages
+	# file, copy all old *.deb packages from the mirror to
+	# /var/cache/apt/archives so that apt will not re-download *.deb
+	# packages that we already have
+	{
+		get_oldaptnames "$oldmirrordir" "dists/$dist/main/binary-$nativearch/Packages.gz"
+		if grep --quiet security.debian.org "$rootdir/etc/apt/sources.list"; then
+			get_oldaptnames "$oldmirrordir" "dists/stable-updates/main/binary-$nativearch/Packages.gz"
+			get_oldaptnames "$oldcachedir/debian-security" "dists/stable/updates/main/binary-$nativearch/Packages.gz"
+		fi
+	} | sort -u > "$rootdir/oldaptnames"
+
+	pkgs=$(APT_CONFIG="$rootdir/etc/apt/apt.conf" apt-get indextargets \
+		--format '$(FILENAME)' 'Created-By: Packages' "Architecture: $nativearch" \
+		| xargs --delimiter='\n' /usr/lib/apt/apt-helper cat-file \
+		| grep-dctrl --no-field-names --show-field=Package --exact-match \
+			\( --field=Essential yes --or --field=Priority required \
+			--or --field=Priority important --or --field=Priority standard \
+			--or --field=Package build-essential \) )
+
+	pkgs="$(echo $pkgs) build-essential"
+
+	APT_CONFIG="$rootdir/etc/apt/apt.conf" apt-get --yes install $pkgs
+
+	# to be able to also test gpg verification, we need to create a mirror
+	mkdir -p "$newmirrordir/dists/$dist/main/binary-$nativearch/"
+	curl --location "$mirror/dists/$dist/Release" > "$newmirrordir/dists/$dist/Release"
+	curl --location "$mirror/dists/$dist/Release.gpg" > "$newmirrordir/dists/$dist/Release.gpg"
+	curl --location "$mirror/dists/$dist/main/binary-$nativearch/Packages.gz" > "$newmirrordir/dists/$dist/main/binary-$nativearch/Packages.gz"
+	if grep --quiet security.debian.org "$rootdir/etc/apt/sources.list"; then
+		mkdir -p "$newmirrordir/dists/stable-updates/main/binary-$nativearch/"
+		curl --location "$mirror/dists/stable-updates/Release" > "$newmirrordir/dists/stable-updates/Release"
+		curl --location "$mirror/dists/stable-updates/Release.gpg" > "$newmirrordir/dists/stable-updates/Release.gpg"
+		curl --location "$mirror/dists/stable-updates/main/binary-$nativearch/Packages.gz" > "$newmirrordir/dists/stable-updates/main/binary-$nativearch/Packages.gz"
+		mkdir -p "$newcachedir/debian-security/dists/stable/updates/main/binary-$nativearch/"
+		curl --location "$security_mirror/dists/stable/updates/Release" > "$newcachedir/debian-security/dists/stable/updates/Release"
+		curl --location "$security_mirror/dists/stable/updates/Release.gpg" > "$newcachedir/debian-security/dists/stable/updates/Release.gpg"
+		curl --location "$security_mirror/dists/stable/updates/main/binary-$nativearch/Packages.gz" > "$newcachedir/debian-security/dists/stable/updates/main/binary-$nativearch/Packages.gz"
+	fi
+
+	# the deb files downloaded by apt must be moved to their right locations in the
+	# pool directory
+	#
+	# Instead of parsing the Packages file, we could also attempt to move the deb
+	# files ourselves to the appropriate pool directories. But that approach
+	# requires re-creating the heuristic by which the directory is chosen, requires
+	# stripping the epoch from the filename and will break once mirrors change.
+	# This way, it doesn't matter where the mirror ends up storing the package.
+	{
+		get_newaptnames "$newmirrordir" "dists/$dist/main/binary-$nativearch/Packages.gz";
+		if grep --quiet security.debian.org "$rootdir/etc/apt/sources.list"; then
+			get_newaptnames "$newmirrordir" "dists/stable-updates/main/binary-$nativearch/Packages.gz"
+			get_newaptnames "$newcachedir/debian-security" "dists/stable/updates/main/binary-$nativearch/Packages.gz"
+		fi
+	} | sort -u > "$rootdir/newaptnames"
+
+	rm "$rootdir/var/cache/apt/archives/lock"
+	rmdir "$rootdir/var/cache/apt/archives/partial"
+	# remove all packages that were in the old Packages file but not in the
+	# new one anymore
+	comm -23 "$rootdir/oldaptnames" "$rootdir/newaptnames" | xargs --delimiter="\n" --no-run-if-empty rm
+	# now the apt cache should be empty
+	if [ ! -z "$(ls -1qA "$rootdir/var/cache/apt/archives/")" ]; then
+		echo "/var/cache/apt/archives not empty"
+		exit 1
+	fi
+
+	# cleanup
+	APT_CONFIG="$rootdir/etc/apt/apt.conf" apt-get --option Dir::Etc::SourceList=/dev/null update
+	APT_CONFIG="$rootdir/etc/apt/apt.conf" apt-get clean
+	rm "$rootdir/var/cache/apt/archives/lock"
+	rm "$rootdir/var/lib/apt/lists/lock"
+	rm "$rootdir/var/lib/dpkg/status"
+	rm "$rootdir/var/lib/dpkg/lock-frontend"
+	rm "$rootdir/var/lib/dpkg/lock"
+	rm "$rootdir/etc/apt/apt.conf"
+	rm "$rootdir/etc/apt/sources.list"
+	rm "$rootdir/oldaptnames"
+	rm "$rootdir/newaptnames"
+	find "$rootdir" -depth -print0 | xargs -0 rmdir
+}
+
+for nativearch in $arch1 $arch2; do
+	for dist in stable testing unstable; do
+		cat << END | update_cache $dist $nativearch
 deb [arch=$nativearch] $mirror $dist $components
 END
-
-
-		APT_CONFIG="$rootdir/etc/apt/apt.conf" apt-get update
-
-		> "$rootdir/oldaptnames"
-		# before downloading packages and before replacing the old Packages
-		# file, copy all old *.deb packages from the mirror to
-		# /var/cache/apt/archives so that apt will not re-download *.deb
-		# packages that we already have
-		if [ -e "$oldmirrordir/dists/$dist/main/binary-$nativearch/Packages.gz" ]; then
-			gzip -dc "$oldmirrordir/dists/$dist/main/binary-$nativearch/Packages.gz" \
-				| grep-dctrl --no-field-names --show-field=Package,Version,Architecture,Filename '' \
-				| paste -sd "    \n" \
-				| while read name ver arch fname; do
-					if [ ! -e "$oldmirrordir/$fname" ]; then
-						continue
-					fi
-					# apt stores deb files with the colon encoded as %3a while
-					# mirrors do not contain the epoch at all #645895
-					case "$ver" in *:*) ver="${ver%%:*}%3a${ver#*:}";; esac
-					aptname="$rootdir/var/cache/apt/archives/${name}_${ver}_${arch}.deb"
-					# we have to cp and not mv because other
-					# distributions might still need this file
-					# we have to cp and not symlink because apt
-					# doesn't recognize symlinks
-					cp --link "$oldmirrordir/$fname" "$aptname"
-					echo "$aptname" >> "$rootdir/oldaptnames"
-				done
+		if [ "$dist" = "stable" ]; then
+			cat << END | update_cache $dist $nativearch
+deb [arch=$nativearch] $mirror $dist $components
+deb [arch=$nativearch] $mirror stable-updates main
+deb [arch=$nativearch] $security_mirror stable/updates main
+END
 		fi
-
-		pkgs=$(APT_CONFIG="$rootdir/etc/apt/apt.conf" apt-get indextargets \
-			--format '$(FILENAME)' 'Created-By: Packages' "Architecture: $nativearch" \
-			| xargs --delimiter='\n' /usr/lib/apt/apt-helper cat-file \
-			| grep-dctrl --no-field-names --show-field=Package --exact-match \
-				\( --field=Essential yes --or --field=Priority required \
-				--or --field=Priority important --or --field=Priority standard \
-				--or --field=Package build-essential \) )
-
-		pkgs="$(echo $pkgs) build-essential"
-
-		APT_CONFIG="$rootdir/etc/apt/apt.conf" apt-get --yes install $pkgs
-
-		# to be able to also test gpg verification, we need to create a mirror
-		mkdir -p "$newmirrordir/dists/$dist/" "$newmirrordir/dists/$dist/main/binary-$nativearch/"
-		curl --location "$mirror/dists/$dist/Release" > "$newmirrordir/dists/$dist/Release"
-		curl --location "$mirror/dists/$dist/Release.gpg" > "$newmirrordir/dists/$dist/Release.gpg"
-		curl --location "$mirror/dists/$dist/main/binary-$nativearch/Packages.gz" > "$newmirrordir/dists/$dist/main/binary-$nativearch/Packages.gz"
-
-		# the deb files downloaded by apt must be moved to their right locations in the
-		# pool directory
-		#
-		# Instead of parsing the Packages file, we could also attempt to move the deb
-		# files ourselves to the appropriate pool directories. But that approach
-		# requires re-creating the heuristic by which the directory is chosen, requires
-		# stripping the epoch from the filename and will break once mirrors change.
-		# This way, it doesn't matter where the mirror ends up storing the package.
-		> "$rootdir/newaptnames"
-		gzip -dc "$newmirrordir/dists/$dist/main/binary-$nativearch/Packages.gz" \
-			| grep-dctrl --no-field-names --show-field=Package,Version,Architecture,Filename,MD5sum '' \
-			| paste -sd "     \n" \
-			| while read name ver arch fname md5; do
-				dir="${fname%/*}"
-				# apt stores deb files with the colon encoded as %3a while
-				# mirrors do not contain the epoch at all #645895
-				case "$ver" in *:*) ver="${ver%%:*}%3a${ver#*:}";; esac
-				aptname="$rootdir/var/cache/apt/archives/${name}_${ver}_${arch}.deb"
-				if [ -e "$aptname" ]; then
-					# make sure that we found the right file by checking its hash
-					echo "$md5  $aptname" | md5sum --check
-					mkdir -p "$newmirrordir/$dir"
-					# since we move hardlinks around, the same hardlink might've been
-					# moved already into the same place by another distribution.
-					# mv(1) refuses to copy A to B if both are hardlinks of each other.
-					if [ "$aptname" -ef "$newmirrordir/$fname" ]; then
-						# both files are already the same so we just need to
-						# delete the source
-						rm "$aptname"
-					else
-						mv "$aptname" "$newmirrordir/$fname"
-					fi
-					echo "$aptname" >> "$rootdir/newaptnames"
-				fi
-			done
-
-		rm "$rootdir/var/cache/apt/archives/lock"
-		rmdir "$rootdir/var/cache/apt/archives/partial"
-		# remove all packages that were in the old Packages file but not in the
-		# new one anymore
-		sort "$rootdir/oldaptnames" > "$rootdir/tmp"
-		mv "$rootdir/tmp" "$rootdir/oldaptnames"
-		sort "$rootdir/newaptnames" > "$rootdir/tmp"
-		mv "$rootdir/tmp" "$rootdir/newaptnames"
-		comm -23 "$rootdir/oldaptnames" "$rootdir/newaptnames" | xargs --delimiter="\n" --no-run-if-empty rm
-		# now the apt cache should be empty
-		if [ ! -z "$(ls -1qA "$rootdir/var/cache/apt/archives/")" ]; then
-			echo "/var/cache/apt/archives not empty"
-			exit 1
-		fi
-
-		# cleanup
-		APT_CONFIG="$rootdir/etc/apt/apt.conf" apt-get --option Dir::Etc::SourceList=/dev/null update
-		APT_CONFIG="$rootdir/etc/apt/apt.conf" apt-get clean
-		rm "$rootdir/var/cache/apt/archives/lock"
-		rm "$rootdir/var/lib/apt/lists/lock"
-		rm "$rootdir/var/lib/dpkg/status"
-		rm "$rootdir/var/lib/dpkg/lock-frontend"
-		rm "$rootdir/var/lib/dpkg/lock"
-		rm "$rootdir/etc/apt/apt.conf"
-		rm "$rootdir/etc/apt/sources.list"
-		rm "$rootdir/oldaptnames"
-		rm "$rootdir/newaptnames"
-		find "$rootdir" -depth -print0 | xargs -0 rmdir
 	done
 done
 
@@ -345,10 +389,19 @@ for dist in stable testing unstable; do
 	if [ -e "$oldcachedir/debian/dists/$dist" ]; then
 		rm --one-file-system --recursive "$oldcachedir/debian/dists/$dist"
 	fi
+	if [ "$dist" = "stable" ]; then
+		if [ -e "$oldcachedir/debian/dists/stable-updates" ]; then
+			rm --one-file-system --recursive "$oldcachedir/debian/dists/stable-updates"
+		fi
+		if [ -e "$oldcachedir/debian-security/dists/stable/updates" ]; then
+			rm --one-file-system --recursive "$oldcachedir/debian-security/dists/stable/updates"
+		fi
+	fi
 done
 if [ -e $oldcachedir/debian-unstable.qcow ]; then
 	rm --one-file-system $oldcachedir/debian-unstable.qcow
 fi
 rm --one-file-system --recursive $oldcachedir/debian/pool/main
+rm --one-file-system --recursive $oldcachedir/debian-security/pool/updates/main
 # now the rest should only be empty directories
 find $oldcachedir -depth -print0 | xargs -0 rmdir
