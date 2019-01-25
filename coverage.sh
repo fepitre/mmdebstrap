@@ -287,23 +287,28 @@ else
 	./run_null.sh
 fi
 
-print_header "mode=auto,variant=apt: default mirror"
+print_header "mode=root,variant=apt: stable default mirror"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-echo "127.0.0.1 deb.debian.org" >> /etc/hosts
-$CMD --mode=$defaultmode --variant=apt unstable /tmp/unstable-chroot.tar
-tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
-diff -u tar1.txt tar2.txt
-rm /tmp/unstable-chroot.tar
+cat << HOSTS >> /etc/hosts
+127.0.0.1 deb.debian.org
+127.0.0.1 security.debian.org
+HOSTS
+apt-cache policy
+cat /etc/apt/sources.list
+$CMD --mode=root --variant=apt stable /tmp/debian-unstable
+cat << SOURCES | cmp /tmp/debian-unstable/etc/apt/sources.list
+deb http://deb.debian.org/debian stable main
+deb http://deb.debian.org/debian stable-updates main
+deb http://security.debian.org/debian-security stable/updates main
+SOURCES
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
-elif [ "$defaultmode" = "root" ]; then
-	./run_null.sh SUDO
 else
-	./run_null.sh
+	./run_null.sh SUDO
 fi
 
 print_header "mode=auto,variant=apt: pass distribution but implicitly write to stdout"
