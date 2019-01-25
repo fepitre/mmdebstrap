@@ -288,6 +288,24 @@ else
 	echo "HAVE_QEMU != yes -- Skipping test..."
 fi
 
+print_header "mode=root,variant=apt: create tarball with /tmp mounted nodev"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+mount -t tmpfs -o nodev,nosuid,size=300M tmpfs /tmp
+# use --customize to exercise the mounting/unmounting code of block devices in root mode
+$CMD --mode=root --variant=apt --customize='mount | grep /dev/full' --customize='test "\$(echo foo | tee /dev/full 2>&1 1>/dev/null)" = "tee: /dev/full: No space left on device"' unstable /tmp/unstable-chroot.tar $mirror
+tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
+diff -u tar1.txt tar2.txt
+rm /tmp/unstable-chroot.tar
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	echo "HAVE_QEMU != yes -- Skipping test..."
+fi
+
 print_header "mode=$defaultmode,variant=apt: read from stdin, write to stdout"
 cat << END > shared/test.sh
 #!/bin/sh
