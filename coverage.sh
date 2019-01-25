@@ -401,14 +401,20 @@ else
 	./run_null.sh
 fi
 
-print_header "mode=root,variant=apt: add foreign architecture"
+print_header "mode=root,variant=apt: test --include=libc6:armhf"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-$CMD --mode=root --variant=apt --architectures=amd64,armhf unstable /tmp/debian-unstable $mirror
+$CMD --mode=root --variant=apt --architectures=amd64,armhf --include=gcc-8-base:armhf unstable /tmp/debian-unstable $mirror
 { echo "amd64"; echo "armhf"; } | cmp /tmp/debian-unstable/var/lib/dpkg/arch -
 rm /tmp/debian-unstable/var/lib/dpkg/arch
+rm /tmp/debian-unstable/var/log/apt/eipp.log.xz
+rm /tmp/debian-unstable/var/lib/dpkg/info/gcc-8-base:armhf.list
+rm /tmp/debian-unstable/var/lib/dpkg/info/gcc-8-base:armhf.md5sums
+rm /tmp/debian-unstable/usr/share/doc/gcc-8-base/README.Debian.armhf.gz
+rmdir /tmp/debian-unstable/usr/lib/gcc/arm-linux-gnueabihf/8/
+rmdir /tmp/debian-unstable/usr/lib/gcc/arm-linux-gnueabihf/
 tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
 diff -u tar1.txt tar2.txt
 rm -r /tmp/debian-unstable
