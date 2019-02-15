@@ -2636,6 +2636,7 @@ Use as replacement for autopkgtest-build-qemu and vmdb2:
         --customize='chroot "$1" useradd --home-dir /home/user --create-home user' \
         --customize='chroot "$1" passwd --delete user' \
         --customize='echo host > "$1/etc/hostname"' \
+        --customize='echo "127.0.0.1 localhost host" > "$1/etc/hosts"' \
         --customize=/usr/share/autopkgtest/setup-commands/setup-testbed \
         unstable debian-unstable.tar
     $ cat << END > extlinux.conf
@@ -2646,15 +2647,13 @@ Use as replacement for autopkgtest-build-qemu and vmdb2:
     > kernel /vmlinuz
     > append initrd=/initrd.img root=/dev/vda1 rw console=ttyS0
     END
-    $ echo "127.0.0.1 localhost" > hosts
     $ guestfish -N debian-unstable.img=disk:2G -- \
         part-disk /dev/sda mbr : \
         part-set-bootable /dev/sda 1 true : \
         mkfs ext2 /dev/sda1 : mount /dev/sda1 / : \
         tar-in debian-unstable.tar / : \
         extlinux / : \
-        copy-in extlinux.conf / :
-        copy-in hosts /etc/
+        copy-in extlinux.conf /
     $ qemu-img convert -O qcow2 debian-unstable.img debian-unstable.qcow2
 
 =end comment
