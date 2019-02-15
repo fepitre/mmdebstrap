@@ -1320,9 +1320,9 @@ sub setup {
 	}
     } elsif (any { $_ eq $options->{mode} } ('root', 'unshare', 'fakechroot', 'proot')) {
 
-	if ($options->{variant} eq 'extract') {
+	if (any { $_ eq $options->{variant} } ('extract', 'custom')) {
 	    # nothing to do
-	} elsif (any { $_ eq $options->{variant} } ('custom', 'essential', 'apt', 'standard', 'important', 'required', 'buildd', 'minbase')) {
+	} elsif (any { $_ eq $options->{variant} } ('essential', 'apt', 'standard', 'important', 'required', 'buildd', 'minbase')) {
 	    if ($options->{mode} eq 'fakechroot') {
 		# this borrows from and extends
 		# /etc/fakechroot/debootstrap.env and /etc/fakechroot/chroot.env
