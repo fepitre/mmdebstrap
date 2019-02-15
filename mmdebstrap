@@ -1383,7 +1383,7 @@ sub setup {
 
 	    # make sure that APT_CONFIG is not set when executing anything inside the
 	    # chroot
-	    my @chrootcmd = ('env', '--unset=APT_CONFIG', '--unset=TMPDIR');
+	    my @chrootcmd = ();
 	    if ($options->{mode} eq 'proot') {
 		push @chrootcmd, (
 		    'proot',
@@ -1468,7 +1468,8 @@ sub setup {
 	    # And the --predep-package option is broken: #539133
 	    info "installing packages...";
 	    run_dpkg_progress({
-		    ARGV => [@chrootcmd, 'dpkg', '--install', '--force-depends'],
+		    ARGV => [@chrootcmd, 'env', '--unset=TMPDIR',
+			'dpkg', '--install', '--force-depends'],
 		    PKGS => \@essential_pkgs,
 		});
 
@@ -1483,7 +1484,8 @@ sub setup {
 		    # packages even though they are already installed
 		    info "re-installing packages because of path-exclude...";
 		    run_dpkg_progress({
-			    ARGV => [@chrootcmd, 'dpkg', '--install', '--force-depends'],
+			    ARGV => [@chrootcmd, 'env', '--unset=TMPDIR',
+				'dpkg', '--install', '--force-depends'],
 			    PKGS => \@essential_pkgs,
 			});
 		}
@@ -1562,7 +1564,8 @@ sub setup {
 		    # into account and thus doesn't install them in the right order
 		    info 'installing ' . (join ', ', keys %pkgs_to_install_from_outside) . "...";
 		    run_dpkg_progress({
-			    ARGV => [@chrootcmd, 'dpkg',  '--install', '--force-depends'],
+			    ARGV => [@chrootcmd, 'env', '--unset=TMPDIR',
+				'dpkg',  '--install', '--force-depends'],
 			    PKGS => \@debs_to_install,
 			});
 		    foreach my $deb (@debs_to_install) {
@@ -1573,7 +1576,10 @@ sub setup {
 		run_chroot {
 		    info "installing remaining packages inside the chroot...";
 		    run_apt_progress({
-			    ARGV => [@chrootcmd, 'apt-get', '--yes', 'install'],
+			    ARGV => [@chrootcmd, 'env',
+				'--unset=APT_CONFIG',
+				'--unset=TMPDIR',
+				'apt-get', '--yes', 'install'],
 			    PKGS => [keys %pkgs_to_install],
 			});
 		} $options;
