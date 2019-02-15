@@ -1662,6 +1662,7 @@ sub main() {
 	mode => 'auto',
 	dpkgopts => [],
 	aptopts => [],
+	noop => [],
 	customize => [],
     };
     chomp ($options->{architectures} = `dpkg --print-architecture`);
@@ -1681,12 +1682,16 @@ sub main() {
 	'debug' => sub { $verbosity_level = 3; },
 	# no-op options so that mmdebstrap can be used with
 	# sbuild-createchroot --debootstrap=mmdebstrap
-	'resolve-deps' => sub {},
-	'merged-usr' => sub {},
-	'no-merged-usr' => sub {},
+	'resolve-deps' => sub { push @{$options->{noop}}, 'resolve-deps'; },
+	'merged-usr' => sub { push @{$options->{noop}}, 'merged-usr'; },
+	'no-merged-usr' => sub { push @{$options->{noop}}, 'no-merged-usr'; },
 	# option is hidden until I'm happy with it
 	'customize=s@' => \$options->{customize},
     ) or pod2usage(-exitval => 2, -verbose => 1);
+
+    foreach my $arg (@{$options->{noop}}) {
+	info "The option --$arg is a no-op. It only exists for compatibility with some debootstrap wrappers.";
+    }
 
     my @valid_variants = ('extract', 'custom', 'essential', 'apt', 'required',
 	'minbase', 'buildd', 'important', 'debootstrap', '-', 'standard');

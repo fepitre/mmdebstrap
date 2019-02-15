@@ -549,6 +549,22 @@ else
 	./run_null.sh SUDO
 fi
 
+print_header "mode=root,variant=apt: debootstrap no-op options"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+$CMD --mode=root --variant=apt --resolve-deps --merged-usr --no-merged-usr unstable /tmp/debian-unstable $mirror
+tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
+diff -u tar1.txt tar2.txt
+rm -r /tmp/debian-unstable
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	./run_null.sh SUDO
+fi
+
 # test all variants
 
 for variant in essential apt required minbase buildd important debootstrap - standard; do
