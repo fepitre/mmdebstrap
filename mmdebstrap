@@ -1695,7 +1695,7 @@ sub main() {
 	customize_hook => [],
     };
     chomp ($options->{architectures} = `dpkg --print-architecture`);
-    Getopt::Long::Configure ("bundling");
+    Getopt::Long::Configure ('default', 'bundling', 'auto_abbrev', 'ignore_case_always');
     GetOptions(
 	'h|help'   => sub { pod2usage(-exitval => 0, -verbose => 2) },
 	'components=s' => \$options->{components},
@@ -2420,6 +2420,9 @@ suite has to come from standard input as part of a valid apt sources.list
 file.
 
 =head1 OPTIONS
+
+Options are case insensitive. Short options may be bundled. Long options
+require a double dash and may be abbreviated to uniqueness.
 
 =over 8
 
