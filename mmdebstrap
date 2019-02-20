@@ -875,6 +875,40 @@ sub run_chroot(&$) {
     }
 }
 
+sub run_hooks($$) {
+    my $name = shift;
+    my $options = shift;
+
+    if (scalar @{$options->{"${name}_hook"}} == 0) {
+	return;
+    }
+
+    my $runner = sub {
+	foreach my $script (@{$options->{"${name}_hook"}}) {
+	    if ( -x $script || $script !~ m/[^\w@\%+=:,.\/-]/a) {
+		info "running --$name-hook directly: $script $options->{root}";
+		# execute it directly if it's an executable file
+		# or if it there are no shell metacharacters
+		# (the /a regex modifier makes \w match only ASCII)
+		0 == system($script, $options->{root}) or error "command failed: $script";
+	    } else {
+		info "running --$name-hook in shell: sh -c '$script' exec $options->{root}";
+		# otherwise, wrap everything in sh -c
+		0 == system('sh', '-c', $script, 'exec', $options->{root}) or error "command failed: $script";
+	    }
+	}
+    };
+
+    if ($name eq 'setup') {
+	# execute directly without mounting anything (the mount points do not
+	# exist yet)
+	&{$runner}();
+    } else {
+	run_chroot \&$runner, $options;
+    }
+
+}
+
 sub setup {
     my $options = shift;
 
@@ -1068,6 +1102,16 @@ sub setup {
     # into account.
     $ENV{"APT_CONFIG"} = "$tmpfile";
 
+    # setting PATH for chroot, ldconfig, start-stop-daemon...
+    if (defined $ENV{PATH} && $ENV{PATH} ne "") {
+	$ENV{PATH} = "$ENV{PATH}:/usr/sbin:/usr/bin:/sbin:/bin";
+    } else {
+	$ENV{PATH} = "/usr/sbin:/usr/bin:/sbin:/bin";
+    }
+
+    # run setup hooks
+    run_hooks('setup', $options);
+
     info "running apt-get update...";
     run_apt_progress({ ARGV => ['apt-get', 'update'] });
 
@@ -1083,13 +1127,6 @@ sub setup {
 	    }
 	    error "apt-get update didn't download anything";
 	}
-    }
-
-    # setting PATH for chroot, ldconfig, start-stop-daemon...
-    if (defined $ENV{PATH} && $ENV{PATH} ne "") {
-	$ENV{PATH} = "$ENV{PATH}:/usr/sbin:/usr/bin:/sbin:/bin";
-    } else {
-	$ENV{PATH} = "/usr/sbin:/usr/bin:/sbin:/bin";
     }
 
     my %pkgs_to_install;
@@ -1307,6 +1344,9 @@ sub setup {
 	if (any { $_ eq $options->{variant} } ('extract', 'custom')) {
 	    # nothing to do
 	} elsif (any { $_ eq $options->{variant} } ('essential', 'apt', 'standard', 'important', 'required', 'buildd', 'minbase')) {
+	    # run essential hooks
+	    run_hooks('essential', $options);
+
 	    if (%pkgs_to_install) {
 		run_apt_progress({
 			ARGV => ['apt-get', '--yes',
@@ -1495,6 +1535,9 @@ sub setup {
 		unlink "$options->{root}/$deb" or error "cannot unlink $deb";
 	    }
 
+	    # run essential hooks
+	    run_hooks('essential', $options);
+
 	    if (%pkgs_to_install) {
 		# some packages have to be installed from the outside before anything
 		# can be installed from the inside.
@@ -1592,23 +1635,7 @@ sub setup {
 	error "unknown mode: $options->{mode}";
     }
 
-    if (scalar @{$options->{customize}} > 0) {
-	run_chroot {
-	    foreach my $script (@{$options->{customize}}) {
-		if ( -x $script || $script !~ m/[^\w@\%+=:,.\/-]/a) {
-		    info "running customize script directly: $script $options->{root}";
-		    # execute it directly if it's an executable file
-		    # or if it there are no shell metacharacters
-		    # (the /a regex modifier makes \w match only ASCII)
-		    0 == system($script, $options->{root}) or error "customization script failed: $script";
-		} else {
-		    info "running customize script in shell: sh -c '$script' exec $options->{root}";
-		    # otherwise, wrap everything in sh -c
-		    0 == system('sh', '-c', $script, 'exec', $options->{root}) or error "customization script failed: $script";
-		}
-	    }
-	} $options;
-    }
+    run_hooks('customize', $options);
 
     # clean up temporary configuration file
     unlink "$options->{root}/etc/apt/apt.conf.d/00mmdebstrap" or error "failed to unlink /etc/apt/apt.conf.d/00mmdebstrap: $!";
@@ -1663,7 +1690,9 @@ sub main() {
 	dpkgopts => [],
 	aptopts => [],
 	noop => [],
-	customize => [],
+	setup_hook => [],
+	essential_hook => [],
+	customize_hook => [],
     };
     chomp ($options->{architectures} = `dpkg --print-architecture`);
     Getopt::Long::Configure ("bundling");
@@ -1685,8 +1714,10 @@ sub main() {
 	'resolve-deps' => sub { push @{$options->{noop}}, 'resolve-deps'; },
 	'merged-usr' => sub { push @{$options->{noop}}, 'merged-usr'; },
 	'no-merged-usr' => sub { push @{$options->{noop}}, 'no-merged-usr'; },
-	# option is hidden until I'm happy with it
-	'customize=s@' => \$options->{customize},
+	# hook options are hidden until I'm happy with them
+	'setup-hook=s@' => \$options->{setup_hook},
+	'essential-hook=s@' => \$options->{essential_hook},
+	'customize-hook=s@' => \$options->{customize_hook},
     ) or pod2usage(-exitval => 2, -verbose => 1);
 
     foreach my $arg (@{$options->{noop}}) {
@@ -2465,23 +2496,65 @@ running mmdebstrap.
 
 =begin comment
 
-=item B<--customize>=I<command>
+=item B<--setup-hook>=I<command>
 
-Execute arbitrary I<command>s after the chroot is set up and before it is
-cleaned up. Can be specified multiple times. The commands are executed in the
-order in which they are given on the command line. If I<command> is an
-existing executable file or if I<command> does not contain any shell
-metacharacters, then I<command> is directly exec-ed with the path to the
-chroot directory passed as the first argument. Otherwise, I<command> is
-executed under I<sh> and the chroot directory can be accessed via I<$1>.
+Execute arbitrary I<command>s right after initial setup (directory creation,
+configuration of apt and dpkg, ...) but before any packages are downloaded or
+installed. At that point, the chroot directory does not contain any
+executables and thus cannot be chroot-ed into.  The option can be specified
+multiple times and the commands are executed in the order in which they are
+given on the command line. If I<command> is an existing executable file or if
+I<command> does not contain any shell metacharacters, then I<command> is
+directly exec-ed with the path to the chroot directory passed as the first
+argument. Otherwise, I<command> is executed under I<sh> and the chroot
+directory can be accessed via I<$1>. All environment variables used by
+B<mmdebstrap> (like C<APT_CONFIG>, C<DEBIAN_FRONTEND>, C<LC_ALL> and C<PATH>)
+are preserved.
 
 Examples:
 
-    --customize='chroot "$1" passwd --delete root'
-    --customize='chroot "$1" useradd --home-dir /home/user --create-home user'
-    --customize='chroot "$1" passwd --delete user'
-    --customize='echo host > "$1/etc/hostname"'
-    --customize=/usr/share/autopkgtest/setup-commands/setup-testbed
+    --setup-hook='for d in bin sbin lib; do ln -s usr/$d "$1/$d"; mkdir -p "$1/usr/$d"; done'
+
+=item B<--essential-hook>=I<command>
+
+Execute arbitrary I<command>s after the Essential:yes packages have been
+installed but before installing the remaining packages. The hook is not
+executed for the B<extract> and B<custom> variants. The option can be
+specified multiple times and the commands are executed in the order in which
+they are given on the command line. If I<command> is an existing executable
+file or if I<command> does not contain any shell metacharacters, then
+I<command> is directly exec-ed with the path to the chroot directory passed as
+the first argument. Otherwise, I<command> is executed under I<sh> and the
+chroot directory can be accessed via I<$1>. All environment variables used by
+B<mmdebstrap> (like C<APT_CONFIG>, C<DEBIAN_FRONTEND>, C<LC_ALL> and C<PATH>)
+are preserved.
+
+Examples:
+
+    --essential-hook='echo unattended-upgrades unattended-upgrades/enable_auto_updates boolean true | chroot "$1" debconf-set-selections'
+    --essential-hook='echo tzdata tzdata/Areas select Europe | chroot "$1" debconf-set-selections'
+    --essential-hook='echo tzdata tzdata/Zones/Europe select Berlin | chroot "$1" debconf-set-selections'
+
+=item B<--customize-hook>=I<command>
+
+Execute arbitrary I<command>s after the chroot is set up and all packages got
+installed but before final cleanup actions are carried out.  The option can be
+specified multiple times and the commands are executed in the order in which
+they are given on the command line. If I<command> is an existing executable
+file or if I<command> does not contain any shell metacharacters, then
+I<command> is directly exec-ed with the path to the chroot directory passed as
+the first argument. Otherwise, I<command> is executed under I<sh> and the
+chroot directory can be accessed via I<$1>. All environment variables used by
+B<mmdebstrap> (like C<APT_CONFIG>, C<DEBIAN_FRONTEND>, C<LC_ALL> and C<PATH>)
+are preserved.
+
+Examples:
+
+    --customize-hook='chroot "$1" passwd --delete root'
+    --customize-hook='chroot "$1" useradd --home-dir /home/user --create-home user'
+    --customize-hook='chroot "$1" passwd --delete user'
+    --customize-hook='echo host > "$1/etc/hostname"'
+    --customize-hook=/usr/share/autopkgtest/setup-commands/setup-testbed
 
 =end comment
 
@@ -2643,12 +2716,12 @@ Use as debootstrap replacement in sbuild-createchroot:
 Use as replacement for autopkgtest-build-qemu and vmdb2:
 
     $ mmdebstrap --variant=important --include=linux-image-amd64 \
-        --customize='chroot "$1" passwd --delete root' \
-        --customize='chroot "$1" useradd --home-dir /home/user --create-home user' \
-        --customize='chroot "$1" passwd --delete user' \
-        --customize='echo host > "$1/etc/hostname"' \
-        --customize='echo "127.0.0.1 localhost host" > "$1/etc/hosts"' \
-        --customize=/usr/share/autopkgtest/setup-commands/setup-testbed \
+        --customize-hook='chroot "$1" passwd --delete root' \
+        --customize-hook='chroot "$1" useradd --home-dir /home/user --create-home user' \
+        --customize-hook='chroot "$1" passwd --delete user' \
+        --customize-hook='echo host > "$1/etc/hostname"' \
+        --customize-hook='echo "127.0.0.1 localhost host" > "$1/etc/hosts"' \
+        --customize-hook=/usr/share/autopkgtest/setup-commands/setup-testbed \
         unstable debian-unstable.tar
     $ cat << END > extlinux.conf
     > default linux

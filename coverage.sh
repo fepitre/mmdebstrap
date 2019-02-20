@@ -300,8 +300,8 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C.UTF-8
 mount -t tmpfs -o nodev,nosuid,size=300M tmpfs /tmp
-# use --customize to exercise the mounting/unmounting code of block devices in root mode
-$CMD --mode=root --variant=apt --customize='mount | grep /dev/full' --customize='test "\$(echo foo | tee /dev/full 2>&1 1>/dev/null)" = "tee: /dev/full: No space left on device"' unstable /tmp/unstable-chroot.tar $mirror
+# use --customize-hook to exercise the mounting/unmounting code of block devices in root mode
+$CMD --mode=root --variant=apt --customize-hook='mount | grep /dev/full' --customize-hook='test "\$(echo foo | tee /dev/full 2>&1 1>/dev/null)" = "tee: /dev/full: No space left on device"' unstable /tmp/unstable-chroot.tar $mirror
 tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
 diff -u tar1.txt tar2.txt
 rm /tmp/unstable-chroot.tar
@@ -528,7 +528,60 @@ else
 	./run_null.sh SUDO
 fi
 
-print_header "mode=root,variant=apt: test --customize"
+print_header "mode=root,variant=apt: test --setup-hook"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+cat << 'SCRIPT' > customize.sh
+#!/bin/sh
+for d in sbin lib; do ln -s usr/\$d "\$1/\$d"; mkdir -p "\$1/usr/\$d"; done
+SCRIPT
+chmod +x customize.sh
+$CMD --mode=root --variant=apt --setup-hook='ln -s usr/bin "\$1/bin"; mkdir -p "\$1/usr/bin"' --setup-hook=./customize.sh unstable /tmp/debian-unstable $mirror
+tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
+{ sed -e 's/^\.\/bin\//.\/usr\/bin\//;s/^\.\/lib\//.\/usr\/lib\//;s/^\.\/sbin\//.\/usr\/sbin\//;' tar1.txt; echo ./bin; echo ./lib; echo ./sbin; } | sort -u | diff -u - tar2.txt
+rm customize.sh
+rm -r /tmp/debian-unstable
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	./run_null.sh SUDO
+fi
+
+print_header "mode=root,variant=apt: test --essential-hook"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+cat << 'SCRIPT' > customize.sh
+#!/bin/sh
+echo tzdata tzdata/Zones/Europe select Berlin | chroot "\$1" debconf-set-selections
+SCRIPT
+chmod +x customize.sh
+$CMD --mode=root --variant=apt --include=tzdata --essential-hook='echo tzdata tzdata/Areas select Europe | chroot "\$1" debconf-set-selections' --essential-hook=./customize.sh unstable /tmp/debian-unstable $mirror
+echo Europe/Berlin | cmp /tmp/debian-unstable/etc/timezone
+tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort \
+	| grep -v '^./etc/localtime' \
+	| grep -v '^./etc/timezone' \
+	| grep -v '^./usr/sbin/tzconfig' \
+	| grep -v '^./usr/share/doc/tzdata' \
+	| grep -v '^./usr/share/zoneinfo' \
+	| grep -v '^./var/lib/dpkg/info/tzdata.' \
+	| grep -v '^./var/log/apt/eipp.log.xz$' \
+	> tar2.txt
+diff -u tar1.txt tar2.txt
+rm customize.sh
+rm -r /tmp/debian-unstable
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	./run_null.sh SUDO
+fi
+
+print_header "mode=root,variant=apt: test --customize-hook"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
@@ -539,7 +592,7 @@ chroot "\$1" whoami > "\$1/output2"
 chroot "\$1" pwd >> "\$1/output2"
 SCRIPT
 chmod +x customize.sh
-$CMD --mode=root --variant=apt --customize='chroot "\$1" sh -c "whoami; pwd" > "\$1/output1"' --customize=./customize.sh unstable /tmp/debian-unstable $mirror
+$CMD --mode=root --variant=apt --customize-hook='chroot "\$1" sh -c "whoami; pwd" > "\$1/output1"' --customize-hook=./customize.sh unstable /tmp/debian-unstable $mirror
 printf "root\n/\n" | cmp /tmp/debian-unstable/output1
 printf "root\n/\n" | cmp /tmp/debian-unstable/output2
 rm /tmp/debian-unstable/output1
