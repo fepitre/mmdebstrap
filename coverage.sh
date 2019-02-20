@@ -191,7 +191,7 @@ awk -v FS=: -v OFS=: -v SDE=\$SOURCE_DATE_EPOCH '{ print \$1,\$2,int(SDE/60/60/2
 mv /tmp/debian-$dist-mm/etc/shadow-.bak /tmp/debian-$dist-mm/etc/shadow-
 
 # check if the file content differs
-diff --no-dereference --brief --recursive /tmp/debian-$dist-debootstrap /tmp/debian-$dist-mm
+diff --no-dereference --recursive /tmp/debian-$dist-debootstrap /tmp/debian-$dist-mm
 
 # check if file properties (permissions, ownership, symlink names, modification time) differ
 #
