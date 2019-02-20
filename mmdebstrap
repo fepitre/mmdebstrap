@@ -2694,7 +2694,8 @@ Without superuser privileges:
 
     $ mmdebstrap unstable unstable-chroot.tar
 
-With complex apt options:
+With no command line arguments at all. The chroot content is entirely defined
+by a sources.list file on standard input.
 
     $ mmdebstrap < /etc/apt/sources.list > unstable-chroot.tar
 
