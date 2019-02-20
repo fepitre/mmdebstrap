@@ -2563,17 +2563,21 @@ Examples:
 
 =item B<-q,--quiet>, B<-s,--silent>
 
-Do not write anything to standard error.
+Do not write anything to standard error. If used together with B<--verbose> or
+B<--debug>, only the last option will take effect.
 
 =item B<-v,--verbose>
 
 Instead of progress bars, write the dpkg and apt output directly to standard
-error.
+error. If used together with B<--quiet> or B<--debug>, only the last option
+will take effect.
 
 =item B<-d,--debug>
 
 In addition to the output produced by B<--verbose>, write detailed debugging
-information to standard error. Errors will print a backtrace.
+information to standard error. Errors will print a backtrace. If used together
+with B<--quiet> or B<--verbose>, only the last option will take effect.
+
 
 =back
 
