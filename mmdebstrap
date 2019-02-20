@@ -1705,10 +1705,10 @@ sub main() {
 	'mode=s' => \$options->{mode},
 	'dpkgopt=s@' => \$options->{dpkgopts},
 	'aptopt=s@' => \$options->{aptopts},
-	'silent' => sub { $verbosity_level = 0; },
-	'quiet' => sub { $verbosity_level = 0; },
-	'verbose' => sub { $verbosity_level = 2; },
-	'debug' => sub { $verbosity_level = 3; },
+	's|silent' => sub { $verbosity_level = 0; },
+	'q|quiet' => sub { $verbosity_level = 0; },
+	'v|verbose' => sub { $verbosity_level = 2; },
+	'd|debug' => sub { $verbosity_level = 3; },
 	# no-op options so that mmdebstrap can be used with
 	# sbuild-createchroot --debootstrap=mmdebstrap
 	'resolve-deps' => sub { push @{$options->{noop}}, 'resolve-deps'; },
@@ -2561,16 +2561,16 @@ Examples:
 
 =end comment
 
-=item B<--quiet>, B<--silent>
+=item B<-q,--quiet>, B<-s,--silent>
 
 Do not write anything to standard error.
 
-=item B<--verbose>
+=item B<-v,--verbose>
 
 Instead of progress bars, write the dpkg and apt output directly to standard
 error.
 
-=item B<--debug>
+=item B<-d,--debug>
 
 In addition to the output produced by B<--verbose>, write detailed debugging
 information to standard error. Errors will print a backtrace.
