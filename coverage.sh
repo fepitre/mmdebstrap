@@ -1156,11 +1156,7 @@ END
 	fi
 done
 
-# test if auto mode picks the right mode
-
-# test installation of foreign architecture packages
-
-# test tty output
+# TODO: test if auto mode picks the right mode
 
 if [ "$HAVE_QEMU" = "yes" ]; then
 	guestfish add-ro shared/cover_db.img : run : mount /dev/sda / : tar-out / - \
