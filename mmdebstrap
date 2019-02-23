@@ -2021,6 +2021,7 @@ sub main() {
 	    'mmdebstrap.XXXXXXXXXX',
 	    DIR => File::Spec->tmpdir
 	);
+	info "using $options->{root} as tempdir";
 	# in unshare and root mode, other users than the current user need to
 	# access the rootfs, most prominently, the _apt user. Thus, make the
 	# temporary directory world readable.
@@ -2315,6 +2316,7 @@ sub main() {
     $waiting_for = "cleanup";
 
     if ($options->{maketar} and -e $options->{root}) {
+	info "removing tempdir $options->{root}...";
 	if ($options->{mode} eq 'unshare') {
 	    # We don't have permissions to remove the directory outside
 	    # the unshared namespace, so we remove it here.
