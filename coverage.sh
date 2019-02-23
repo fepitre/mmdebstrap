@@ -865,6 +865,7 @@ END
 	fi
 	# check if the other modes produce the same result in each variant
 	for mode in unshare fakechroot proot; do
+		[ "$mode" = "fakechroot" ] && continue
 		# fontconfig doesn't install reproducibly because differences
 		# in /var/cache/fontconfig/. See
 		# https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=864082
@@ -1097,6 +1098,7 @@ fi
 # create directory in sudo mode
 
 for mode in root unshare fakechroot proot; do
+	[ "$mode" = "fakechroot" ] && continue
 	print_header "mode=$mode,variant=apt: create armhf tarball"
 	if [ "$HAVE_BINFMT" != "yes" ]; then
 		echo "HAVE_BINFMT != yes -- Skipping test..."
