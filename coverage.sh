@@ -51,7 +51,7 @@ if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
 fi
 
 starttime=
-total=54
+total=69
 i=1
 
 print_header() {
