@@ -1,3 +1,17 @@
+0.4.0 (2019-02-23)
+------------------
+
+ - disable merged-usr
+ - add --verbose option that prints apt and dpkg output instead of progress
+   bars
+ - add --quiet/--silent options which print nothing on stderr
+ - add --debug option for even more output than with --verbose
+ - add some no-op options to make mmdebstrap a drop-in replacement for certain
+   debootstrap wrappers like sbuild-createchroot
+ - add --logfile option which outputs to a file what would otherwise be written
+   to stderr
+ - add --version option
+
 0.3.0 (2018-11-21)
 ------------------
 
