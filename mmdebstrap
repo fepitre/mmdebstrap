@@ -2508,7 +2508,7 @@ Comma separated list of architectures. The first architecture is the I<native>
 architecture inside the chroot. The remaining architectures will be added to
 the foreign dpkg architectures. Without this option, the I<native>
 architecture of the chroot defaults to the native architecture of the system
-running mmdebstrap.
+running B<mmdebstrap>.
 
 =begin comment
 
@@ -2630,7 +2630,7 @@ permissions. Choose to create a tarball instead.
 
 =item B<fakeroot>, B<fakechroot>
 
-This mode will exec mmdebstrap again under C<fakechroot fakeroot>. A
+This mode will exec B<mmdebstrap> again under C<fakechroot fakeroot>. A
 directory chroot created with this mode will end up with wrong permissions.
 Choose to create a tarball instead.
 
@@ -2645,9 +2645,9 @@ you plan to use the chroot with proot.
 
 Uses the dpkg option C<--force-script-chrootless> to install packages into
 B<TARGET> without dpkg and apt inside B<target> but using apt and dpkg from
-the machine running mmdebstrap. Maintainer scripts are run without chrooting
+the machine running B<mmdebstrap>. Maintainer scripts are run without chrooting
 into B<TARGET> and rely on their dependencies being installed on the machine
-running mmdebstrap.
+running B<mmdebstrap>.
 
 =for TODO
 =item B<qemu>
