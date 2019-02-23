@@ -421,7 +421,7 @@ else
 	./run_null.sh SUDO
 fi
 
-print_header "mode=auto,variant=apt: pass distribution but implicitly write to stdout"
+print_header "mode=$defaultmode,variant=apt: pass distribution but implicitly write to stdout"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
@@ -438,7 +438,7 @@ else
 	echo "HAVE_QEMU != yes -- Skipping test..."
 fi
 
-print_header "mode=auto,variant=apt: mirror is -"
+print_header "mode=$defaultmode,variant=apt: mirror is -"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
@@ -456,7 +456,7 @@ else
 	./run_null.sh
 fi
 
-print_header "mode=auto,variant=apt: mirror is deb..."
+print_header "mode=$defaultmode,variant=apt: mirror is deb..."
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
@@ -474,7 +474,7 @@ else
 	./run_null.sh
 fi
 
-print_header "mode=auto,variant=apt: mirror is real file"
+print_header "mode=$defaultmode,variant=apt: mirror is real file"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
@@ -493,7 +493,7 @@ else
 	./run_null.sh
 fi
 
-print_header "mode=auto,variant=apt: no mirror but data on stdin"
+print_header "mode=$defaultmode,variant=apt: no mirror but data on stdin"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
