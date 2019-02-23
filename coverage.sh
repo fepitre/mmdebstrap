@@ -209,6 +209,21 @@ END
 	done
 done
 
+print_header "test --help"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+$CMD --help | grep --quiet SYNOPSIS
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+elif [ "$defaultmode" = "root" ]; then
+	./run_null.sh SUDO
+else
+	./run_null.sh
+fi
+
 print_header "mode=root,variant=apt: create directory"
 cat << END > shared/test.sh
 #!/bin/sh
@@ -224,12 +239,46 @@ else
 	./run_null.sh SUDO
 fi
 
+print_header "mode=root,variant=apt: fail with unshare as root user"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+ret=0
+$CMD --mode=unshare --variant=apt unstable /tmp/debian-unstable $mirror || ret=\$?
+if [ "\$ret" = 0 ]; then
+	echo expected failure but got exit \$ret
+	exit 1
+fi
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	echo "HAVE_QEMU != yes -- Skipping test..."
+fi
+
 print_header "mode=root,variant=apt: test progress bars on fake tty"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
 script -qfc "$CMD --mode=root --variant=apt unstable /tmp/unstable-chroot.tar $mirror" /dev/null
+tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
+diff -u tar1.txt tar2.txt
+rm /tmp/unstable-chroot.tar
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	./run_null.sh SUDO
+fi
+
+print_header "mode=root,variant=apt: test --debug output on fake tty"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+script -qfc "$CMD --mode=root --debug --variant=apt unstable /tmp/unstable-chroot.tar $mirror" /dev/null
 tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
 diff -u tar1.txt tar2.txt
 rm /tmp/unstable-chroot.tar
@@ -292,6 +341,24 @@ if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 else
 	echo "HAVE_QEMU != yes -- Skipping test..."
+fi
+
+print_header "mode=root,variant=apt: fail with missing lz4"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+ret=0
+$CMD --mode=root --variant=apt unstable /tmp/unstable-chroot.tar.lz4 $mirror || ret=\$?
+if [ "\$ret" = 0 ]; then
+	echo expected failure but got exit \$ret
+	exit 1
+fi
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	./run_null.sh SUDO
 fi
 
 print_header "mode=root,variant=apt: create tarball with /tmp mounted nodev"
@@ -434,6 +501,27 @@ export LC_ALL=C.UTF-8
 echo "deb $mirror unstable main" | $CMD --mode=$defaultmode --variant=apt unstable /tmp/unstable-chroot.tar
 tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
 diff -u tar1.txt tar2.txt
+rm /tmp/unstable-chroot.tar
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+elif [ "$defaultmode" = "root" ]; then
+	./run_null.sh SUDO
+else
+	./run_null.sh
+fi
+
+print_header "mode=$defaultmode,variant=apt: invalid mirror"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+ret=0
+$CMD --mode=$defaultmode --variant=apt unstable /tmp/unstable-chroot.tar $mirror/invalid || ret=\$?
+if [ "\$ret" = 0 ]; then
+	echo expected failure but got exit \$ret
+	exit 1
+fi
 rm /tmp/unstable-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
@@ -600,6 +688,55 @@ rm /tmp/debian-unstable/output2
 tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
 diff -u tar1.txt tar2.txt
 rm customize.sh
+rm -r /tmp/debian-unstable
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	./run_null.sh SUDO
+fi
+
+print_header "mode=root,variant=apt: test failing --customize-hook"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+ret=0
+$CMD --mode=root --variant=apt --customize-hook='chroot "\$1" sh -c "exit 1"' unstable /tmp/debian-unstable $mirror || ret=\$?
+if [ "\$ret" = 0 ]; then
+	echo expected failure but got exit \$ret
+	exit 1
+fi
+rm -r /tmp/debian-unstable
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	./run_null.sh SUDO
+fi
+
+print_header "mode=root,variant=apt: test sigint during --customize-hook"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+setsid --wait $CMD --mode=root --variant=apt --customize-hook='touch done && sleep 10 && touch fail' unstable /tmp/debian-unstable $mirror &
+pid=\$!
+while sleep 1; do [ -e done ] && break; done
+rm done
+pgid=\$(echo \$(ps -p \$pid -o pgid=))
+/bin/kill --signal INT -- -\$pgid
+ret=0
+wait \$pid || ret=\$?
+if [ -e fail ]; then
+	echo customize hook was not interrupted
+	rm fail
+	exit 1
+fi
+if [ "\$ret" = 0 ]; then
+	echo expected failure but got exit \$ret
+	exit 1
+fi
 rm -r /tmp/debian-unstable
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
