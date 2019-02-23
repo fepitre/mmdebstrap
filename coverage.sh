@@ -224,6 +224,21 @@ else
 	./run_null.sh
 fi
 
+print_header "test --version"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+$CMD --version | egrep --quiet '^mmdebstrap [0-9](\.[0-9])+$'
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+elif [ "$defaultmode" = "root" ]; then
+	./run_null.sh SUDO
+else
+	./run_null.sh
+fi
+
 print_header "mode=root,variant=apt: create directory"
 cat << END > shared/test.sh
 #!/bin/sh

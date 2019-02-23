@@ -15,6 +15,8 @@
 use strict;
 use warnings;
 
+our $VERSION = '0.3.0';
+
 use English;
 use Getopt::Long;
 use Pod::Usage;
@@ -1699,6 +1701,7 @@ sub main() {
     Getopt::Long::Configure ('default', 'bundling', 'auto_abbrev', 'ignore_case_always');
     GetOptions(
 	'h|help'   => sub { pod2usage(-exitval => 0, -verbose => 2) },
+	'version'  => sub { print STDOUT "mmdebstrap $VERSION\n"; exit 0; },
 	'components=s' => \$options->{components},
 	'variant=s' => \$options->{variant},
 	'include=s' => \$options->{include},
@@ -2444,6 +2447,10 @@ require a double dash and may be abbreviated to uniqueness.
 =item B<-h,--help>
 
 Print this help text and exit.
+
+=item B<--version>
+
+Print the B<mmdebstrap> version and exit.
 
 =item B<--variant>=I<name>
 
