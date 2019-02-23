@@ -311,7 +311,7 @@ END
 END
 	#libguestfs-test-tool
 	#export LIBGUESTFS_DEBUG=1 LIBGUESTFS_TRACE=1
-	guestfish -N "$tmpdir/debian-unstable.img"=disk:2G -- \
+	guestfish -N "$tmpdir/debian-unstable.img"=disk:3G -- \
 		part-disk /dev/sda mbr : \
 		part-set-bootable /dev/sda 1 true : \
 		mkfs ext2 /dev/sda1 : \
