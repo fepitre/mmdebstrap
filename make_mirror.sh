@@ -288,7 +288,7 @@ systemctl restart mini-httpd
 		mkdir -p cover_db
 		mount -o loop,umask=000 cover_db.img cover_db
 	fi
-	sh ./test.sh
+	sh -x ./test.sh
 	ret=$?
 	if [ -e cover_db.img ]; then
 		df -h cover_db
