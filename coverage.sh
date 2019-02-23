@@ -672,6 +672,28 @@ else
 	./run_null.sh SUDO
 fi
 
+print_header "mode=root,variant=apt: --logfile"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+$CMD --mode=root --variant=apt --logfile=log unstable /tmp/debian-unstable $mirror
+tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
+grep --quiet "I: running apt-get update..." log
+grep --quiet "I: downloading packages with apt..." log
+grep --quiet "I: extracting archives..." log
+grep --quiet "I: installing packages..." log
+grep --quiet "I: cleaning package lists and apt cache..." log
+diff -u tar1.txt tar2.txt
+rm -r /tmp/debian-unstable
+rm log
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	./run_null.sh SUDO
+fi
+
 # test all variants
 
 for variant in essential apt required minbase buildd important debootstrap - standard; do

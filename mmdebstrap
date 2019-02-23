@@ -1695,6 +1695,7 @@ sub main() {
 	customize_hook => [],
     };
     chomp ($options->{architectures} = `dpkg --print-architecture`);
+    my $logfile = undef;
     Getopt::Long::Configure ('default', 'bundling', 'auto_abbrev', 'ignore_case_always');
     GetOptions(
 	'h|help'   => sub { pod2usage(-exitval => 0, -verbose => 2) },
@@ -1709,6 +1710,7 @@ sub main() {
 	'q|quiet' => sub { $verbosity_level = 0; },
 	'v|verbose' => sub { $verbosity_level = 2; },
 	'd|debug' => sub { $verbosity_level = 3; },
+	'logfile=s' => \$logfile,
 	# no-op options so that mmdebstrap can be used with
 	# sbuild-createchroot --debootstrap=mmdebstrap
 	'resolve-deps' => sub { push @{$options->{noop}}, 'resolve-deps'; },
@@ -1719,6 +1721,10 @@ sub main() {
 	'essential-hook=s@' => \$options->{essential_hook},
 	'customize-hook=s@' => \$options->{customize_hook},
     ) or pod2usage(-exitval => 2, -verbose => 1);
+
+    if (defined($logfile)) {
+	open(STDERR, '>', $logfile) or error "cannot open $logfile: $!";
+    }
 
     foreach my $arg (@{$options->{noop}}) {
 	info "The option --$arg is a no-op. It only exists for compatibility with some debootstrap wrappers.";
@@ -2419,6 +2425,13 @@ then a single I<MIRROR> C<-> is added and thus the information of the desired
 suite has to come from standard input as part of a valid apt sources.list
 file.
 
+All status output is printed to standard error unless B<--logfile> is used to
+redirect it to a file or B<--quiet> or B<--silent> is used to suppress any
+output on standard error. Help and version information will be printed to
+standard error with the B<--help> and B<--version> options, respectively.
+Otherwise, an uncompressed tarball might be sent to standard output if
+I<TARGET> is C<-> or if no I<TARGET> was specified.
+
 =head1 OPTIONS
 
 Options are case insensitive. Short options may be bundled. Long options
@@ -2578,6 +2591,10 @@ In addition to the output produced by B<--verbose>, write detailed debugging
 information to standard error. Errors will print a backtrace. If used together
 with B<--quiet> or B<--verbose>, only the last option will take effect.
 
+=item B<--logfile>=I<filename>
+
+Instead of writing status information to standard error, write it into the
+file given by I<filename>.
 
 =back
 
