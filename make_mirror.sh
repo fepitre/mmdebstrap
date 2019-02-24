@@ -221,13 +221,13 @@ END
 	find "$rootdir" -depth -print0 | xargs -0 rmdir
 }
 
-for nativearch in $arch1 $arch2; do
+for nativearch in "$arch1" "$arch2"; do
 	for dist in stable testing unstable; do
-		cat << END | update_cache $dist $nativearch
+		cat << END | update_cache "$dist" "$nativearch"
 deb [arch=$nativearch] $mirror $dist $components
 END
 		if [ "$dist" = "stable" ]; then
-			cat << END | update_cache $dist $nativearch
+			cat << END | update_cache "$dist" "$nativearch"
 deb [arch=$nativearch] $mirror $dist $components
 deb [arch=$nativearch] $mirror stable-updates main
 deb [arch=$nativearch] $security_mirror stable/updates main
@@ -401,15 +401,15 @@ for dist in stable testing unstable; do
 	fi
 done
 if [ -e $oldcachedir/debian-unstable.qcow ]; then
-	rm --one-file-system $oldcachedir/debian-unstable.qcow
+	rm --one-file-system "$oldcachedir/debian-unstable.qcow"
 fi
-if [ -e $oldcachedir/debian/pool/main ]; then
-	rm --one-file-system --recursive $oldcachedir/debian/pool/main
+if [ -e "$oldcachedir/debian/pool/main" ]; then
+	rm --one-file-system --recursive "$oldcachedir/debian/pool/main"
 fi
-if [ -e $oldcachedir/debian-security/pool/updates/main ]; then
-	rm --one-file-system --recursive $oldcachedir/debian-security/pool/updates/main
+if [ -e "$oldcachedir/debian-security/pool/updates/main" ]; then
+	rm --one-file-system --recursive "$oldcachedir/debian-security/pool/updates/main"
 fi
 # now the rest should only be empty directories
-if [ -e $oldcachedir ]; then
-	find $oldcachedir -depth -print0 | xargs -0 --no-run-if-empty rmdir
+if [ -e "$oldcachedir" ]; then
+	find "$oldcachedir" -depth -print0 | xargs -0 --no-run-if-empty rmdir
 fi
