@@ -430,11 +430,12 @@ deb http://deb.debian.org/debian stable main
 deb http://deb.debian.org/debian stable-updates main
 deb http://security.debian.org/debian-security stable/updates main
 SOURCES
+rm -r /tmp/debian-unstable
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 else
-	./run_null.sh SUDO
+	echo "HAVE_QEMU != yes -- Skipping test..."
 fi
 
 print_header "mode=$defaultmode,variant=apt: pass distribution but implicitly write to stdout"
