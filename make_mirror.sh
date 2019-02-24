@@ -403,7 +403,13 @@ done
 if [ -e $oldcachedir/debian-unstable.qcow ]; then
 	rm --one-file-system $oldcachedir/debian-unstable.qcow
 fi
-rm --one-file-system --recursive $oldcachedir/debian/pool/main
-rm --one-file-system --recursive $oldcachedir/debian-security/pool/updates/main
+if [ -e $oldcachedir/debian/pool/main ]; then
+	rm --one-file-system --recursive $oldcachedir/debian/pool/main
+fi
+if [ -e $oldcachedir/debian-security/pool/updates/main ]; then
+	rm --one-file-system --recursive $oldcachedir/debian-security/pool/updates/main
+fi
 # now the rest should only be empty directories
-find $oldcachedir -depth -print0 | xargs -0 rmdir
+if [ -e $oldcachedir ]; then
+	find $oldcachedir -depth -print0 | xargs -0 rmdir
+fi
