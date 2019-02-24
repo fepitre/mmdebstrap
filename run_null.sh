@@ -21,7 +21,7 @@ done
 (
 	set +e
 	cd ./shared;
-	$SUDO sh ./test.sh;
+	$SUDO sh -x ./test.sh;
 	echo $?;
 ) 2>&1 | tee shared/result.txt | head --lines=-1
 if [ "$(tail --lines=1 shared/result.txt)" -ne 0 ]; then
