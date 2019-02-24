@@ -411,5 +411,5 @@ if [ -e $oldcachedir/debian-security/pool/updates/main ]; then
 fi
 # now the rest should only be empty directories
 if [ -e $oldcachedir ]; then
-	find $oldcachedir -depth -print0 | xargs -0 rmdir
+	find $oldcachedir -depth -print0 | xargs -0 --no-run-if-empty rmdir
 fi
