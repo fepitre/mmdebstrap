@@ -178,10 +178,12 @@ if [ "$variant" = "-" ]; then
 	rm /tmp/debian-$dist-debootstrap/var/lib/systemd/catalog/database
 	rm /tmp/debian-$dist-mm/var/lib/systemd/catalog/database
 fi
-rm /tmp/debian-$dist-debootstrap/var/lib/dpkg/lock
+rm /tmp/debian-$dist-mm/var/cache/apt/archives/lock
+rm /tmp/debian-$dist-mm/var/lib/apt/extended_states
+rm /tmp/debian-$dist-mm/var/lib/apt/lists/lock
 # introduced in dpkg 1.19.1
-if [ "$dist" != "stable" ]; then
-	rm /tmp/debian-$dist-debootstrap/var/lib/dpkg/lock-frontend
+if [ "$dist" = "stable" ]; then
+	rm /tmp/debian-$dist-mm/var/lib/dpkg/lock-frontend
 fi
 
 # the list of shells might be sorted wrongly
@@ -562,6 +564,7 @@ $CMD --mode=root --variant=apt --architectures=amd64,armhf --include=gcc-8-base:
 { echo "amd64"; echo "armhf"; } | cmp /tmp/debian-unstable/var/lib/dpkg/arch -
 rm /tmp/debian-unstable/var/lib/dpkg/arch
 rm /tmp/debian-unstable/var/log/apt/eipp.log.xz
+rm /tmp/debian-unstable/var/lib/apt/extended_states
 rm /tmp/debian-unstable/var/lib/dpkg/info/gcc-8-base:armhf.list
 rm /tmp/debian-unstable/var/lib/dpkg/info/gcc-8-base:armhf.md5sums
 rm /tmp/debian-unstable/usr/share/doc/gcc-8-base/README.Debian.armhf.gz
@@ -625,6 +628,7 @@ rm /tmp/debian-unstable/usr/share/doc-base/debian-*
 rm -r /tmp/debian-unstable/usr/share/doc/debian
 rm -r /tmp/debian-unstable/usr/share/doc/doc-debian
 rm /tmp/debian-unstable/var/log/apt/eipp.log.xz
+rm /tmp/debian-unstable/var/lib/apt/extended_states
 rm /tmp/debian-unstable/var/lib/dpkg/info/doc-debian.list
 rm /tmp/debian-unstable/var/lib/dpkg/info/doc-debian.md5sums
 tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
@@ -679,6 +683,7 @@ tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort \
 	| grep -v '^./usr/share/zoneinfo' \
 	| grep -v '^./var/lib/dpkg/info/tzdata.' \
 	| grep -v '^./var/log/apt/eipp.log.xz$' \
+	| grep -v '^./var/lib/apt/extended_states$' \
 	> tar2.txt
 diff -u tar1.txt tar2.txt
 rm customize.sh
@@ -1024,6 +1029,10 @@ rm /tmp/debian-unstable/etc/hostname
 rm /tmp/debian-unstable/etc/resolv.conf
 rm /tmp/debian-unstable/var/lib/dpkg/status
 rm /tmp/debian-unstable/var/lib/dpkg/available
+rm /tmp/debian-unstable/var/cache/apt/archives/lock
+rm /tmp/debian-unstable/var/lib/dpkg/lock
+rm /tmp/debian-unstable/var/lib/dpkg/lock-frontend
+rm /tmp/debian-unstable/var/lib/apt/lists/lock
 ## delete merged usr symlinks
 #rm /tmp/debian-unstable/libx32
 #rm /tmp/debian-unstable/lib64
@@ -1076,6 +1085,11 @@ rm /tmp/debian-unstable/etc/hostname
 rm /tmp/debian-unstable/etc/resolv.conf
 rm /tmp/debian-unstable/var/lib/dpkg/status
 rm /tmp/debian-unstable/var/lib/dpkg/available
+rm /tmp/debian-unstable/var/cache/apt/archives/lock
+rm /tmp/debian-unstable/var/lib/dpkg/lock
+rm /tmp/debian-unstable/var/lib/dpkg/lock-frontend
+rm /tmp/debian-unstable/var/lib/apt/lists/lock
+rm /tmp/debian-unstable/var/lib/apt/extended_states
 ## delete merged usr symlinks
 #rm /tmp/debian-unstable/libx32
 #rm /tmp/debian-unstable/lib64
