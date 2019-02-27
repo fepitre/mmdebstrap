@@ -161,8 +161,12 @@ rmdir /tmp/debian-$dist-mm/var/lib/apt/lists/auxfiles
 rm /tmp/debian-$dist-debootstrap/etc/apt/apt.conf.d/01autoremove-kernels \
 	/tmp/debian-$dist-mm/etc/apt/apt.conf.d/01autoremove-kernels
 # who creates /run/mount?
-rm -f /tmp/debian-$dist-debootstrap/run/mount/utab
-rmdir /tmp/debian-$dist-debootstrap/run/mount
+if [ -e "/tmp/debian-$dist-debootstrap/run/mount/utab" ]; then
+	rm "/tmp/debian-$dist-debootstrap/run/mount/utab"
+fi
+if [ -e "/tmp/debian-$dist-debootstrap/run/mount" ]; then
+	rmdir "/tmp/debian-$dist-debootstrap/run/mount"
+fi
 # debootstrap doesn't clean apt
 rm /tmp/debian-$dist-debootstrap/var/lib/apt/lists/127.0.0.1_debian_dists_${dist}_main_binary-amd64_Packages \
 	/tmp/debian-$dist-debootstrap/var/lib/apt/lists/127.0.0.1_debian_dists_${dist}_Release \
