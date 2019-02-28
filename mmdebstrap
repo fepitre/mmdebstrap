@@ -503,7 +503,7 @@ sub havemknod($) {
 	$havemknod = 1;
     }
     if (-e "$root/test-dev-null") {
-	unlink "$root/test-dev-null" or error "cannot unlink /test-dev-null";
+	unlink "$root/test-dev-null" or error "cannot unlink /test-dev-null: $!";
     }
     return $havemknod;
 }
@@ -863,7 +863,7 @@ sub run_chroot(&$) {
 
 	# cleanup
 	move("$options->{root}/sbin/start-stop-daemon.REAL", "$options->{root}/sbin/start-stop-daemon") or error "cannot move start-stop-daemon";
-	unlink "$options->{root}/usr/sbin/policy-rc.d" or error "cannot unlink policy-rc.d";
+	unlink "$options->{root}/usr/sbin/policy-rc.d" or error "cannot unlink policy-rc.d: $!";
 
     };
 
@@ -1550,7 +1550,7 @@ sub setup {
 	    }
 
 	    foreach my $deb (@essential_pkgs) {
-		unlink "$options->{root}/$deb" or error "cannot unlink $deb";
+		unlink "$options->{root}/$deb" or error "cannot unlink $deb: $!";
 	    }
 
 	    # run essential hooks
@@ -1630,7 +1630,7 @@ sub setup {
 			    PKGS => \@debs_to_install,
 			});
 		    foreach my $deb (@debs_to_install) {
-			unlink "$options->{root}/$deb" or error "cannot unlink $deb";
+			unlink "$options->{root}/$deb" or error "cannot unlink $deb: $!";
 		    }
 		}
 
@@ -1670,7 +1670,7 @@ sub setup {
     run_apt_progress({ ARGV => ['apt-get', 'clean'] });
 
     if (defined $options->{qemu} and $options->{mode} ne 'proot' and $options->{mode} ne 'fakechroot') {
-	unlink "$options->{root}/usr/bin/qemu-$options->{qemu}-static" or error "cannot unlink /usr/bin/qemu-$options->{qemu}-static";
+	unlink "$options->{root}/usr/bin/qemu-$options->{qemu}-static" or error "cannot unlink /usr/bin/qemu-$options->{qemu}-static: $!";
     }
 
     # clean up certain files to make output reproducible
