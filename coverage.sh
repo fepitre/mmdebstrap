@@ -51,7 +51,7 @@ if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
 fi
 
 starttime=
-total=69
+total=87
 i=1
 
 print_header() {
@@ -876,7 +876,6 @@ END
 	fi
 	# check if the other modes produce the same result in each variant
 	for mode in unshare fakechroot proot; do
-		[ "$mode" = "fakechroot" ] && continue
 		# fontconfig doesn't install reproducibly because differences
 		# in /var/cache/fontconfig/. See
 		# https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=864082
@@ -919,6 +918,7 @@ prefix=
 # artificially add some files
 { tar -tf /tmp/unstable-chroot.tar;
   [ "$mode" = "fakechroot" ] && printf "./etc/ld.so.cache\n./var/cache/ldconfig/\n";
+  [ "$mode" = "fakechroot" ] && [ "$variant" != "essential" ] && printf "./etc/.pwd.lock\n";
 } | sort | diff -u "./$variant.txt" -
 rm /tmp/unstable-chroot.tar
 END
@@ -942,6 +942,7 @@ prefix=
 \$prefix fakechroot fakeroot $CMD --mode=$mode --variant=$variant unstable /tmp/unstable-chroot.tar $mirror
 { tar -tf /tmp/unstable-chroot.tar;
   printf "./etc/ld.so.cache\n./var/cache/ldconfig/\n";
+  [ "$variant" != "essential" ] && printf "./etc/.pwd.lock\n";
 } | sort | diff -u "./$variant.txt" -
 rm /tmp/unstable-chroot.tar
 END
@@ -1118,7 +1119,6 @@ fi
 # create directory in sudo mode
 
 for mode in root unshare fakechroot proot; do
-	[ "$mode" = "fakechroot" ] && continue
 	print_header "mode=$mode,variant=apt: create armhf tarball"
 	if [ "$HAVE_BINFMT" != "yes" ]; then
 		echo "HAVE_BINFMT != yes -- Skipping test..."
@@ -1153,7 +1153,7 @@ prefix=
 	| grep -v '^\./lib/arm-linux-gnueabihf/ld-linux-armhf\.so\.3$' \
 	| sed 's/arm-linux-gnueabihf/x86_64-linux-gnu/' \
 	| sed 's/armhf/amd64/';
-	[ "$mode" = "fakechroot" ] && printf "./etc/ld.so.cache\n./var/cache/ldconfig/\n";
+	[ "$mode" = "fakechroot" ] && printf "./etc/ld.so.cache\n./var/cache/ldconfig/\n./etc/.pwd.lock\n";
 } | sort > tar2.txt
 { cat tar1.txt \
 	| grep -v '^\./usr/bin/i386$' \
