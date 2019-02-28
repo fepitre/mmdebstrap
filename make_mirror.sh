@@ -282,14 +282,28 @@ echo 'root:root' | chpasswd
 mount -t 9p -o trans=virtio,access=any mmdebstrap /mnt
 # need to restart mini-httpd because we mounted different content into www-root
 systemctl restart mini-httpd
+
+handler () {
+	while IFS= read -r line || [ -n "$line" ]; do
+		printf "%s %s: %s\n" "$(date +%T.%3N)" "$1" "$line"
+	done
+}
+
 (
 	cd /mnt;
 	if [ -e cover_db.img ]; then
 		mkdir -p cover_db
 		mount -o loop,umask=000 cover_db.img cover_db
 	fi
-	sh -x ./test.sh
-	ret=$?
+
+	ret=0
+	{ { { { {
+	          sh -x ./test.sh 2>&1 1>&4 3>&- 4>&-; echo $? >&2;
+	        } | handler E >&3;
+	      } 4>&1 | handler O >&3;
+	    } 2>&1;
+	  } | { read xs; exit $xs; };
+	} 3>&1 || ret=$?
 	if [ -e cover_db.img ]; then
 		df -h cover_db
 		umount cover_db
