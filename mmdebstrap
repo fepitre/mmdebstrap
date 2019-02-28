@@ -1104,6 +1104,22 @@ sub setup {
     # into account.
     $ENV{"APT_CONFIG"} = "$tmpfile";
 
+    # when apt-get update is run by the root user, then apt will attempt to
+    # drop privileges to the _apt user. This will fail if the _apt user does
+    # not have permissions to read the root directory. In that case, we have
+    # to disable apt sandboxing.
+    if ($options->{mode} eq 'root') {
+	my $dummy = '/var/lib/apt/lists/partial/dummy';
+	if (system('/usr/lib/apt/apt-helper', 'drop-privs', 'touch', "$options->{root}$dummy") != 0) {
+	    warning "Download is performed unsandboxed as root as file $options->{root}$dummy couldn't be accessed by user _apt";
+	    open my $fh, '>>', $tmpfile or error "cannot open $tmpfile for appending: $!";
+	    print $fh "APT::Sandbox::User \"root\";\n";
+	    close $fh;
+	} else {
+	    unlink "$options->{root}$dummy" or error "unable to unlink $options->{root}$dummy: $!";
+	}
+    }
+
     # setting PATH for chroot, ldconfig, start-stop-daemon...
     if (defined $ENV{PATH} && $ENV{PATH} ne "") {
 	$ENV{PATH} = "$ENV{PATH}:/usr/sbin:/usr/bin:/sbin:/bin";
@@ -2480,6 +2496,7 @@ Examples:
     --aptopt='Acquire::Languages "none"'
     --aptopt='Apt::Install-Recommends "true"'
     --aptopt='Acquire::http { Proxy "http://127.0.0.1:3142"; }'
+    --aptopt='APT::Sandbox::User "root"'
 
 =item B<--dpkgopt>=I<option>|I<file>
 
@@ -2624,9 +2641,10 @@ B<fakechroot> is used if the fakechroot binary exists.
 
 =item B<sudo>, B<root>
 
-This mode directly executes chroot and is the same mode of operation as is used
-by debootstrap. It is the only mode that can directly create a directory chroot
-with the right permissions.
+This mode directly executes chroot and is the same mode of operation as is
+used by debootstrap. It is the only mode that can directly create a directory
+chroot with the right permissions. If the chroot directory is not accessible
+by the _apt user, then apt sandboxing will be automatically disabled.
 
 =item B<unshare>
 

@@ -347,6 +347,24 @@ else
 	./run_null.sh SUDO
 fi
 
+print_header "mode=root,variant=apt: chroot directory not accessible by _apt user"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+mkdir /tmp/debian-unstable
+chmod 700 /tmp/debian-unstable
+$CMD --mode=root --variant=apt unstable /tmp/debian-unstable $mirror
+tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
+diff -u tar1.txt tar2.txt
+rm -r /tmp/debian-unstable
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	./run_null.sh SUDO
+fi
+
 print_header "mode=unshare,variant=apt: create gzip compressed tarball"
 cat << END > shared/test.sh
 #!/bin/sh
