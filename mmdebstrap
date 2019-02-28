@@ -941,10 +941,7 @@ sub setup {
     } else {
 	print $conf "Apt::Architectures \"$options->{nativearch}\";\n";
     }
-    print $conf "Dir::Etc \"$options->{root}/etc/apt\";\n";
-    print $conf "Dir::State \"$options->{root}/var/lib/apt\";\n";
-    print $conf "Dir::Cache \"$options->{root}/var/cache/apt\";\n";
-    print $conf "Dir::Log \"$options->{root}/var/log/apt\";\n";
+    print $conf "Dir \"$options->{root}\";\n";
     # for authentication, use the keyrings from the host
     print $conf "Dir::Etc::Trusted \"/etc/apt/trusted.gpg\";\n";
     print $conf "Dir::Etc::TrustedParts \"/etc/apt/trusted.gpg.d\";\n";
