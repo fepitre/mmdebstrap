@@ -2857,6 +2857,13 @@ extension to compressor applies:
  .txz      xz
  .zst      zstd
 
+=head1 BUGS
+
+As of version 1.19.5, dpkg does not provide facilities preventing it from
+reading the dpkg configuration of the machine running B<mmdebstrap>.
+Therefore, until this dpkg limitation is fixed, a default dpkg configuration
+is recommended on machines running B<mmdebstrap>.
+
 =head1 SEE ALSO
 
     debootstrap(8)
