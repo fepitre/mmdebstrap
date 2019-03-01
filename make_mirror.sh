@@ -285,7 +285,7 @@ systemctl restart mini-httpd
 
 handler () {
 	while IFS= read -r line || [ -n "$line" ]; do
-		printf "%s %s: %s\n" "$(date +%T.%3N)" "$1" "$line"
+		printf "%s %s: %s\n" "$(date -u -d "0 $(date +%s.%3N) seconds - $2 seconds" +"%T.%3N")" "$1" "$line"
 	done
 }
 
@@ -296,11 +296,12 @@ handler () {
 		mount -o loop,umask=000 cover_db.img cover_db
 	fi
 
+	now=$(date +%s.%3N)
 	ret=0
 	{ { { { {
 	          sh -x ./test.sh 2>&1 1>&4 3>&- 4>&-; echo $? >&2;
-	        } | handler E >&3;
-	      } 4>&1 | handler O >&3;
+	        } | handler E "$now" >&3;
+	      } 4>&1 | handler O "$now" >&3;
 	    } 2>&1;
 	  } | { read xs; exit $xs; };
 	} 3>&1 || ret=$?
