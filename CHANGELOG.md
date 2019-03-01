@@ -1,3 +1,10 @@
+0.4.1 (2019-03-01)
+------------------
+
+ - re-enable fakechroot mode testing
+ - disable apt sandboxing if necessary
+ - keep apt and dpkg lock files
+
 0.4.0 (2019-02-23)
 ------------------
 
