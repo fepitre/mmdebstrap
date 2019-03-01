@@ -1106,14 +1106,12 @@ sub setup {
     # not have permissions to read the root directory. In that case, we have
     # to disable apt sandboxing.
     if ($options->{mode} eq 'root') {
-	my $dummy = '/var/lib/apt/lists/partial/dummy';
-	if (system('/usr/lib/apt/apt-helper', 'drop-privs', 'touch', "$options->{root}$dummy") != 0) {
-	    warning "Download is performed unsandboxed as root as file $options->{root}$dummy couldn't be accessed by user _apt";
+	my $partial = '/var/lib/apt/lists/partial';
+	if (system('/usr/lib/apt/apt-helper', 'drop-privs', '--', 'test', '-r', "$options->{root}$partial") != 0) {
+	    warning "Download is performed unsandboxed as root as file $options->{root}$partial couldn't be accessed by user _apt";
 	    open my $fh, '>>', $tmpfile or error "cannot open $tmpfile for appending: $!";
 	    print $fh "APT::Sandbox::User \"root\";\n";
 	    close $fh;
-	} else {
-	    unlink "$options->{root}$dummy" or error "unable to unlink $options->{root}$dummy: $!";
 	}
     }
 
