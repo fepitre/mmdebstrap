@@ -285,8 +285,7 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C.UTF-8
 script -qfc "$CMD --mode=root --variant=apt unstable /tmp/unstable-chroot.tar $mirror" /dev/null
-tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
-diff -u tar1.txt tar2.txt
+tar -tf /tmp/unstable-chroot.tar | sort | diff -u tar1.txt -
 rm /tmp/unstable-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
@@ -301,8 +300,7 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C.UTF-8
 script -qfc "$CMD --mode=root --debug --variant=apt unstable /tmp/unstable-chroot.tar $mirror" /dev/null
-tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
-diff -u tar1.txt tar2.txt
+tar -tf /tmp/unstable-chroot.tar | sort | diff -u tar1.txt -
 rm /tmp/unstable-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
@@ -318,8 +316,7 @@ set -eu
 export LC_ALL=C.UTF-8
 mkdir /tmp/debian-unstable
 $CMD --mode=root --variant=apt unstable /tmp/debian-unstable $mirror
-tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
-diff -u tar1.txt tar2.txt
+tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
 rm -r /tmp/debian-unstable
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
@@ -337,8 +334,7 @@ mkdir /tmp/debian-unstable
 mkdir /tmp/debian-unstable/lost+found
 $CMD --mode=root --variant=apt unstable /tmp/debian-unstable $mirror
 rmdir /tmp/debian-unstable/lost+found
-tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
-diff -u tar1.txt tar2.txt
+tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
 rm -r /tmp/debian-unstable
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
@@ -355,8 +351,7 @@ export LC_ALL=C.UTF-8
 mkdir /tmp/debian-unstable
 chmod 700 /tmp/debian-unstable
 $CMD --mode=root --variant=apt unstable /tmp/debian-unstable $mirror
-tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
-diff -u tar1.txt tar2.txt
+tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
 rm -r /tmp/debian-unstable
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
@@ -373,8 +368,7 @@ export LC_ALL=C.UTF-8
 adduser --gecos user --disabled-password user
 sysctl -w kernel.unprivileged_userns_clone=1
 runuser -u user -- $CMD --mode=unshare --variant=apt unstable /tmp/unstable-chroot.tar.gz $mirror
-tar -tf /tmp/unstable-chroot.tar.gz | sort > tar2.txt
-diff -u tar1.txt tar2.txt
+tar -tf /tmp/unstable-chroot.tar.gz | sort | diff -u tar1.txt -
 rm /tmp/unstable-chroot.tar.gz
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
@@ -409,8 +403,7 @@ export LC_ALL=C.UTF-8
 mount -t tmpfs -o nodev,nosuid,size=300M tmpfs /tmp
 # use --customize-hook to exercise the mounting/unmounting code of block devices in root mode
 $CMD --mode=root --variant=apt --customize-hook='mount | grep /dev/full' --customize-hook='test "\$(echo foo | tee /dev/full 2>&1 1>/dev/null)" = "tee: /dev/full: No space left on device"' unstable /tmp/unstable-chroot.tar $mirror
-tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
-diff -u tar1.txt tar2.txt
+tar -tf /tmp/unstable-chroot.tar | sort | diff -u tar1.txt -
 rm /tmp/unstable-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
@@ -425,8 +418,7 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C.UTF-8
 echo "deb $mirror unstable main" | $CMD --mode=$defaultmode --variant=apt > /tmp/unstable-chroot.tar
-tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
-diff -u tar1.txt tar2.txt
+tar -tf /tmp/unstable-chroot.tar | sort | diff -u tar1.txt -
 rm /tmp/unstable-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
@@ -469,8 +461,7 @@ set -eu
 export LC_ALL=C.UTF-8
 echo "127.0.0.1 deb.debian.org" >> /etc/hosts
 $CMD --mode=$defaultmode --variant=apt unstable > /tmp/unstable-chroot.tar
-tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
-diff -u tar1.txt tar2.txt
+tar -tf /tmp/unstable-chroot.tar | sort | diff -u tar1.txt -
 rm /tmp/unstable-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
@@ -485,8 +476,7 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C.UTF-8
 echo "deb $mirror unstable main" | $CMD --mode=$defaultmode --variant=apt unstable /tmp/unstable-chroot.tar -
-tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
-diff -u tar1.txt tar2.txt
+tar -tf /tmp/unstable-chroot.tar | sort | diff -u tar1.txt -
 rm /tmp/unstable-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
@@ -503,8 +493,7 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C.UTF-8
 $CMD --mode=$defaultmode --variant=apt unstable /tmp/unstable-chroot.tar "deb $mirror unstable main"
-tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
-diff -u tar1.txt tar2.txt
+tar -tf /tmp/unstable-chroot.tar | sort | diff -u tar1.txt -
 rm /tmp/unstable-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
@@ -522,8 +511,7 @@ set -eu
 export LC_ALL=C.UTF-8
 echo "deb $mirror unstable main" > /tmp/sources.list
 $CMD --mode=$defaultmode --variant=apt unstable /tmp/unstable-chroot.tar /tmp/sources.list
-tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
-diff -u tar1.txt tar2.txt
+tar -tf /tmp/unstable-chroot.tar | sort | diff -u tar1.txt -
 rm /tmp/unstable-chroot.tar /tmp/sources.list
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
@@ -540,8 +528,7 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C.UTF-8
 echo "deb $mirror unstable main" | $CMD --mode=$defaultmode --variant=apt unstable /tmp/unstable-chroot.tar
-tar -tf /tmp/unstable-chroot.tar | sort > tar2.txt
-diff -u tar1.txt tar2.txt
+tar -tf /tmp/unstable-chroot.tar | sort | diff -u tar1.txt -
 rm /tmp/unstable-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
@@ -588,8 +575,7 @@ rm /tmp/debian-unstable/var/lib/dpkg/info/gcc-8-base:armhf.md5sums
 rm /tmp/debian-unstable/usr/share/doc/gcc-8-base/README.Debian.armhf.gz
 rmdir /tmp/debian-unstable/usr/lib/gcc/arm-linux-gnueabihf/8/
 rmdir /tmp/debian-unstable/usr/lib/gcc/arm-linux-gnueabihf/
-tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
-diff -u tar1.txt tar2.txt
+tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
 rm -r /tmp/debian-unstable
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
@@ -607,8 +593,7 @@ echo 'Acquire::Languages "none";' > config
 $CMD --mode=root --variant=apt --aptopt='Acquire::Check-Valid-Until "false"' --aptopt=config unstable /tmp/debian-unstable $mirror
 printf 'Acquire::Check-Valid-Until "false";\nAcquire::Languages "none";\n' | cmp /tmp/debian-unstable/etc/apt/apt.conf.d/99mmdebstrap -
 rm /tmp/debian-unstable/etc/apt/apt.conf.d/99mmdebstrap
-tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
-diff -u tar1.txt tar2.txt
+tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
 rm -r /tmp/debian-unstable
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
@@ -649,8 +634,7 @@ rm /tmp/debian-unstable/var/log/apt/eipp.log.xz
 rm /tmp/debian-unstable/var/lib/apt/extended_states
 rm /tmp/debian-unstable/var/lib/dpkg/info/doc-debian.list
 rm /tmp/debian-unstable/var/lib/dpkg/info/doc-debian.md5sums
-tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
-diff -u tar1.txt tar2.txt
+tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
 rm -r /tmp/debian-unstable
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
@@ -702,8 +686,7 @@ tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort \
 	| grep -v '^./var/lib/dpkg/info/tzdata.' \
 	| grep -v '^./var/log/apt/eipp.log.xz$' \
 	| grep -v '^./var/lib/apt/extended_states$' \
-	> tar2.txt
-diff -u tar1.txt tar2.txt
+	| diff -u tar1.txt -
 rm customize.sh
 rm -r /tmp/debian-unstable
 END
@@ -729,8 +712,7 @@ printf "root\n/\n" | cmp /tmp/debian-unstable/output1
 printf "root\n/\n" | cmp /tmp/debian-unstable/output2
 rm /tmp/debian-unstable/output1
 rm /tmp/debian-unstable/output2
-tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
-diff -u tar1.txt tar2.txt
+tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
 rm customize.sh
 rm -r /tmp/debian-unstable
 END
@@ -795,8 +777,7 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C.UTF-8
 $CMD --mode=root --variant=apt --resolve-deps --merged-usr --no-merged-usr unstable /tmp/debian-unstable $mirror
-tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
-diff -u tar1.txt tar2.txt
+tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
 rm -r /tmp/debian-unstable
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
@@ -811,8 +792,7 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C.UTF-8
 $CMD --mode=root --variant=apt --verbose unstable /tmp/debian-unstable $mirror
-tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
-diff -u tar1.txt tar2.txt
+tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
 rm -r /tmp/debian-unstable
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
@@ -827,8 +807,7 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C.UTF-8
 $CMD --mode=root --variant=apt --debug unstable /tmp/debian-unstable $mirror
-tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
-diff -u tar1.txt tar2.txt
+tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
 rm -r /tmp/debian-unstable
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
@@ -843,8 +822,7 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C.UTF-8
 $CMD --mode=root --variant=apt --quiet unstable /tmp/debian-unstable $mirror
-tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
-diff -u tar1.txt tar2.txt
+tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
 rm -r /tmp/debian-unstable
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
@@ -859,13 +837,12 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C.UTF-8
 $CMD --mode=root --variant=apt --logfile=log unstable /tmp/debian-unstable $mirror
-tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
 grep --quiet "I: running apt-get update..." log
 grep --quiet "I: downloading packages with apt..." log
 grep --quiet "I: extracting archives..." log
 grep --quiet "I: installing packages..." log
 grep --quiet "I: cleaning package lists and apt cache..." log
-diff -u tar1.txt tar2.txt
+tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
 rm -r /tmp/debian-unstable
 rm log
 END
