@@ -51,7 +51,7 @@ if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
 fi
 
 starttime=
-total=88
+total=89
 i=1
 
 print_header() {
@@ -468,6 +468,28 @@ if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 else
 	echo "HAVE_QEMU != yes -- Skipping test..."
+fi
+
+print_header "mode=$defaultmode,variant=apt: test aspcud apt solver"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+$CMD --mode=$defaultmode --variant=custom \
+    --include apt,base-files,base-passwd,bash,bsdutils,coreutils,dash,debianutils,diffutils,dpkg,findutils,gpgv,grep,gzip,hostname,init-system-helpers,libc-bin,login,mawk,ncurses-base,ncurses-bin,perl-base,sed,sysvinit-utils,tar,util-linux \
+    --aptopt='APT::Solver "aspcud"' \
+    unstable /tmp/unstable-chroot.tar $mirror
+tar -tf /tmp/unstable-chroot.tar | sort \
+    | grep -v '^./etc/apt/apt.conf.d/99mmdebstrap$' \
+    | diff -u tar1.txt -
+rm /tmp/unstable-chroot.tar
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+elif [ "$defaultmode" = "root" ]; then
+	./run_null.sh SUDO
+else
+	./run_null.sh
 fi
 
 print_header "mode=$defaultmode,variant=apt: mirror is -"

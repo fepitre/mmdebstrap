@@ -32,7 +32,7 @@ if [ -e /dev/kvm ]; then
 fi
 # to connect to serial use:
 #   minicom -D 'unix#/tmp/ttyS0'
-qemu-system-x86_64 $KVM -m 512M -nographic \
+qemu-system-x86_64 $KVM -m 1G -nographic \
 	-monitor unix:/tmp/monitor,server,nowait \
 	-serial unix:/tmp/ttyS0,server,nowait \
 	-serial unix:/tmp/ttyS1,server,nowait \

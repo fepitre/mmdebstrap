@@ -245,7 +245,7 @@ if [ "$HAVE_QEMU" = "yes" ]; then
 	# procps is needed for /sbin/sysctl
 	tmpdir="$(mktemp -d)"
 	./mmdebstrap --variant=apt --architectures=amd64,armhf --mode=unshare \
-		--include=perl-doc,linux-image-amd64,systemd-sysv,perl,arch-test,fakechroot,fakeroot,mount,uidmap,proot,qemu-user-static,binfmt-support,qemu-user,dpkg-dev,mini-httpd,libdevel-cover-perl,debootstrap,libfakechroot:armhf,libfakeroot:armhf,procps \
+		--include=perl-doc,linux-image-amd64,systemd-sysv,perl,arch-test,fakechroot,fakeroot,mount,uidmap,proot,qemu-user-static,binfmt-support,qemu-user,dpkg-dev,mini-httpd,libdevel-cover-perl,debootstrap,libfakechroot:armhf,libfakeroot:armhf,procps,apt-cudf,aspcud \
 		unstable - "$mirror" > "$tmpdir/debian-unstable.tar"
 
 	cat << END > "$tmpdir/extlinux.conf"
