@@ -945,6 +945,19 @@ sub setup {
     # for authentication, use the keyrings from the host
     print $conf "Dir::Etc::Trusted \"/etc/apt/trusted.gpg\";\n";
     print $conf "Dir::Etc::TrustedParts \"/etc/apt/trusted.gpg.d\";\n";
+    if ($options->{variant} ne 'apt') {
+	# apt considers itself essential. Thus, when generating an EDSP
+	# document for an external solver, it will add the Essential:yes field
+	# to the apt package stanza. This is unnecessary for any other variant
+	# than 'apt' because in all other variants we compile the set of
+	# packages we consider essential ourselves and for the 'essential'
+	# variant it would even be wrong to add apt. This workaround is only
+	# needed when apt is used with an external solver but doesn't hurt
+	# otherwise and we don't have a good way to figure out whether apt is
+	# using an external solver or not short of parsing the --aptopt
+	# options.
+	print $conf "pkgCacheGen::ForceEssential \",\";\n";
+    }
     close $conf;
 
     {
