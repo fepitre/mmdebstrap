@@ -1373,9 +1373,9 @@ sub setup {
 	}
     } elsif (any { $_ eq $options->{mode} } ('root', 'unshare', 'fakechroot', 'proot')) {
 
-	if (any { $_ eq $options->{variant} } ('extract', 'custom')) {
+	if (any { $_ eq $options->{variant} } ('extract')) {
 	    # nothing to do
-	} elsif (any { $_ eq $options->{variant} } ('essential', 'apt', 'standard', 'important', 'required', 'buildd', 'minbase')) {
+	} elsif (any { $_ eq $options->{variant} } ('custom', 'essential', 'apt', 'standard', 'important', 'required', 'buildd', 'minbase')) {
 	    if ($options->{mode} eq 'fakechroot') {
 		# this borrows from and extends
 		# /etc/fakechroot/debootstrap.env and /etc/fakechroot/chroot.env
@@ -1549,9 +1549,11 @@ sub setup {
 	    }
 
 	    # run essential hooks
-	    run_hooks('essential', $options);
+	    if ($options->{variant} ne 'custom') {
+		run_hooks('essential', $options);
+	    }
 
-	    if (%pkgs_to_install) {
+	    if ($options->{variant} ne 'custom' and %pkgs_to_install) {
 		# some packages have to be installed from the outside before anything
 		# can be installed from the inside.
 		#
