@@ -203,7 +203,8 @@ END
 	comm -23 "$rootdir/oldaptnames" "$rootdir/newaptnames" | xargs --delimiter="\n" --no-run-if-empty rm
 	# now the apt cache should be empty
 	if [ ! -z "$(ls -1qA "$rootdir/var/cache/apt/archives/")" ]; then
-		echo "/var/cache/apt/archives not empty"
+		echo "$rootdir/var/cache/apt/archives not empty:"
+		ls -la "$rootdir/var/cache/apt/archives/"
 		exit 1
 	fi
 
