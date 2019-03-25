@@ -38,10 +38,11 @@ if [ "$arch1" = "$arch2" ]; then
 fi
 components=main
 
+: "${DEFAULT_DIST:=unstable}"
 : "${HAVE_QEMU:=yes}"
 
-if [ -e "$oldmirrordir/dists/unstable/Release" ]; then
-	http_code=$(curl --output /dev/null --silent --location --head --time-cond "$oldmirrordir/dists/unstable/Release" --write-out '%{http_code}' "$mirror/dists/unstable/Release")
+if [ -e "$oldmirrordir/dists/$DEFAULT_DIST/Release" ]; then
+	http_code=$(curl --output /dev/null --silent --location --head --time-cond "$oldmirrordir/dists/$DEFAULT_DIST/Release" --write-out '%{http_code}' "$mirror/dists/$DEFAULT_DIST/Release")
 	case "$http_code" in
 		200) ;; # need update
 		304) echo up-to-date; exit 0;;
@@ -246,7 +247,7 @@ if [ "$HAVE_QEMU" = "yes" ]; then
 	tmpdir="$(mktemp -d)"
 	./mmdebstrap --variant=apt --architectures=amd64,armhf --mode=unshare \
 		--include=perl-doc,linux-image-amd64,systemd-sysv,perl,arch-test,fakechroot,fakeroot,mount,uidmap,proot,qemu-user-static,binfmt-support,qemu-user,dpkg-dev,mini-httpd,libdevel-cover-perl,debootstrap,libfakechroot:armhf,libfakeroot:armhf,procps,apt-cudf,aspcud \
-		unstable - "$mirror" > "$tmpdir/debian-unstable.tar"
+		$DEFAULT_DIST - "$mirror" > "$tmpdir/debian-chroot.tar"
 
 	cat << END > "$tmpdir/extlinux.conf"
 default linux
@@ -326,12 +327,12 @@ END
 END
 	#libguestfs-test-tool
 	#export LIBGUESTFS_DEBUG=1 LIBGUESTFS_TRACE=1
-	guestfish -N "$tmpdir/debian-unstable.img"=disk:3G -- \
+	guestfish -N "$tmpdir/debian-$DEFAULT_DIST.img"=disk:3G -- \
 		part-disk /dev/sda mbr : \
 		part-set-bootable /dev/sda 1 true : \
 		mkfs ext2 /dev/sda1 : \
 		mount /dev/sda1 / : \
-		tar-in "$tmpdir/debian-unstable.tar" / : \
+		tar-in "$tmpdir/debian-chroot.tar" / : \
 		extlinux / : \
 		copy-in "$tmpdir/extlinux.conf" / : \
 		mkdir-p /etc/systemd/system/multi-user.target.wants : \
@@ -340,9 +341,9 @@ END
 		copy-in "$tmpdir/worker.sh" / : \
 		copy-in "$tmpdir/mini-httpd" /etc/default : \
 		copy-in "$tmpdir/hosts" /etc/ :
-	rm "$tmpdir/extlinux.conf" "$tmpdir/worker.sh" "$tmpdir/mini-httpd" "$tmpdir/hosts" "$tmpdir/debian-unstable.tar" "$tmpdir/mmdebstrap.service"
-	qemu-img convert -O qcow2 "$tmpdir/debian-unstable.img" "$newcachedir/debian-unstable.qcow"
-	rm "$tmpdir/debian-unstable.img"
+	rm "$tmpdir/extlinux.conf" "$tmpdir/worker.sh" "$tmpdir/mini-httpd" "$tmpdir/hosts" "$tmpdir/debian-chroot.tar" "$tmpdir/mmdebstrap.service"
+	qemu-img convert -O qcow2 "$tmpdir/debian-$DEFAULT_DIST.img" "$newcachedir/debian-$DEFAULT_DIST.qcow"
+	rm "$tmpdir/debian-$DEFAULT_DIST.img"
 	rmdir "$tmpdir"
 fi
 
@@ -384,7 +385,7 @@ if [ "$HAVE_QEMU" = "yes" ]; then
 START=1
 DAEMON_OPTS="-h 127.0.0.1 -p 80 -u nobody -dd /mnt/cache -i /var/run/mini-httpd.pid -T UTF-8"
 END
-	guestfish -a "$newcachedir/debian-unstable.qcow" -i copy-in "$tmpdir/mini-httpd" /etc/default
+	guestfish -a "$newcachedir/debian-$DEFAULT_DIST.qcow" -i copy-in "$tmpdir/mini-httpd" /etc/default
 	rm "$tmpdir/mini-httpd"
 	rmdir "$tmpdir"
 fi
@@ -415,8 +416,8 @@ for dist in stable testing unstable; do
 		fi
 	fi
 done
-if [ -e $oldcachedir/debian-unstable.qcow ]; then
-	rm --one-file-system "$oldcachedir/debian-unstable.qcow"
+if [ -e $oldcachedir/debian-*.qcow ]; then
+	rm --one-file-system "$oldcachedir"/debian-*.qcow
 fi
 if [ -e "$oldcachedir/debian/pool/main" ]; then
 	rm --one-file-system --recursive "$oldcachedir/debian/pool/main"

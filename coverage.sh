@@ -9,14 +9,15 @@ mirrordir="./shared/cache/debian"
 # we use -f because the file might not exist
 rm -f shared/cover_db.img
 
+: "${DEFAULT_DIST:=unstable}"
 : "${HAVE_QEMU:=yes}"
 
 if [ "$HAVE_QEMU" = "yes" ]; then
 	# prepare image for cover_db
 	guestfish -N shared/cover_db.img=disk:200M -- mkfs vfat /dev/sda
 
-	if [ ! -e "./shared/cache/debian-unstable.qcow" ]; then
-		echo "./shared/cache/debian-unstable.qcow does not exist" >&2
+	if [ ! -e "./shared/cache/debian-$DEFAULT_DIST.qcow" ]; then
+		echo "./shared/cache/debian-$DEFAULT_DIST.qcow does not exist" >&2
 		exit 1
 	fi
 fi
@@ -72,7 +73,7 @@ nativearch=$(dpkg --print-architecture)
 
 # choose the timestamp of the unstable Release file, so that we get
 # reproducible results for the same mirror timestamp
-SOURCE_DATE_EPOCH=$(date --date="$(grep-dctrl -s Date -n '' "$mirrordir/dists/unstable/Release")" +%s)
+SOURCE_DATE_EPOCH=$(date --date="$(grep-dctrl -s Date -n '' "$mirrordir/dists/$DEFAULT_DIST/Release")" +%s)
 
 # for traditional sort order that uses native byte values
 export LC_ALL=C.UTF-8
@@ -251,9 +252,9 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-$CMD --mode=root --variant=apt unstable /tmp/debian-unstable $mirror
-tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar1.txt
-rm -r /tmp/debian-unstable
+$CMD --mode=root --variant=apt $DEFAULT_DIST /tmp/debian-chroot $mirror
+tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort > tar1.txt
+rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -267,7 +268,7 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C.UTF-8
 ret=0
-$CMD --mode=unshare --variant=apt unstable /tmp/debian-unstable $mirror || ret=\$?
+$CMD --mode=unshare --variant=apt $DEFAULT_DIST /tmp/debian-chroot $mirror || ret=\$?
 if [ "\$ret" = 0 ]; then
 	echo expected failure but got exit \$ret
 	exit 1
@@ -284,9 +285,9 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-script -qfc "$CMD --mode=root --variant=apt unstable /tmp/unstable-chroot.tar $mirror" /dev/null
-tar -tf /tmp/unstable-chroot.tar | sort | diff -u tar1.txt -
-rm /tmp/unstable-chroot.tar
+script -qfc "$CMD --mode=root --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar $mirror" /dev/null
+tar -tf /tmp/debian-chroot.tar | sort | diff -u tar1.txt -
+rm /tmp/debian-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -299,9 +300,9 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-script -qfc "$CMD --mode=root --debug --variant=apt unstable /tmp/unstable-chroot.tar $mirror" /dev/null
-tar -tf /tmp/unstable-chroot.tar | sort | diff -u tar1.txt -
-rm /tmp/unstable-chroot.tar
+script -qfc "$CMD --mode=root --debug --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar $mirror" /dev/null
+tar -tf /tmp/debian-chroot.tar | sort | diff -u tar1.txt -
+rm /tmp/debian-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -314,10 +315,10 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-mkdir /tmp/debian-unstable
-$CMD --mode=root --variant=apt unstable /tmp/debian-unstable $mirror
-tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
-rm -r /tmp/debian-unstable
+mkdir /tmp/debian-chroot
+$CMD --mode=root --variant=apt $DEFAULT_DIST /tmp/debian-chroot $mirror
+tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
+rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -330,12 +331,12 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-mkdir /tmp/debian-unstable
-mkdir /tmp/debian-unstable/lost+found
-$CMD --mode=root --variant=apt unstable /tmp/debian-unstable $mirror
-rmdir /tmp/debian-unstable/lost+found
-tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
-rm -r /tmp/debian-unstable
+mkdir /tmp/debian-chroot
+mkdir /tmp/debian-chroot/lost+found
+$CMD --mode=root --variant=apt $DEFAULT_DIST /tmp/debian-chroot $mirror
+rmdir /tmp/debian-chroot/lost+found
+tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
+rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -348,11 +349,11 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-mkdir /tmp/debian-unstable
-chmod 700 /tmp/debian-unstable
-$CMD --mode=root --variant=apt unstable /tmp/debian-unstable $mirror
-tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
-rm -r /tmp/debian-unstable
+mkdir /tmp/debian-chroot
+chmod 700 /tmp/debian-chroot
+$CMD --mode=root --variant=apt $DEFAULT_DIST /tmp/debian-chroot $mirror
+tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
+rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -367,9 +368,9 @@ set -eu
 export LC_ALL=C.UTF-8
 adduser --gecos user --disabled-password user
 sysctl -w kernel.unprivileged_userns_clone=1
-runuser -u user -- $CMD --mode=unshare --variant=apt unstable /tmp/unstable-chroot.tar.gz $mirror
-tar -tf /tmp/unstable-chroot.tar.gz | sort | diff -u tar1.txt -
-rm /tmp/unstable-chroot.tar.gz
+runuser -u user -- $CMD --mode=unshare --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar.gz $mirror
+tar -tf /tmp/debian-chroot.tar.gz | sort | diff -u tar1.txt -
+rm /tmp/debian-chroot.tar.gz
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -383,7 +384,7 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C.UTF-8
 ret=0
-$CMD --mode=root --variant=apt unstable /tmp/unstable-chroot.tar.lz4 $mirror || ret=\$?
+$CMD --mode=root --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar.lz4 $mirror || ret=\$?
 if [ "\$ret" = 0 ]; then
 	echo expected failure but got exit \$ret
 	exit 1
@@ -402,9 +403,9 @@ set -eu
 export LC_ALL=C.UTF-8
 mount -t tmpfs -o nodev,nosuid,size=300M tmpfs /tmp
 # use --customize-hook to exercise the mounting/unmounting code of block devices in root mode
-$CMD --mode=root --variant=apt --customize-hook='mount | grep /dev/full' --customize-hook='test "\$(echo foo | tee /dev/full 2>&1 1>/dev/null)" = "tee: /dev/full: No space left on device"' unstable /tmp/unstable-chroot.tar $mirror
-tar -tf /tmp/unstable-chroot.tar | sort | diff -u tar1.txt -
-rm /tmp/unstable-chroot.tar
+$CMD --mode=root --variant=apt --customize-hook='mount | grep /dev/full' --customize-hook='test "\$(echo foo | tee /dev/full 2>&1 1>/dev/null)" = "tee: /dev/full: No space left on device"' $DEFAULT_DIST /tmp/debian-chroot.tar $mirror
+tar -tf /tmp/debian-chroot.tar | sort | diff -u tar1.txt -
+rm /tmp/debian-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -417,9 +418,9 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-echo "deb $mirror unstable main" | $CMD --mode=$defaultmode --variant=apt > /tmp/unstable-chroot.tar
-tar -tf /tmp/unstable-chroot.tar | sort | diff -u tar1.txt -
-rm /tmp/unstable-chroot.tar
+echo "deb $mirror $DEFAULT_DIST main" | $CMD --mode=$defaultmode --variant=apt > /tmp/debian-chroot.tar
+tar -tf /tmp/debian-chroot.tar | sort | diff -u tar1.txt -
+rm /tmp/debian-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -440,13 +441,13 @@ cat << HOSTS >> /etc/hosts
 HOSTS
 apt-cache policy
 cat /etc/apt/sources.list
-$CMD --mode=root --variant=apt stable /tmp/debian-unstable
-cat << SOURCES | cmp /tmp/debian-unstable/etc/apt/sources.list
+$CMD --mode=root --variant=apt stable /tmp/debian-chroot
+cat << SOURCES | cmp /tmp/debian-chroot/etc/apt/sources.list
 deb http://deb.debian.org/debian stable main
 deb http://deb.debian.org/debian stable-updates main
 deb http://security.debian.org/debian-security stable/updates main
 SOURCES
-rm -r /tmp/debian-unstable
+rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -460,9 +461,9 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C.UTF-8
 echo "127.0.0.1 deb.debian.org" >> /etc/hosts
-$CMD --mode=$defaultmode --variant=apt unstable > /tmp/unstable-chroot.tar
-tar -tf /tmp/unstable-chroot.tar | sort | diff -u tar1.txt -
-rm /tmp/unstable-chroot.tar
+$CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST > /tmp/debian-chroot.tar
+tar -tf /tmp/debian-chroot.tar | sort | diff -u tar1.txt -
+rm /tmp/debian-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -478,11 +479,11 @@ export LC_ALL=C.UTF-8
 $CMD --mode=$defaultmode --variant=custom \
     --include apt,base-files,base-passwd,bash,bsdutils,coreutils,dash,debianutils,diffutils,dpkg,findutils,gpgv,grep,gzip,hostname,init-system-helpers,libc-bin,login,mawk,ncurses-base,ncurses-bin,perl-base,sed,sysvinit-utils,tar,util-linux \
     --aptopt='APT::Solver "aspcud"' \
-    unstable /tmp/unstable-chroot.tar $mirror
-tar -tf /tmp/unstable-chroot.tar | sort \
+    $DEFAULT_DIST /tmp/debian-chroot.tar $mirror
+tar -tf /tmp/debian-chroot.tar | sort \
     | grep -v '^./etc/apt/apt.conf.d/99mmdebstrap$' \
     | diff -u tar1.txt -
-rm /tmp/unstable-chroot.tar
+rm /tmp/debian-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -497,9 +498,9 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-echo "deb $mirror unstable main" | $CMD --mode=$defaultmode --variant=apt unstable /tmp/unstable-chroot.tar -
-tar -tf /tmp/unstable-chroot.tar | sort | diff -u tar1.txt -
-rm /tmp/unstable-chroot.tar
+echo "deb $mirror $DEFAULT_DIST main" | $CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar -
+tar -tf /tmp/debian-chroot.tar | sort | diff -u tar1.txt -
+rm /tmp/debian-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -514,9 +515,9 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-$CMD --mode=$defaultmode --variant=apt unstable /tmp/unstable-chroot.tar "deb $mirror unstable main"
-tar -tf /tmp/unstable-chroot.tar | sort | diff -u tar1.txt -
-rm /tmp/unstable-chroot.tar
+$CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar "deb $mirror $DEFAULT_DIST main"
+tar -tf /tmp/debian-chroot.tar | sort | diff -u tar1.txt -
+rm /tmp/debian-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -531,10 +532,10 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-echo "deb $mirror unstable main" > /tmp/sources.list
-$CMD --mode=$defaultmode --variant=apt unstable /tmp/unstable-chroot.tar /tmp/sources.list
-tar -tf /tmp/unstable-chroot.tar | sort | diff -u tar1.txt -
-rm /tmp/unstable-chroot.tar /tmp/sources.list
+echo "deb $mirror $DEFAULT_DIST main" > /tmp/sources.list
+$CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar /tmp/sources.list
+tar -tf /tmp/debian-chroot.tar | sort | diff -u tar1.txt -
+rm /tmp/debian-chroot.tar /tmp/sources.list
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -549,9 +550,9 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-echo "deb $mirror unstable main" | $CMD --mode=$defaultmode --variant=apt unstable /tmp/unstable-chroot.tar
-tar -tf /tmp/unstable-chroot.tar | sort | diff -u tar1.txt -
-rm /tmp/unstable-chroot.tar
+echo "deb $mirror $DEFAULT_DIST main" | $CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar
+tar -tf /tmp/debian-chroot.tar | sort | diff -u tar1.txt -
+rm /tmp/debian-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -567,12 +568,12 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C.UTF-8
 ret=0
-$CMD --mode=$defaultmode --variant=apt unstable /tmp/unstable-chroot.tar $mirror/invalid || ret=\$?
+$CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar $mirror/invalid || ret=\$?
 if [ "\$ret" = 0 ]; then
 	echo expected failure but got exit \$ret
 	exit 1
 fi
-rm /tmp/unstable-chroot.tar
+rm /tmp/debian-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -587,18 +588,18 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-$CMD --mode=root --variant=apt --architectures=amd64,armhf --include=gcc-8-base:armhf unstable /tmp/debian-unstable $mirror
-{ echo "amd64"; echo "armhf"; } | cmp /tmp/debian-unstable/var/lib/dpkg/arch -
-rm /tmp/debian-unstable/var/lib/dpkg/arch
-rm /tmp/debian-unstable/var/log/apt/eipp.log.xz
-rm /tmp/debian-unstable/var/lib/apt/extended_states
-rm /tmp/debian-unstable/var/lib/dpkg/info/gcc-8-base:armhf.list
-rm /tmp/debian-unstable/var/lib/dpkg/info/gcc-8-base:armhf.md5sums
-rm /tmp/debian-unstable/usr/share/doc/gcc-8-base/README.Debian.armhf.gz
-rmdir /tmp/debian-unstable/usr/lib/gcc/arm-linux-gnueabihf/8/
-rmdir /tmp/debian-unstable/usr/lib/gcc/arm-linux-gnueabihf/
-tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
-rm -r /tmp/debian-unstable
+$CMD --mode=root --variant=apt --architectures=amd64,armhf --include=gcc-8-base:armhf $DEFAULT_DIST /tmp/debian-chroot $mirror
+{ echo "amd64"; echo "armhf"; } | cmp /tmp/debian-chroot/var/lib/dpkg/arch -
+rm /tmp/debian-chroot/var/lib/dpkg/arch
+rm /tmp/debian-chroot/var/log/apt/eipp.log.xz
+rm /tmp/debian-chroot/var/lib/apt/extended_states
+rm /tmp/debian-chroot/var/lib/dpkg/info/gcc-8-base:armhf.list
+rm /tmp/debian-chroot/var/lib/dpkg/info/gcc-8-base:armhf.md5sums
+rm /tmp/debian-chroot/usr/share/doc/gcc-8-base/README.Debian.armhf.gz
+rmdir /tmp/debian-chroot/usr/lib/gcc/arm-linux-gnueabihf/8/
+rmdir /tmp/debian-chroot/usr/lib/gcc/arm-linux-gnueabihf/
+tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
+rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -612,11 +613,11 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C.UTF-8
 echo 'Acquire::Languages "none";' > config
-$CMD --mode=root --variant=apt --aptopt='Acquire::Check-Valid-Until "false"' --aptopt=config unstable /tmp/debian-unstable $mirror
-printf 'Acquire::Check-Valid-Until "false";\nAcquire::Languages "none";\n' | cmp /tmp/debian-unstable/etc/apt/apt.conf.d/99mmdebstrap -
-rm /tmp/debian-unstable/etc/apt/apt.conf.d/99mmdebstrap
-tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
-rm -r /tmp/debian-unstable
+$CMD --mode=root --variant=apt --aptopt='Acquire::Check-Valid-Until "false"' --aptopt=config $DEFAULT_DIST /tmp/debian-chroot $mirror
+printf 'Acquire::Check-Valid-Until "false";\nAcquire::Languages "none";\n' | cmp /tmp/debian-chroot/etc/apt/apt.conf.d/99mmdebstrap -
+rm /tmp/debian-chroot/etc/apt/apt.conf.d/99mmdebstrap
+tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
+rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -630,12 +631,12 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C.UTF-8
 echo no-pager > config
-$CMD --mode=root --variant=apt --dpkgopt="path-exclude=/usr/share/doc/*" --dpkgopt=config unstable /tmp/debian-unstable $mirror
-printf 'path-exclude=/usr/share/doc/*\nno-pager\n' | cmp /tmp/debian-unstable/etc/dpkg/dpkg.cfg.d/99mmdebstrap -
-rm /tmp/debian-unstable/etc/dpkg/dpkg.cfg.d/99mmdebstrap
-tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
+$CMD --mode=root --variant=apt --dpkgopt="path-exclude=/usr/share/doc/*" --dpkgopt=config $DEFAULT_DIST /tmp/debian-chroot $mirror
+printf 'path-exclude=/usr/share/doc/*\nno-pager\n' | cmp /tmp/debian-chroot/etc/dpkg/dpkg.cfg.d/99mmdebstrap -
+rm /tmp/debian-chroot/etc/dpkg/dpkg.cfg.d/99mmdebstrap
+tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort > tar2.txt
 grep -v '^./usr/share/doc/.' tar1.txt | diff -u - tar2.txt
-rm -r /tmp/debian-unstable
+rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -648,16 +649,16 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-$CMD --mode=root --variant=apt --include=doc-debian unstable /tmp/debian-unstable $mirror
-rm /tmp/debian-unstable/usr/share/doc-base/debian-*
-rm -r /tmp/debian-unstable/usr/share/doc/debian
-rm -r /tmp/debian-unstable/usr/share/doc/doc-debian
-rm /tmp/debian-unstable/var/log/apt/eipp.log.xz
-rm /tmp/debian-unstable/var/lib/apt/extended_states
-rm /tmp/debian-unstable/var/lib/dpkg/info/doc-debian.list
-rm /tmp/debian-unstable/var/lib/dpkg/info/doc-debian.md5sums
-tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
-rm -r /tmp/debian-unstable
+$CMD --mode=root --variant=apt --include=doc-debian $DEFAULT_DIST /tmp/debian-chroot $mirror
+rm /tmp/debian-chroot/usr/share/doc-base/debian-*
+rm -r /tmp/debian-chroot/usr/share/doc/debian
+rm -r /tmp/debian-chroot/usr/share/doc/doc-debian
+rm /tmp/debian-chroot/var/log/apt/eipp.log.xz
+rm /tmp/debian-chroot/var/lib/apt/extended_states
+rm /tmp/debian-chroot/var/lib/dpkg/info/doc-debian.list
+rm /tmp/debian-chroot/var/lib/dpkg/info/doc-debian.md5sums
+tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
+rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -675,11 +676,11 @@ cat << 'SCRIPT' > customize.sh
 for d in sbin lib; do ln -s usr/\$d "\$1/\$d"; mkdir -p "\$1/usr/\$d"; done
 SCRIPT
 chmod +x customize.sh
-$CMD --mode=root --variant=apt --setup-hook='ln -s usr/bin "\$1/bin"; mkdir -p "\$1/usr/bin"' --setup-hook=./customize.sh unstable /tmp/debian-unstable $mirror
-tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort > tar2.txt
+$CMD --mode=root --variant=apt --setup-hook='ln -s usr/bin "\$1/bin"; mkdir -p "\$1/usr/bin"' --setup-hook=./customize.sh $DEFAULT_DIST /tmp/debian-chroot $mirror
+tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort > tar2.txt
 { sed -e 's/^\.\/bin\//.\/usr\/bin\//;s/^\.\/lib\//.\/usr\/lib\//;s/^\.\/sbin\//.\/usr\/sbin\//;' tar1.txt; echo ./bin; echo ./lib; echo ./sbin; } | sort -u | diff -u - tar2.txt
 rm customize.sh
-rm -r /tmp/debian-unstable
+rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -697,9 +698,9 @@ cat << 'SCRIPT' > customize.sh
 echo tzdata tzdata/Zones/Europe select Berlin | chroot "\$1" debconf-set-selections
 SCRIPT
 chmod +x customize.sh
-$CMD --mode=root --variant=apt --include=tzdata --essential-hook='echo tzdata tzdata/Areas select Europe | chroot "\$1" debconf-set-selections' --essential-hook=./customize.sh unstable /tmp/debian-unstable $mirror
-echo Europe/Berlin | cmp /tmp/debian-unstable/etc/timezone
-tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort \
+$CMD --mode=root --variant=apt --include=tzdata --essential-hook='echo tzdata tzdata/Areas select Europe | chroot "\$1" debconf-set-selections' --essential-hook=./customize.sh $DEFAULT_DIST /tmp/debian-chroot $mirror
+echo Europe/Berlin | cmp /tmp/debian-chroot/etc/timezone
+tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort \
 	| grep -v '^./etc/localtime' \
 	| grep -v '^./etc/timezone' \
 	| grep -v '^./usr/sbin/tzconfig' \
@@ -710,7 +711,7 @@ tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort \
 	| grep -v '^./var/lib/apt/extended_states$' \
 	| diff -u tar1.txt -
 rm customize.sh
-rm -r /tmp/debian-unstable
+rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -729,14 +730,14 @@ chroot "\$1" whoami > "\$1/output2"
 chroot "\$1" pwd >> "\$1/output2"
 SCRIPT
 chmod +x customize.sh
-$CMD --mode=root --variant=apt --customize-hook='chroot "\$1" sh -c "whoami; pwd" > "\$1/output1"' --customize-hook=./customize.sh unstable /tmp/debian-unstable $mirror
-printf "root\n/\n" | cmp /tmp/debian-unstable/output1
-printf "root\n/\n" | cmp /tmp/debian-unstable/output2
-rm /tmp/debian-unstable/output1
-rm /tmp/debian-unstable/output2
-tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
+$CMD --mode=root --variant=apt --customize-hook='chroot "\$1" sh -c "whoami; pwd" > "\$1/output1"' --customize-hook=./customize.sh $DEFAULT_DIST /tmp/debian-chroot $mirror
+printf "root\n/\n" | cmp /tmp/debian-chroot/output1
+printf "root\n/\n" | cmp /tmp/debian-chroot/output2
+rm /tmp/debian-chroot/output1
+rm /tmp/debian-chroot/output2
+tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
 rm customize.sh
-rm -r /tmp/debian-unstable
+rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -750,12 +751,12 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C.UTF-8
 ret=0
-$CMD --mode=root --variant=apt --customize-hook='chroot "\$1" sh -c "exit 1"' unstable /tmp/debian-unstable $mirror || ret=\$?
+$CMD --mode=root --variant=apt --customize-hook='chroot "\$1" sh -c "exit 1"' $DEFAULT_DIST /tmp/debian-chroot $mirror || ret=\$?
 if [ "\$ret" = 0 ]; then
 	echo expected failure but got exit \$ret
 	exit 1
 fi
-rm -r /tmp/debian-unstable
+rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -768,7 +769,7 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-setsid --wait $CMD --mode=root --variant=apt --customize-hook='touch done && sleep 10 && touch fail' unstable /tmp/debian-unstable $mirror &
+setsid --wait $CMD --mode=root --variant=apt --customize-hook='touch done && sleep 10 && touch fail' $DEFAULT_DIST /tmp/debian-chroot $mirror &
 pid=\$!
 while sleep 1; do [ -e done ] && break; done
 rm done
@@ -785,7 +786,7 @@ if [ "\$ret" = 0 ]; then
 	echo expected failure but got exit \$ret
 	exit 1
 fi
-rm -r /tmp/debian-unstable
+rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -798,9 +799,9 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-$CMD --mode=root --variant=apt --resolve-deps --merged-usr --no-merged-usr unstable /tmp/debian-unstable $mirror
-tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
-rm -r /tmp/debian-unstable
+$CMD --mode=root --variant=apt --resolve-deps --merged-usr --no-merged-usr $DEFAULT_DIST /tmp/debian-chroot $mirror
+tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
+rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -813,9 +814,9 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-$CMD --mode=root --variant=apt --verbose unstable /tmp/debian-unstable $mirror
-tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
-rm -r /tmp/debian-unstable
+$CMD --mode=root --variant=apt --verbose $DEFAULT_DIST /tmp/debian-chroot $mirror
+tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
+rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -828,9 +829,9 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-$CMD --mode=root --variant=apt --debug unstable /tmp/debian-unstable $mirror
-tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
-rm -r /tmp/debian-unstable
+$CMD --mode=root --variant=apt --debug $DEFAULT_DIST /tmp/debian-chroot $mirror
+tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
+rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -843,9 +844,9 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-$CMD --mode=root --variant=apt --quiet unstable /tmp/debian-unstable $mirror
-tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
-rm -r /tmp/debian-unstable
+$CMD --mode=root --variant=apt --quiet $DEFAULT_DIST /tmp/debian-chroot $mirror
+tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
+rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -858,14 +859,14 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-$CMD --mode=root --variant=apt --logfile=log unstable /tmp/debian-unstable $mirror
+$CMD --mode=root --variant=apt --logfile=log $DEFAULT_DIST /tmp/debian-chroot $mirror
 grep --quiet "I: running apt-get update..." log
 grep --quiet "I: downloading packages with apt..." log
 grep --quiet "I: extracting archives..." log
 grep --quiet "I: installing packages..." log
 grep --quiet "I: cleaning package lists and apt cache..." log
-tar -C /tmp/debian-unstable --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
-rm -r /tmp/debian-unstable
+tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
+rm -r /tmp/debian-chroot
 rm log
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
@@ -882,9 +883,9 @@ for variant in essential apt required minbase buildd important debootstrap - sta
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-$CMD --mode=root --variant=$variant unstable /tmp/unstable-chroot.tar $mirror
-tar -tf /tmp/unstable-chroot.tar | sort > "$variant.txt"
-rm /tmp/unstable-chroot.tar
+$CMD --mode=root --variant=$variant $DEFAULT_DIST /tmp/debian-chroot.tar $mirror
+tar -tf /tmp/debian-chroot.tar | sort > "$variant.txt"
+rm /tmp/debian-chroot.tar
 END
 	if [ "$HAVE_QEMU" = "yes" ]; then
 		./run_qemu.sh
@@ -930,14 +931,14 @@ export LC_ALL=C.UTF-8
 [ "$mode" = unshare ] && sysctl -w kernel.unprivileged_userns_clone=1
 prefix=
 [ "\$(id -u)" -eq 0 ] && prefix="runuser -u user --"
-\$prefix $CMD --mode=$mode --variant=$variant unstable /tmp/unstable-chroot.tar $mirror
+\$prefix $CMD --mode=$mode --variant=$variant $DEFAULT_DIST /tmp/debian-chroot.tar $mirror
 # in fakechroot mode, we use a fake ldconfig, so we have to
 # artificially add some files
-{ tar -tf /tmp/unstable-chroot.tar;
+{ tar -tf /tmp/debian-chroot.tar;
   [ "$mode" = "fakechroot" ] && printf "./etc/ld.so.cache\n./var/cache/ldconfig/\n";
   [ "$mode" = "fakechroot" ] && [ "$variant" != "essential" ] && printf "./etc/.pwd.lock\n";
 } | sort | diff -u "./$variant.txt" -
-rm /tmp/unstable-chroot.tar
+rm /tmp/debian-chroot.tar
 END
 		if [ "$HAVE_QEMU" = "yes" ]; then
 			./run_qemu.sh
@@ -956,12 +957,12 @@ export LC_ALL=C.UTF-8
 [ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1 && adduser --gecos user --disabled-password user
 prefix=
 [ "\$(id -u)" -eq 0 ] && prefix="runuser -u user --"
-\$prefix fakechroot fakeroot $CMD --mode=$mode --variant=$variant unstable /tmp/unstable-chroot.tar $mirror
-{ tar -tf /tmp/unstable-chroot.tar;
+\$prefix fakechroot fakeroot $CMD --mode=$mode --variant=$variant $DEFAULT_DIST /tmp/debian-chroot.tar $mirror
+{ tar -tf /tmp/debian-chroot.tar;
   printf "./etc/ld.so.cache\n./var/cache/ldconfig/\n";
   [ "$variant" != "essential" ] && printf "./etc/.pwd.lock\n";
 } | sort | diff -u "./$variant.txt" -
-rm /tmp/unstable-chroot.tar
+rm /tmp/debian-chroot.tar
 END
 			if [ "$HAVE_QEMU" = "yes" ]; then
 				./run_qemu.sh
@@ -1035,44 +1036,44 @@ export LC_ALL=C.UTF-8
 prefix=
 [ "\$(id -u)" -eq 0 ] && [ "$mode" != "root" ] && prefix="runuser -u user --"
 [ "$mode" = "fakechroot" ] && prefix="\$prefix fakechroot fakeroot"
-\$prefix $CMD --mode=$mode --variant=extract --include=doc-debian unstable /tmp/debian-unstable $mirror
+\$prefix $CMD --mode=$mode --variant=extract --include=doc-debian $DEFAULT_DIST /tmp/debian-chroot $mirror
 # delete contents of doc-debian
-rm /tmp/debian-unstable/usr/share/doc-base/debian-*
-rm -r /tmp/debian-unstable/usr/share/doc/debian
-rm -r /tmp/debian-unstable/usr/share/doc/doc-debian
+rm /tmp/debian-chroot/usr/share/doc-base/debian-*
+rm -r /tmp/debian-chroot/usr/share/doc/debian
+rm -r /tmp/debian-chroot/usr/share/doc/doc-debian
 # delete real files
-rm /tmp/debian-unstable/etc/apt/sources.list
-rm /tmp/debian-unstable/etc/fstab
-rm /tmp/debian-unstable/etc/hostname
-rm /tmp/debian-unstable/etc/resolv.conf
-rm /tmp/debian-unstable/var/lib/dpkg/status
-rm /tmp/debian-unstable/var/lib/dpkg/available
-rm /tmp/debian-unstable/var/cache/apt/archives/lock
-rm /tmp/debian-unstable/var/lib/dpkg/lock
-rm /tmp/debian-unstable/var/lib/dpkg/lock-frontend
-rm /tmp/debian-unstable/var/lib/apt/lists/lock
+rm /tmp/debian-chroot/etc/apt/sources.list
+rm /tmp/debian-chroot/etc/fstab
+rm /tmp/debian-chroot/etc/hostname
+rm /tmp/debian-chroot/etc/resolv.conf
+rm /tmp/debian-chroot/var/lib/dpkg/status
+rm /tmp/debian-chroot/var/lib/dpkg/available
+rm /tmp/debian-chroot/var/cache/apt/archives/lock
+rm /tmp/debian-chroot/var/lib/dpkg/lock
+rm /tmp/debian-chroot/var/lib/dpkg/lock-frontend
+rm /tmp/debian-chroot/var/lib/apt/lists/lock
 ## delete merged usr symlinks
-#rm /tmp/debian-unstable/libx32
-#rm /tmp/debian-unstable/lib64
-#rm /tmp/debian-unstable/lib32
-#rm /tmp/debian-unstable/sbin
-#rm /tmp/debian-unstable/bin
-#rm /tmp/debian-unstable/lib
+#rm /tmp/debian-chroot/libx32
+#rm /tmp/debian-chroot/lib64
+#rm /tmp/debian-chroot/lib32
+#rm /tmp/debian-chroot/sbin
+#rm /tmp/debian-chroot/bin
+#rm /tmp/debian-chroot/lib
 # delete ./dev (files might exist or not depending on the mode)
-rm -f /tmp/debian-unstable/dev/console
-rm -f /tmp/debian-unstable/dev/fd
-rm -f /tmp/debian-unstable/dev/full
-rm -f /tmp/debian-unstable/dev/null
-rm -f /tmp/debian-unstable/dev/ptmx
-rm -f /tmp/debian-unstable/dev/random
-rm -f /tmp/debian-unstable/dev/stderr
-rm -f /tmp/debian-unstable/dev/stdin
-rm -f /tmp/debian-unstable/dev/stdout
-rm -f /tmp/debian-unstable/dev/tty
-rm -f /tmp/debian-unstable/dev/urandom
-rm -f /tmp/debian-unstable/dev/zero
+rm -f /tmp/debian-chroot/dev/console
+rm -f /tmp/debian-chroot/dev/fd
+rm -f /tmp/debian-chroot/dev/full
+rm -f /tmp/debian-chroot/dev/null
+rm -f /tmp/debian-chroot/dev/ptmx
+rm -f /tmp/debian-chroot/dev/random
+rm -f /tmp/debian-chroot/dev/stderr
+rm -f /tmp/debian-chroot/dev/stdin
+rm -f /tmp/debian-chroot/dev/stdout
+rm -f /tmp/debian-chroot/dev/tty
+rm -f /tmp/debian-chroot/dev/urandom
+rm -f /tmp/debian-chroot/dev/zero
 # the rest should be empty directories that we can rmdir recursively
-find /tmp/debian-unstable -depth -print0 | xargs -0 rmdir
+find /tmp/debian-chroot -depth -print0 | xargs -0 rmdir
 END
 	if [ "$HAVE_QEMU" = "yes" ]; then
 		./run_qemu.sh
@@ -1091,40 +1092,40 @@ export LC_ALL=C.UTF-8
 [ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1 && adduser --gecos user --disabled-password user
 prefix=
 [ "\$(id -u)" -eq 0 ] && prefix="runuser -u user --"
-\$prefix $CMD --mode=chrootless --variant=custom --include=doc-debian unstable /tmp/debian-unstable $mirror
+\$prefix $CMD --mode=chrootless --variant=custom --include=doc-debian $DEFAULT_DIST /tmp/debian-chroot $mirror
 # delete contents of doc-debian
-rm /tmp/debian-unstable/usr/share/doc-base/debian-*
-rm -r /tmp/debian-unstable/usr/share/doc/debian
-rm -r /tmp/debian-unstable/usr/share/doc/doc-debian
+rm /tmp/debian-chroot/usr/share/doc-base/debian-*
+rm -r /tmp/debian-chroot/usr/share/doc/debian
+rm -r /tmp/debian-chroot/usr/share/doc/doc-debian
 # delete real files
-rm /tmp/debian-unstable/etc/apt/sources.list
-rm /tmp/debian-unstable/etc/fstab
-rm /tmp/debian-unstable/etc/hostname
-rm /tmp/debian-unstable/etc/resolv.conf
-rm /tmp/debian-unstable/var/lib/dpkg/status
-rm /tmp/debian-unstable/var/lib/dpkg/available
-rm /tmp/debian-unstable/var/cache/apt/archives/lock
-rm /tmp/debian-unstable/var/lib/dpkg/lock
-rm /tmp/debian-unstable/var/lib/dpkg/lock-frontend
-rm /tmp/debian-unstable/var/lib/apt/lists/lock
-rm /tmp/debian-unstable/var/lib/apt/extended_states
+rm /tmp/debian-chroot/etc/apt/sources.list
+rm /tmp/debian-chroot/etc/fstab
+rm /tmp/debian-chroot/etc/hostname
+rm /tmp/debian-chroot/etc/resolv.conf
+rm /tmp/debian-chroot/var/lib/dpkg/status
+rm /tmp/debian-chroot/var/lib/dpkg/available
+rm /tmp/debian-chroot/var/cache/apt/archives/lock
+rm /tmp/debian-chroot/var/lib/dpkg/lock
+rm /tmp/debian-chroot/var/lib/dpkg/lock-frontend
+rm /tmp/debian-chroot/var/lib/apt/lists/lock
+rm /tmp/debian-chroot/var/lib/apt/extended_states
 ## delete merged usr symlinks
-#rm /tmp/debian-unstable/libx32
-#rm /tmp/debian-unstable/lib64
-#rm /tmp/debian-unstable/lib32
-#rm /tmp/debian-unstable/sbin
-#rm /tmp/debian-unstable/bin
-#rm /tmp/debian-unstable/lib
+#rm /tmp/debian-chroot/libx32
+#rm /tmp/debian-chroot/lib64
+#rm /tmp/debian-chroot/lib32
+#rm /tmp/debian-chroot/sbin
+#rm /tmp/debian-chroot/bin
+#rm /tmp/debian-chroot/lib
 # in chrootless mode, there is more to remove
-rm /tmp/debian-unstable/var/log/apt/eipp.log.xz
-rm /tmp/debian-unstable/var/lib/dpkg/triggers/Lock
-rm /tmp/debian-unstable/var/lib/dpkg/triggers/Unincorp
-rm /tmp/debian-unstable/var/lib/dpkg/status-old
-rm /tmp/debian-unstable/var/lib/dpkg/info/format
-rm /tmp/debian-unstable/var/lib/dpkg/info/doc-debian.md5sums
-rm /tmp/debian-unstable/var/lib/dpkg/info/doc-debian.list
+rm /tmp/debian-chroot/var/log/apt/eipp.log.xz
+rm /tmp/debian-chroot/var/lib/dpkg/triggers/Lock
+rm /tmp/debian-chroot/var/lib/dpkg/triggers/Unincorp
+rm /tmp/debian-chroot/var/lib/dpkg/status-old
+rm /tmp/debian-chroot/var/lib/dpkg/info/format
+rm /tmp/debian-chroot/var/lib/dpkg/info/doc-debian.md5sums
+rm /tmp/debian-chroot/var/lib/dpkg/info/doc-debian.list
 # the rest should be empty directories that we can rmdir recursively
-find /tmp/debian-unstable -depth -print0 | xargs -0 rmdir
+find /tmp/debian-chroot -depth -print0 | xargs -0 rmdir
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -1158,13 +1159,13 @@ export LC_ALL=C.UTF-8
 prefix=
 [ "\$(id -u)" -eq 0 ] && [ "$mode" != "root" ] && prefix="runuser -u user --"
 [ "$mode" = "fakechroot" ] && prefix="\$prefix fakechroot fakeroot"
-\$prefix $CMD --mode=$mode --variant=apt --architectures=armhf unstable /tmp/unstable-chroot.tar $mirror
+\$prefix $CMD --mode=$mode --variant=apt --architectures=armhf $DEFAULT_DIST /tmp/debian-chroot.tar $mirror
 # we ignore differences between architectures by ignoring some files
 # and renaming others
 # in fakechroot mode, we use a fake ldconfig, so we have to
 # artificially add some files
 # in proot mode, some extra files are put there by proot
-{ tar -tf /tmp/unstable-chroot.tar \
+{ tar -tf /tmp/debian-chroot.tar \
 	| grep -v '^\./lib/ld-linux-armhf\.so\.3$' \
 	| grep -v '^\./lib/arm-linux-gnueabihf/ld-linux\.so\.3$' \
 	| grep -v '^\./lib/arm-linux-gnueabihf/ld-linux-armhf\.so\.3$' \
@@ -1184,7 +1185,7 @@ prefix=
 	| grep -v '^\./usr/share/man/man8/x86_64\.8\.gz$';
 	[ "$mode" = "proot" ] && printf "./etc/ld.so.preload\n";
 } | sort | diff -u - tar2.txt
-rm /tmp/unstable-chroot.tar
+rm /tmp/debian-chroot.tar
 END
 	if [ "$HAVE_QEMU" = "yes" ]; then
 		./run_qemu.sh
