@@ -1785,15 +1785,46 @@ sub main() {
 	error "invalid mode. Choose from " . (join ', ', @valid_modes);
     }
 
+    my $check_fakechroot_running = sub {
+	# test if we are inside fakechroot already
+	# We fork a child process because setting FAKECHROOT_DETECT seems to
+	# be an irreversible operation for fakechroot.
+	my $pid = open my $rfh, '-|' // error "failed to fork(): $!";
+	if ($pid == 0) {
+	    # with the FAKECHROOT_DETECT environment variable set, any program
+	    # execution will be replaced with the output "fakeroot [version]"
+	    $ENV{FAKECHROOT_DETECT} = 0;
+	    exec 'echo', 'If fakechroot is running, this will not be printed';
+	}
+	my $content = do { local $/; <$rfh> };
+	waitpid $pid, 0;
+	my $result = 0;
+	if ($? == 0 and $content =~ /^fakechroot \d\.\d+$/) {
+	    $result = 1;
+	}
+	return $result;
+    };
+
     # figure out the mode to use or test whether the chosen mode is legal
     if ($options->{mode} eq 'auto') {
-	if ($EFFECTIVE_USER_ID == 0) {
+	if (&{$check_fakechroot_running}()) {
+	    # if mmdebstrap is executed inside fakechroot, then we assume the
+	    # user expects fakechroot mode
+	    $options->{mode} = 'fakechroot';
+	} elsif ($EFFECTIVE_USER_ID == 0) {
+	    # if mmdebstrap is executed as root, we assume the user wants root
+	    # mode
 	    $options->{mode} = 'root';
 	} elsif (test_unshare(0)) {
+	    # otherwise, unshare mode is our best option if test_unshare()
+	    # succeeds
 	    $options->{mode} = 'unshare';
 	} elsif (system('fakechroot --version>/dev/null') == 0) {
-	    $options->{mode} = 'fakechroot';
+	    # the next fallback is fakechroot
+	    # exec ourselves again but within fakechroot
+	    exec 'fakechroot', 'fakeroot', $PROGRAM_NAME, @ARGVORIG;
 	} elsif (system('proot --version>/dev/null') == 0) {
+	    # and lastly, proot
 	    $options->{mode} = 'proot';
 	} else {
 	    error "unable to pick chroot mode automatically";
@@ -1808,19 +1839,7 @@ sub main() {
 	    error "need working proot binary";
 	}
     } elsif ($options->{mode} eq 'fakechroot') {
-	# test if we are inside fakechroot already
-	# We fork a child process because setting FAKECHROOT_DETECT seems to
-	# be an irreversible operation for fakechroot.
-	my $pid = open my $rfh, '-|' // error "failed to fork(): $!";
-	if ($pid == 0) {
-	    # with the FAKECHROOT_DETECT environment variable set, any program
-	    # execution will be replaced with the output "fakeroot [version]"
-	    $ENV{FAKECHROOT_DETECT} = 0;
-	    exec 'echo', 'If fakechroot is running, this will not be printed';
-	}
-	my $content = do { local $/; <$rfh> };
-	waitpid $pid, 0;
-	if ($? == 0 and $content =~ /^fakechroot \d\.\d+$/) {
+	if (&{$check_fakechroot_running}()) {
 	    # fakechroot is already running
 	} elsif (system('fakechroot --version>/dev/null') != 0) {
 	    error "need working fakechroot binary";
