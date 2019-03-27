@@ -246,7 +246,7 @@ if [ "$HAVE_QEMU" = "yes" ]; then
 	#   - it doesn't matter if the base system is from a different mirror timestamp
 	# procps is needed for /sbin/sysctl
 	tmpdir="$(mktemp -d)"
-	./mmdebstrap --variant=apt --architectures=amd64,armhf --mode=unshare \
+	./mmdebstrap --variant=apt --architectures=amd64,armhf \
 		--include=perl-doc,linux-image-amd64,systemd-sysv,perl,arch-test,fakechroot,fakeroot,mount,uidmap,proot,qemu-user-static,binfmt-support,qemu-user,dpkg-dev,mini-httpd,libdevel-cover-perl,debootstrap,libfakechroot:armhf,libfakeroot:armhf,procps,apt-cudf,aspcud \
 		$DEFAULT_DIST - "$mirror" > "$tmpdir/debian-chroot.tar"
 
