@@ -52,7 +52,7 @@ if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
 fi
 
 starttime=
-total=89
+total=90
 i=1
 
 print_header() {
@@ -370,6 +370,25 @@ adduser --gecos user --disabled-password user
 sysctl -w kernel.unprivileged_userns_clone=1
 runuser -u user -- $CMD --mode=unshare --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar.gz $mirror
 tar -tf /tmp/debian-chroot.tar.gz | sort | diff -u tar1.txt -
+rm /tmp/debian-chroot.tar.gz
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	echo "HAVE_QEMU != yes -- Skipping test..."
+fi
+
+print_header "mode=auto,variant=apt: test auto-mode without unshare capabilities"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+adduser --gecos user --disabled-password user
+sysctl -w kernel.unprivileged_userns_clone=0
+runuser -u user -- $CMD --mode=auto --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar.gz $mirror
+{ tar -tf /tmp/debian-chroot.tar.gz;
+  printf "./etc/ld.so.cache\n./var/cache/ldconfig/\n./etc/.pwd.lock\n";
+} | sort | diff -u tar1.txt -
 rm /tmp/debian-chroot.tar.gz
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
@@ -1195,8 +1214,6 @@ END
 		./run_null.sh
 	fi
 done
-
-# TODO: test if auto mode picks the right mode
 
 if [ "$HAVE_QEMU" = "yes" ]; then
 	guestfish add-ro shared/cover_db.img : run : mount /dev/sda / : tar-out / - \
