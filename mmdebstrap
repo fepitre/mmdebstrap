@@ -2609,6 +2609,14 @@ Example: Setup merged-/usr via symlinks
 
     --setup-hook='for d in bin sbin lib; do ln -s usr/$d "$1/$d"; mkdir -p "$1/usr/$d"; done'
 
+Example: Setup chroot for installing a sub-essential busybox-based chroot with
+--variant=custom --include=dpkg,busybox,libc-bin,base-files,base-passwd,debianutils
+
+    --setup-hook='mkdir -p "$1/bin"'
+    --setup-hook='for p in awk cat chmod chown cp diff echo env grep less ln mkdir mount rm rmdir sed sh sleep sort touch uname; do ln -s busybox "$1/bin/$p"; done'
+    --setup-hook='echo root:x:0:0:root:/root:/bin/sh > "$1/etc/passwd"'
+    --setup-hook='printf "root:x:0:\nmail:x:8:\nutmp:x:43:\n" > "$1/etc/group"'
+
 =item B<--essential-hook>=I<command>
 
 Execute arbitrary I<command>s after the Essential:yes packages have been

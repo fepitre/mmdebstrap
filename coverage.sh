@@ -52,7 +52,7 @@ if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
 fi
 
 starttime=
-total=90
+total=91
 i=1
 
 print_header() {
@@ -253,6 +253,7 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C.UTF-8
 $CMD --mode=root --variant=apt $DEFAULT_DIST /tmp/debian-chroot $mirror
+chroot /tmp/debian-chroot dpkg-query --showformat '\${binary:Package}\n' --show > pkglist.txt
 tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort > tar1.txt
 rm -r /tmp/debian-chroot
 END
@@ -496,7 +497,7 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C.UTF-8
 $CMD --mode=$defaultmode --variant=custom \
-    --include apt,base-files,base-passwd,bash,bsdutils,coreutils,dash,debianutils,diffutils,dpkg,findutils,gpgv,grep,gzip,hostname,init-system-helpers,libc-bin,login,mawk,ncurses-base,ncurses-bin,perl-base,sed,sysvinit-utils,tar,util-linux \
+    --include \$(cat pkglist.txt | tr '\n' ',') \
     --aptopt='APT::Solver "aspcud"' \
     $DEFAULT_DIST /tmp/debian-chroot.tar $mirror
 tar -tf /tmp/debian-chroot.tar | sort \
@@ -1152,6 +1153,49 @@ else
 	./run_null.sh
 fi
 
+print_header "mode=root,variant=custom: install busybox-based sub-essential system"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+$CMD --mode=root --variant=custom \
+    --include=dpkg,busybox,libc-bin,base-files,base-passwd,debianutils \
+    --setup-hook='mkdir -p "\$1/bin"' \
+    --setup-hook='for p in awk cat chmod chown cp diff echo env grep less ln mkdir mount rm rmdir sed sh sleep sort touch uname; do ln -s busybox "\$1/bin/\$p"; done' \
+    --setup-hook='echo root:x:0:0:root:/root:/bin/sh > "\$1/etc/passwd"' \
+    --setup-hook='printf "root:x:0:\nmail:x:8:\nutmp:x:43:\n" > "\$1/etc/group"' \
+    $DEFAULT_DIST /tmp/debian-chroot $mirror
+cat << FILE > expected
+base-files
+base-passwd
+busybox
+debianutils
+dpkg
+gcc-8-base:amd64
+libacl1:amd64
+libattr1:amd64
+libbz2-1.0:amd64
+libc-bin
+libc6:amd64
+libdebconfclient0:amd64
+libgcc1:amd64
+liblzma5:amd64
+libpcre3:amd64
+libselinux1:amd64
+mawk
+tar
+zlib1g:amd64
+FILE
+chroot /tmp/debian-chroot dpkg-query -f '\${binary:Package}\n' -W | diff -u - expected
+rm expected
+rm -r /tmp/debian-chroot
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	./run_null.sh SUDO
+fi
+
 # test foreign architecture with all modes
 # create directory in sudo mode
 
@@ -1233,4 +1277,4 @@ if [ -e shared/cover_db/runs ]; then
 	echo
 fi
 
-rm shared/tar1.txt shared/tar2.txt
+rm shared/tar1.txt shared/tar2.txt shared/pkglist.txt

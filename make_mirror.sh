@@ -160,7 +160,7 @@ END
 			--or --field=Priority important --or --field=Priority standard \
 			--or --field=Package build-essential \) )
 
-	pkgs="$(echo $pkgs) build-essential"
+	pkgs="$(echo $pkgs) build-essential busybox"
 
 	APT_CONFIG="$rootdir/etc/apt/apt.conf" apt-get --yes install $pkgs
 
