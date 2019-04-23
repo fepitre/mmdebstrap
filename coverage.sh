@@ -156,8 +156,6 @@ grep -v '^Priority: ' /tmp/debian-$dist-mm/var/lib/dpkg/status > status2
 diff -u status1 status2
 rm status1 status2
 rm /tmp/debian-$dist-debootstrap/var/lib/dpkg/status /tmp/debian-$dist-mm/var/lib/dpkg/status
-# this file is only created by apt 1.6 or newer
-rmdir /tmp/debian-$dist-mm/var/lib/apt/lists/auxfiles
 # debootstrap exposes the hosts's kernel version
 rm /tmp/debian-$dist-debootstrap/etc/apt/apt.conf.d/01autoremove-kernels \
 	/tmp/debian-$dist-mm/etc/apt/apt.conf.d/01autoremove-kernels

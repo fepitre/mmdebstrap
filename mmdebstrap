@@ -1667,17 +1667,17 @@ sub setup {
 
     # clean up temporary configuration file
     unlink "$options->{root}/etc/apt/apt.conf.d/00mmdebstrap" or error "failed to unlink /etc/apt/apt.conf.d/00mmdebstrap: $!";
-    # apt since 1.6 creates the auxfiles directory. If apt inside the chroot
-    # is older than that, then it will not know how to clean it.
-    if (-e "$options->{root}/var/lib/apt/lists/auxfiles") {
-	rmdir "$options->{root}/var/lib/apt/lists/auxfiles" or die "cannot rmdir /var/lib/apt/lists/auxfiles: $!";
-    }
-
     info "cleaning package lists and apt cache...";
     run_apt_progress({
 	    ARGV => ['apt-get', '--option', 'Dir::Etc::SourceList=/dev/null', 'update'],
 	});
     run_apt_progress({ ARGV => ['apt-get', 'clean'] });
+
+    # apt since 1.6 creates the auxfiles directory. If apt inside the chroot
+    # is older than that, then it will not know how to clean it.
+    if (-e "$options->{root}/var/lib/apt/lists/auxfiles") {
+	rmdir "$options->{root}/var/lib/apt/lists/auxfiles" or die "cannot rmdir /var/lib/apt/lists/auxfiles: $!";
+    }
 
     if (defined $options->{qemu} and $options->{mode} ne 'proot' and $options->{mode} ne 'fakechroot') {
 	unlink "$options->{root}/usr/bin/qemu-$options->{qemu}-static" or error "cannot unlink /usr/bin/qemu-$options->{qemu}-static: $!";
