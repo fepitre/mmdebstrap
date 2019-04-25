@@ -535,7 +535,7 @@ sub print_progress {
 }
 
 sub run_progress {
-    my ($get_exec, $line_handler, $line_has_error) = @_;
+    my ($get_exec, $line_handler, $line_has_error, $chdir) = @_;
     pipe my $rfh, my $wfh;
     my $got_signal = 0;
     my $ignore = sub {
@@ -568,6 +568,13 @@ sub run_progress {
 	# redirect stderr to stdout so that we can capture it
 	open(STDERR, '>&', STDOUT);
 	my @execargs = $get_exec->($fd);
+	# before apt 1.5, "apt-get update" attempted to chdir() into the
+	# working directory. This will fail if the current working directory
+	# is not accessible by the user (for example in unshare mode). See
+	# Debian bug #860738
+	if (defined $chdir) {
+	    chdir $chdir or error "failed chdir() to $chdir: $!";
+	}
 	exec { $execargs[0] } @execargs or error 'cannot exec() ' . (join ' ', @execargs);
     }
     close $wfh;
@@ -687,7 +694,7 @@ sub run_apt_progress {
 	    return $2;
 	}
     };
-    run_progress $get_exec, $line_handler, $line_has_error;
+    run_progress $get_exec, $line_handler, $line_has_error, $options->{CHDIR};
 }
 
 sub run_chroot(&$) {
@@ -1139,7 +1146,7 @@ sub setup {
     run_hooks('setup', $options);
 
     info "running apt-get update...";
-    run_apt_progress({ ARGV => ['apt-get', 'update'] });
+    run_apt_progress({ ARGV => ['apt-get', 'update'], CHDIR => $options->{root} });
 
     # check if anything was downloaded at all
     {
@@ -1670,8 +1677,9 @@ sub setup {
     info "cleaning package lists and apt cache...";
     run_apt_progress({
 	    ARGV => ['apt-get', '--option', 'Dir::Etc::SourceList=/dev/null', 'update'],
+	    CHDIR => $options->{root},
 	});
-    run_apt_progress({ ARGV => ['apt-get', 'clean'] });
+    run_apt_progress({ ARGV => ['apt-get', 'clean'], CHDIR => $options->{root} });
 
     # apt since 1.6 creates the auxfiles directory. If apt inside the chroot
     # is older than that, then it will not know how to clean it.
