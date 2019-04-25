@@ -1509,6 +1509,11 @@ sub setup {
 			error "cannot find $qemubin";
 		    }
 		    copy $qemubin, "$options->{root}/$qemubin" or error "cannot copy $qemubin: $!";
+		    # File::Copy does not retain permissions but on some
+		    # platforms (like Travis CI) the binfmt interpreter must
+		    # have the executable bit set or otherwise execve will
+		    # fail with EACCES
+		    chmod 0755, "$options->{root}/$qemubin" or error "cannot chmod $qemubin: $!";
 		} else {
 		    error "unknown mode: $options->{mode}";
 		}
