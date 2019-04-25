@@ -2384,6 +2384,11 @@ sub main() {
 	    # Since this is still inside the unshared namespace, there is
 	    # no risk of removing anything important.
 	    $pid = get_unshare_cmd {
+		# File::Path will produce the error "cannot stat initial
+		# working directory" if the working directory cannot be
+		# accessed by the unprivileged unshared user. Thus, we first
+		# navigate to the parent of the root directory.
+		chdir "$options->{root}/.." or error "unable to chdir() to parent directory of $options->{root}: $!";
 		remove_tree($options->{root}, {error => \my $err});
 		if (@$err) {
 		    for my $diag (@$err) {
