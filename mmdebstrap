@@ -681,14 +681,18 @@ sub run_apt_progress {
 	    '-oDpkg::Use-Pty=false',
 	    @debs
 	)};
-    my $line_has_error = sub {
-	# apt-get doesn't report a non-zero exit if the update failed. Thus, we
-	# have to parse its output. See #778357, #776152, #696335 and #745735
-	if ($_[0] =~ /^(W: |Err:)/) {
-	    return 1;
-	}
-	return 0;
-    };
+    my $line_has_error = sub { return 0; };
+    if ($options->{FIND_APT_WARNINGS}) {
+	$line_has_error = sub {
+	    # apt-get doesn't report a non-zero exit if the update failed.
+	    # Thus, we have to parse its output. See #778357, #776152, #696335
+	    # and #745735
+	    if ($_[0] =~ /^(W: |Err:)/) {
+		return 1;
+	    }
+	    return 0;
+	};
+    }
     my $line_handler = sub {
 	if ($_[0] =~ /(pmstatus|dlstatus):[^:]+:(\d+\.\d+):.*/) {
 	    return $2;
@@ -1148,7 +1152,9 @@ sub setup {
     run_hooks('setup', $options);
 
     info "running apt-get update...";
-    run_apt_progress({ ARGV => ['apt-get', 'update'], CHDIR => $options->{root} });
+    run_apt_progress({ ARGV => ['apt-get', 'update'],
+	    CHDIR => $options->{root},
+	    FIND_APT_WARNINGS => 1 });
 
     # check if anything was downloaded at all
     {
