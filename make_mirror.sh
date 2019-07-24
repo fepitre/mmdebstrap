@@ -78,10 +78,20 @@ get_newaptnames() {
 	if [ ! -e "$1/$2" ]; then
 		return
 	fi
+	# skip empty files by trying to uncompress the first byte of the payload
+	if [ "$(gzip -dc "$1/$2" | head -c1 | wc -c)" -eq 0 ]; then
+		return
+	fi
 	gzip -dc "$1/$2" \
-		| grep-dctrl --no-field-names --show-field=Package,Version,Architecture,Filename,MD5sum '' \
+		| grep-dctrl --no-field-names --show-field=Package,Version,Architecture,Filename,SHA256 '' \
 		| paste -sd "     \n" \
-		| while read name ver arch fname md5; do
+		| while read name ver arch fname hash; do
+			# sanity check for the hash because sometimes the
+			# archive switches the hash algorithm
+			if [ "${#hash}" -ne 64 ]; then
+				echo "expected hash length of 64 but got ${#hash} for: $hash" >&2
+				exit 1
+			fi
 			dir="${fname%/*}"
 			# apt stores deb files with the colon encoded as %3a while
 			# mirrors do not contain the epoch at all #645895
@@ -89,7 +99,7 @@ get_newaptnames() {
 			aptname="$rootdir/var/cache/apt/archives/${name}_${ver}_${arch}.deb"
 			if [ -e "$aptname" ]; then
 				# make sure that we found the right file by checking its hash
-				echo "$md5  $aptname" | md5sum --check >&2
+				echo "$hash  $aptname" | sha256sum --check >&2
 				mkdir -p "$1/$dir"
 				# since we move hardlinks around, the same hardlink might've been
 				# moved already into the same place by another distribution.
