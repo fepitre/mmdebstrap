@@ -2727,8 +2727,8 @@ This mode automatically selects a fitting mode. If the effective user id is the
 one of the superuser, then the B<sudo> mode is chosen. Otherwise, the
 B<unshare> mode is picked if the system has the sysctl
 C<kernel.unprivileged_userns_clone> set to C<1>. Should that not be the case
-and if the proot binary exists, the B<proot> mode is chosen. Lastly, the
-B<fakechroot> is used if the fakechroot binary exists.
+and if the fakechroot binary exists, the B<fakechroot> mode is chosen. Lastly,
+the B<proot> mode is used if the proot binary exists.
 
 =item B<sudo>, B<root>
 
