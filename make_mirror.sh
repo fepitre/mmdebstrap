@@ -229,6 +229,7 @@ for nativearch in "$arch1" "$arch2"; do
 deb [arch=$nativearch] $mirror $dist $components
 END
 		if [ "$dist" = "stable" ]; then
+			# starting wit bullseye, stable/updates becomes stable-security
 			cat << END | update_cache "$dist" "$nativearch"
 deb [arch=$nativearch] $mirror $dist $components
 deb [arch=$nativearch] $mirror stable-updates main

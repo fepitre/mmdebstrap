@@ -26,12 +26,8 @@ fi
 notfound=0
 for dist in stable testing unstable; do
 	for variant in minbase buildd -; do
-		# skip because of different userids for apt/systemd
-		if [ "$dist" = 'stable' ] && [ "$variant" = '-' ]; then
-			continue
-		fi
 		# skip because of #917386 and #917407
-		if [ "$dist" = 'unstable' -o "$dist" = 'testing' ] && [ "$variant" = '-' ]; then
+		if [ "$variant" = '-' ]; then
 			continue
 		fi
 
@@ -94,12 +90,8 @@ mirror="http://127.0.0.1/debian"
 
 for dist in stable testing unstable; do
 	for variant in minbase buildd -; do
-		# skip because of different userids for apt/systemd
-		if [ "$dist" = 'stable' ] && [ "$variant" = '-' ]; then
-			continue
-		fi
 		# skip because of #917386 and #917407
-		if [ "$dist" = 'unstable' -o "$dist" = 'testing' ] && [ "$variant" = '-' ]; then
+		if [ "$variant" = '-' ]; then
 			continue
 		fi
 		print_header "mode=root,variant=$variant: check against debootstrap $dist"
@@ -180,10 +172,6 @@ fi
 rm /tmp/debian-$dist-mm/var/cache/apt/archives/lock
 rm /tmp/debian-$dist-mm/var/lib/apt/extended_states
 rm /tmp/debian-$dist-mm/var/lib/apt/lists/lock
-# introduced in dpkg 1.19.1
-if [ "$dist" = "stable" ]; then
-	rm /tmp/debian-$dist-mm/var/lib/dpkg/lock-frontend
-fi
 
 # the list of shells might be sorted wrongly
 for f in "/tmp/debian-$dist-debootstrap/etc/shells" "/tmp/debian-$dist-mm/etc/shells"; do
@@ -614,6 +602,10 @@ rm /tmp/debian-chroot/var/lib/apt/extended_states
 rm /tmp/debian-chroot/var/lib/dpkg/info/gcc-8-base:armhf.list
 rm /tmp/debian-chroot/var/lib/dpkg/info/gcc-8-base:armhf.md5sums
 rm /tmp/debian-chroot/usr/share/doc/gcc-8-base/README.Debian.armhf.gz
+rm /tmp/debian-chroot/usr/share/doc/gcc-8-base/TODO.Debian
+rm /tmp/debian-chroot/usr/share/doc/gcc-8-base/changelog.Debian.gz
+rm /tmp/debian-chroot/usr/share/doc/gcc-8-base/copyright
+rmdir /tmp/debian-chroot/usr/share/doc/gcc-8-base/
 rmdir /tmp/debian-chroot/usr/lib/gcc/arm-linux-gnueabihf/8/
 rmdir /tmp/debian-chroot/usr/lib/gcc/arm-linux-gnueabihf/
 tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
@@ -1169,7 +1161,7 @@ base-passwd
 busybox
 debianutils
 dpkg
-gcc-8-base:amd64
+gcc-9-base:amd64
 libacl1:amd64
 libattr1:amd64
 libbz2-1.0:amd64
@@ -1178,7 +1170,7 @@ libc6:amd64
 libdebconfclient0:amd64
 libgcc1:amd64
 liblzma5:amd64
-libpcre3:amd64
+libpcre2-8-0:amd64
 libselinux1:amd64
 mawk
 tar
