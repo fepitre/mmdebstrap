@@ -1015,6 +1015,14 @@ sub setup {
 	close $fh;
     }
 
+    # /var/lib/dpkg/cmethopt is used by dselect
+    # see #930788
+    {
+	open my $fh, '>', "$options->{root}/var/lib/dpkg/cmethopt" or error "failed to open(): $!";
+	print $fh "apt apt\n";
+	close $fh;
+    }
+
     if (scalar @{$options->{foreignarchs}} > 0) {
 	open my $fh, '>', "$options->{root}/var/lib/dpkg/arch" or error "cannot open /var/lib/dpkg/arch: $!";
 	print $fh "$options->{nativearch}\n";

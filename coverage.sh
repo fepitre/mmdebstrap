@@ -134,8 +134,7 @@ rm /tmp/debian-$dist-debootstrap/var/cache/debconf/templates.dat-old \
 rm /tmp/debian-$dist-debootstrap/var/lib/dpkg/status-old \
 	/tmp/debian-$dist-mm/var/lib/dpkg/status-old
 # remove dpkg files
-rm /tmp/debian-$dist-debootstrap/var/lib/dpkg/available \
-	/tmp/debian-$dist-debootstrap/var/lib/dpkg/cmethopt
+rm /tmp/debian-$dist-debootstrap/var/lib/dpkg/available
 touch /tmp/debian-$dist-debootstrap/var/lib/dpkg/available
 # since we installed packages directly from the .deb files, Priorities differ
 # thus we first check for equality and then remove the files
@@ -1061,6 +1060,7 @@ rm /tmp/debian-chroot/var/lib/dpkg/available
 rm /tmp/debian-chroot/var/cache/apt/archives/lock
 rm /tmp/debian-chroot/var/lib/dpkg/lock
 rm /tmp/debian-chroot/var/lib/dpkg/lock-frontend
+rm /tmp/debian-chroot/var/lib/dpkg/cmethopt
 rm /tmp/debian-chroot/var/lib/apt/lists/lock
 ## delete merged usr symlinks
 #rm /tmp/debian-chroot/libx32
@@ -1117,6 +1117,7 @@ rm /tmp/debian-chroot/var/lib/dpkg/available
 rm /tmp/debian-chroot/var/cache/apt/archives/lock
 rm /tmp/debian-chroot/var/lib/dpkg/lock
 rm /tmp/debian-chroot/var/lib/dpkg/lock-frontend
+rm /tmp/debian-chroot/var/lib/dpkg/cmethopt
 rm /tmp/debian-chroot/var/lib/apt/lists/lock
 rm /tmp/debian-chroot/var/lib/apt/extended_states
 ## delete merged usr symlinks
