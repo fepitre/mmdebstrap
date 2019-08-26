@@ -588,25 +588,34 @@ else
 	./run_null.sh
 fi
 
-print_header "mode=root,variant=apt: test --include=libc6:armhf"
+# to test foreign architecture package installation we choose a package which
+#   - is not part of the native installation set
+#   - does not have any dependencies
+#   - installs only few files
+#   - doesn't change its name regularly (like gcc-*-base)
+print_header "mode=root,variant=apt: test --include=libmagic-mgc:armhf"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-$CMD --mode=root --variant=apt --architectures=amd64,armhf --include=gcc-8-base:armhf $DEFAULT_DIST /tmp/debian-chroot $mirror
+$CMD --mode=root --variant=apt --architectures=amd64,armhf --include=libmagic-mgc:armhf $DEFAULT_DIST /tmp/debian-chroot $mirror
 { echo "amd64"; echo "armhf"; } | cmp /tmp/debian-chroot/var/lib/dpkg/arch -
 rm /tmp/debian-chroot/var/lib/dpkg/arch
 rm /tmp/debian-chroot/var/log/apt/eipp.log.xz
 rm /tmp/debian-chroot/var/lib/apt/extended_states
-rm /tmp/debian-chroot/var/lib/dpkg/info/gcc-8-base:armhf.list
-rm /tmp/debian-chroot/var/lib/dpkg/info/gcc-8-base:armhf.md5sums
-rm /tmp/debian-chroot/usr/share/doc/gcc-8-base/README.Debian.armhf.gz
-rm /tmp/debian-chroot/usr/share/doc/gcc-8-base/TODO.Debian
-rm /tmp/debian-chroot/usr/share/doc/gcc-8-base/changelog.Debian.gz
-rm /tmp/debian-chroot/usr/share/doc/gcc-8-base/copyright
-rmdir /tmp/debian-chroot/usr/share/doc/gcc-8-base/
-rmdir /tmp/debian-chroot/usr/lib/gcc/arm-linux-gnueabihf/8/
-rmdir /tmp/debian-chroot/usr/lib/gcc/arm-linux-gnueabihf/
+rm /tmp/debian-chroot/var/lib/dpkg/info/libmagic-mgc.list
+rm /tmp/debian-chroot/var/lib/dpkg/info/libmagic-mgc.md5sums
+rm /tmp/debian-chroot/usr/lib/file/magic.mgc
+rm /tmp/debian-chroot/usr/share/doc/libmagic-mgc/README.Debian
+rm /tmp/debian-chroot/usr/share/doc/libmagic-mgc/changelog.Debian.gz
+rm /tmp/debian-chroot/usr/share/doc/libmagic-mgc/changelog.gz
+rm /tmp/debian-chroot/usr/share/doc/libmagic-mgc/copyright
+rm /tmp/debian-chroot/usr/share/file/magic.mgc
+rm /tmp/debian-chroot/usr/share/misc/magic.mgc
+rmdir /tmp/debian-chroot/usr/share/doc/libmagic-mgc/
+rmdir /tmp/debian-chroot/usr/share/file/magic/
+rmdir /tmp/debian-chroot/usr/share/file/
+rmdir /tmp/debian-chroot/usr/lib/file/
 tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
 rm -r /tmp/debian-chroot
 END
