@@ -48,7 +48,7 @@ if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
 fi
 
 starttime=
-total=91
+total=92
 i=1
 
 print_header() {
@@ -1144,6 +1144,61 @@ rm /tmp/debian-chroot/var/lib/dpkg/status-old
 rm /tmp/debian-chroot/var/lib/dpkg/info/format
 rm /tmp/debian-chroot/var/lib/dpkg/info/doc-debian.md5sums
 rm /tmp/debian-chroot/var/lib/dpkg/info/doc-debian.list
+# the rest should be empty directories that we can rmdir recursively
+find /tmp/debian-chroot -depth -print0 | xargs -0 rmdir
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	./run_null.sh
+fi
+
+print_header "mode=chrootless,variant=custom: install libmagic-mgc on armhf"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+[ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1 && adduser --gecos user --disabled-password user
+prefix=
+[ "\$(id -u)" -eq 0 ] && prefix="runuser -u user --"
+\$prefix $CMD --mode=chrootless --variant=custom --architectures=armhf --include=libmagic-mgc $DEFAULT_DIST /tmp/debian-chroot $mirror
+# delete contents of libmagic-mgc
+rm /tmp/debian-chroot/usr/lib/file/magic.mgc
+rm /tmp/debian-chroot/usr/share/doc/libmagic-mgc/README.Debian
+rm /tmp/debian-chroot/usr/share/doc/libmagic-mgc/changelog.Debian.gz
+rm /tmp/debian-chroot/usr/share/doc/libmagic-mgc/changelog.gz
+rm /tmp/debian-chroot/usr/share/doc/libmagic-mgc/copyright
+rm /tmp/debian-chroot/usr/share/file/magic.mgc
+rm /tmp/debian-chroot/usr/share/misc/magic.mgc
+# delete real files
+rm /tmp/debian-chroot/etc/apt/sources.list
+rm /tmp/debian-chroot/etc/fstab
+rm /tmp/debian-chroot/etc/hostname
+rm /tmp/debian-chroot/etc/resolv.conf
+rm /tmp/debian-chroot/var/lib/dpkg/status
+rm /tmp/debian-chroot/var/lib/dpkg/available
+rm /tmp/debian-chroot/var/cache/apt/archives/lock
+rm /tmp/debian-chroot/var/lib/dpkg/lock
+rm /tmp/debian-chroot/var/lib/dpkg/lock-frontend
+rm /tmp/debian-chroot/var/lib/dpkg/cmethopt
+rm /tmp/debian-chroot/var/lib/apt/lists/lock
+rm /tmp/debian-chroot/var/lib/apt/extended_states
+## delete merged usr symlinks
+#rm /tmp/debian-chroot/libx32
+#rm /tmp/debian-chroot/lib64
+#rm /tmp/debian-chroot/lib32
+#rm /tmp/debian-chroot/sbin
+#rm /tmp/debian-chroot/bin
+#rm /tmp/debian-chroot/lib
+# in chrootless mode, there is more to remove
+rm /tmp/debian-chroot/var/log/apt/eipp.log.xz
+rm /tmp/debian-chroot/var/lib/dpkg/arch
+rm /tmp/debian-chroot/var/lib/dpkg/triggers/Lock
+rm /tmp/debian-chroot/var/lib/dpkg/triggers/Unincorp
+rm /tmp/debian-chroot/var/lib/dpkg/status-old
+rm /tmp/debian-chroot/var/lib/dpkg/info/format
+rm /tmp/debian-chroot/var/lib/dpkg/info/libmagic-mgc.md5sums
+rm /tmp/debian-chroot/var/lib/dpkg/info/libmagic-mgc.list
 # the rest should be empty directories that we can rmdir recursively
 find /tmp/debian-chroot -depth -print0 | xargs -0 rmdir
 END
