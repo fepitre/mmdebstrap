@@ -1232,6 +1232,7 @@ prefix=
 	| grep -v '^\./lib/ld-linux-armhf\.so\.3$' \
 	| grep -v '^\./lib/arm-linux-gnueabihf/ld-linux\.so\.3$' \
 	| grep -v '^\./lib/arm-linux-gnueabihf/ld-linux-armhf\.so\.3$' \
+	| grep -v '^\./usr/share/doc/[^/]\+/changelog\.Debian\.armhf\.gz$' \
 	| sed 's/arm-linux-gnueabihf/x86_64-linux-gnu/' \
 	| sed 's/armhf/amd64/';
 	[ "$mode" = "fakechroot" ] && printf "./etc/ld.so.cache\n./var/cache/ldconfig/\n./etc/.pwd.lock\n";
@@ -1244,6 +1245,7 @@ prefix=
 	| grep -v '^\./lib/x86_64-linux-gnu/ld-linux-x86-64\.so\.2$' \
 	| grep -v '^\./lib/x86_64-linux-gnu/libmvec-2\.[0-9]\+\.so$' \
 	| grep -v '^\./lib/x86_64-linux-gnu/libmvec\.so\.1$' \
+	| grep -v '^\./usr/share/doc/[^/]\+/changelog\.Debian\.amd64\.gz$' \
 	| grep -v '^\./usr/share/man/man8/i386\.8\.gz$' \
 	| grep -v '^\./usr/share/man/man8/x86_64\.8\.gz$';
 	[ "$mode" = "proot" ] && printf "./etc/ld.so.preload\n";
