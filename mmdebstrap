@@ -1708,7 +1708,7 @@ sub setup {
 	rmdir "$options->{root}/var/lib/apt/lists/auxfiles" or die "cannot rmdir /var/lib/apt/lists/auxfiles: $!";
     }
 
-    if (defined $options->{qemu} and $options->{mode} ne 'proot' and $options->{mode} ne 'fakechroot') {
+    if (defined $options->{qemu} and any { $_ eq $options->{mode} } ('root', 'unshare')) {
 	unlink "$options->{root}/usr/bin/qemu-$options->{qemu}-static" or error "cannot unlink /usr/bin/qemu-$options->{qemu}-static: $!";
     }
 
