@@ -550,12 +550,13 @@ else
 	./run_null.sh
 fi
 
-print_header "mode=$defaultmode,variant=apt: no mirror but data on stdin"
+print_header "mode=$defaultmode,variant=apt: automatic mirror from suite"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-echo "deb $mirror $DEFAULT_DIST main" | $CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar
+echo "127.0.0.1 deb.debian.org" >> /etc/hosts
+$CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar
 tar -tf /tmp/debian-chroot.tar | sort | diff -u tar1.txt -
 rm /tmp/debian-chroot.tar
 END

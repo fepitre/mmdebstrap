@@ -1998,23 +1998,17 @@ sub main() {
 	}
 
 	my $sourceslist = '';
-	my $stdindata = '';
-	# make sure that we only attempt to read from STDIN if it's *not*
-	# connected to the terminal (because we don't expect the user to type
-	# the sources.list file
-	if (! -t STDIN) {
-	    info "Reading sources.list from standard input...";
-	    $stdindata = do { local $/; <STDIN> };
-	}
 	if (! defined $suite) {
 	    # If no suite was specified, then the whole sources.list has to
 	    # come from standard input
-	    $sourceslist .= $stdindata;
+	    info "Reading sources.list from standard input...";
+	    $sourceslist = do { local $/; <STDIN> };
 	} else {
 	    if (scalar @ARGV > 0) {
 		for my $arg (@ARGV) {
 		    if ($arg eq '-') {
-			$sourceslist .= $stdindata;
+			info "Reading sources.list from standard input...";
+			$sourceslist .= do { local $/; <STDIN> };
 		    } elsif ($arg =~ /^deb(-src)? /) {
 			$sourceslist .= "$arg\n";
 		    } elsif ($arg =~ /:\/\//) {
@@ -2029,15 +2023,6 @@ sub main() {
 			error "invalid mirror: $arg";
 		    }
 		}
-		# if there was no explicit '-' mirror listed and something was
-		# read on standard input, then just append it to the end
-		if (none { $_ eq '-' } @ARGV) {
-		    # if nothing was read on standard input then nothing will
-		    # be appended
-		    $sourceslist .= $stdindata;
-		}
-	    } elsif ($stdindata ne '') {
-		$sourceslist .= $stdindata;
 	    } else {
 		# FIXME: change default mirror depending on $suite
 		#        (for derivatives)
@@ -2465,27 +2450,23 @@ section B<DEBOOTSTRAP>). In contrast to debootstrap it uses apt to resolve
 dependencies and is thus able to use more than one mirror and resolve more
 complex dependencies.
 
-If no I<MIRROR> option is provided, L<http://deb.debian.org/debian> is used,
-except if data was given on standard input in which case the lines read from
-there are used as the content of the chroot's sources.list file. If I<SUITE>
-is a stable release name and no I<MIRROR> is specified, then mirrors for
-updates and security are automatically added. If a I<MIRROR> option starts
-with "deb " or "deb-src " then it is used as a one-line-style format entry for
-apt's sources.list inside the chroot.  If a I<MIRROR> option contains a "://"
-then it is interpreted as a mirror URI and the apt line inside the chroot is
-assembled as "deb [arch=A] B C D" where A is the host's native architecture, B
-is the I<MIRROR>, C is the given I<SUITE> and D is the components given via
-B<--components> (defaults to "main"). If a I<MIRROR> option happens to be an
-existing file, then its contents are pasted into the chroot's sources.list.
-This can be used to supply a deb822 style sources.list. If I<MIRROR> is C<->
-then standard input is pasted into the chroot's sources.list. If there was
-data on standard input but no C<-> mirror was listed, the lines read from
-standard input will be appended to the end of the chroot's sources.list. More
-than one mirror can be specified and are appended to the chroot's sources.list
-in the given order. If any mirror contains a https URI, then the packages
-apt-transport-https and ca-certificates will be installed inside the chroot.
-If any mirror contains a tor+xxx URI, then the apt-transport-tor package will
-be installed inside the chroot.
+If no I<MIRROR> option is provided, L<http://deb.debian.org/debian> is used.
+If I<SUITE> is a stable release name and no I<MIRROR> is specified, then
+mirrors for updates and security are automatically added. If a I<MIRROR>
+option starts with "deb " or "deb-src " then it is used as a one-line-style
+format entry for apt's sources.list inside the chroot.  If a I<MIRROR> option
+contains a "://" then it is interpreted as a mirror URI and the apt line
+inside the chroot is assembled as "deb [arch=A] B C D" where A is the host's
+native architecture, B is the I<MIRROR>, C is the given I<SUITE> and D is the
+components given via B<--components> (defaults to "main"). If a I<MIRROR>
+option happens to be an existing file, then its contents are pasted into the
+chroot's sources.list.  This can be used to supply a deb822 style
+sources.list. If I<MIRROR> is C<-> then standard input is pasted into the
+chroot's sources.list.  More than one mirror can be specified and are appended
+to the chroot's sources.list in the given order. If any mirror contains a
+https URI, then the packages apt-transport-https and ca-certificates will be
+installed inside the chroot.  If any mirror contains a tor+xxx URI, then the
+apt-transport-tor package will be installed inside the chroot.
 
 The optional I<TARGET> argument can either be the path to a directory, the
 path to a tarball filename or C<->. If I<TARGET> ends with C<.tar>, or with
