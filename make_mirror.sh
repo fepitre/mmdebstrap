@@ -12,7 +12,19 @@ set -eu
 if [ -e "./shared/cache.A" ] && [ -e "./shared/cache.B" ]; then
 	echo "both ./shared/cache.A and ./shared/cache.B exist" >&2
 	echo "was a former run of the script aborted?" >&2
-	echo "cache symlink points to $(readlink ./shared/cache)" >&2
+	if [ -e ./shared/cache ]; then
+		echo "cache symlink points to $(readlink ./shared/cache)" >&2
+		case "$(readlink ./shared/cache)" in
+			cache.A)
+				echo "maybe rm -r ./shared/cache.B" >&2
+				;;
+			cache.B)
+				echo "maybe rm -r ./shared/cache.A" >&2
+				;;
+			*)
+				echo "unexpected" >&2
+		esac
+	fi
 	exit 1
 fi
 
