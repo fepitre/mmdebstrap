@@ -2697,6 +2697,7 @@ Example: Preparing a chroot for use with autopkgtest
     --customize-hook='chroot "$1" useradd --home-dir /home/user --create-home user'
     --customize-hook='chroot "$1" passwd --delete user'
     --customize-hook='echo host > "$1/etc/hostname"'
+    --customize-hook='echo "127.0.0.1 localhost host" > "$1/etc/hosts"'
     --customize-hook=/usr/share/autopkgtest/setup-commands/setup-testbed
 
 =end comment
