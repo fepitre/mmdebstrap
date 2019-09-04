@@ -1300,6 +1300,11 @@ sub setup {
 	close $pipe_apt;
 	$? == 0 or error "apt-get indextargets failed: $?";
 
+	debug "Identified the following Essential:yes packages:";
+	foreach my $pkg (sort keys %ess_pkgs) {
+	    debug "   $pkg";
+	}
+
 	info "downloading packages with apt...";
 	run_apt_progress({
 		ARGV => ['apt-get', '--yes',
@@ -1359,11 +1364,13 @@ sub setup {
 	    my $pid1 = fork() // error "fork() failed: $!";
 	    if ($pid1 == 0) {
 		open(STDOUT, '>&', $wfh);
+		debug("running dpkg-deb --fsys-tarfile $options->{root}/$deb");
 		exec 'dpkg-deb', '--fsys-tarfile', "$options->{root}/$deb";
 	    }
 	    my $pid2 = fork() // error "fork() failed: $!";
 	    if ($pid2 == 0) {
 		open(STDIN, '<&', $rfh);
+		debug("running tar -C $options->{root} --keep-directory-symlink --extract --file -");
 		exec 'tar', '-C', $options->{root}, '--keep-directory-symlink', '--extract', '--file', '-';
 	    }
 	    waitpid($pid1, 0);
