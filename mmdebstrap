@@ -2752,7 +2752,7 @@ by the _apt user, then apt sandboxing will be automatically disabled.
 
 =item B<unshare>
 
-This mode uses Linux user namespaces to allow unpriviliged use of chroot and
+This mode uses Linux user namespaces to allow unprivileged use of chroot and
 creation of files that appear to be owned by the superuser inside the unshared
 namespace. A directory chroot created with this mode will end up with wrong
 permissions. Choose to create a tarball instead.
