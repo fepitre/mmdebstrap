@@ -2609,7 +2609,9 @@ be the only ones that get either extracted or installed by dpkg, respectively.
 For all other variants, apt is used to install the additional packages. The
 B<essential> variant does not include apt and thus, the include option will
 only work when the B<chrootless> mode is selected and thus apt from the outside
-can be used.
+can be used. Package names are directly passed to apt and thus, you can use apt
+features like C<pkg/suite>, C<pkg=version>, C<pkg-> or use a glob or regex for
+C<pkg>. See apt(8) for the supported syntax.
 
 =item B<--components>=I<comp1>[,I<comp2>,...]
 
