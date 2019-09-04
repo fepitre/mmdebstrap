@@ -48,7 +48,7 @@ if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
 fi
 
 starttime=
-total=92
+total=93
 i=1
 
 print_header() {
@@ -1113,6 +1113,11 @@ export LC_ALL=C.UTF-8
 prefix=
 [ "\$(id -u)" -eq 0 ] && prefix="runuser -u user --"
 \$prefix $CMD --mode=chrootless --variant=custom --include=doc-debian $DEFAULT_DIST /tmp/debian-chroot $mirror
+# preserve output with permissions and timestamps for later test
+chmod 700 /tmp/debian-chroot
+tar -C /tmp/debian-chroot --owner=0 --group=0 --numeric-owner --sort=name --clamp-mtime --mtime=$(date --utc --date=@$SOURCE_DATE_EPOCH --iso-8601=seconds) -cf /tmp/debian-chroot.tar .
+tar tvf /tmp/debian-chroot.tar > doc-debian.tar.list
+rm /tmp/debian-chroot.tar
 # delete contents of doc-debian
 rm /tmp/debian-chroot/usr/share/doc-base/debian-*
 rm -r /tmp/debian-chroot/usr/share/doc/debian
@@ -1147,6 +1152,25 @@ rm /tmp/debian-chroot/var/lib/dpkg/info/doc-debian.md5sums
 rm /tmp/debian-chroot/var/lib/dpkg/info/doc-debian.list
 # the rest should be empty directories that we can rmdir recursively
 find /tmp/debian-chroot -depth -print0 | xargs -0 rmdir
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	./run_null.sh
+fi
+
+print_header "mode=chrootless,variant=custom: install doc-debian and output tarball"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+export SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH
+[ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1 && adduser --gecos user --disabled-password user
+prefix=
+[ "\$(id -u)" -eq 0 ] && prefix="runuser -u user --"
+\$prefix $CMD --mode=chrootless --variant=custom --include=doc-debian $DEFAULT_DIST /tmp/debian-chroot.tar $mirror
+tar tvf /tmp/debian-chroot.tar | grep -v ' ./dev' | diff -u doc-debian.tar.list -
+rm /tmp/debian-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -1335,4 +1359,4 @@ if [ -e shared/cover_db/runs ]; then
 	echo
 fi
 
-rm shared/tar1.txt shared/tar2.txt shared/pkglist.txt
+rm shared/tar1.txt shared/tar2.txt shared/pkglist.txt doc-debian.tar.list

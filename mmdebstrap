@@ -2295,7 +2295,15 @@ sub main() {
 		    }
 		    0 == system('proot', '--root-id', "--rootfs=$options->{root}", '--cwd=/', @qemuopt, 'tar', @taropts, '-C', '/', '.') or error "tar failed: $?";
 		} elsif (any { $_ eq $options->{mode} } ('root', 'chrootless')) {
-		    0 == system('tar', @taropts, '-C', $options->{root}, '.') or error "tar failed: $?";
+		    # If the chroot directory is not owned by the root user,
+		    # then we assume that no measure was taken to fake root
+		    # permissions. Since the final tarball should contain
+		    # entries with root ownership, we instruct tar to do so.
+		    my @owneropts = ();
+		    if ((stat $options->{root})[4] != 0) {
+			push @owneropts, '--owner=0', '--group=0', '--numeric-owner';
+		    }
+		    0 == system('tar', @taropts, @owneropts, '-C', $options->{root}, '.') or error "tar failed: $?";
 		} else {
 		    error "unknown mode: $options->{mode}";
 		}
@@ -2758,7 +2766,8 @@ Uses the dpkg option C<--force-script-chrootless> to install packages into
 B<TARGET> without dpkg and apt inside B<target> but using apt and dpkg from
 the machine running B<mmdebstrap>. Maintainer scripts are run without chrooting
 into B<TARGET> and rely on their dependencies being installed on the machine
-running B<mmdebstrap>.
+running B<mmdebstrap>. Unless B<mmdebstrap> was run inside fakeroot, the
+directory created will be owned by the user running mmdebstrap.
 
 =for TODO
 =item B<qemu>
