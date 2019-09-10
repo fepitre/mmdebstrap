@@ -2031,12 +2031,41 @@ sub main() {
 		    }
 		}
 	    } else {
-		# FIXME: change default mirror depending on $suite
-		#        (for derivatives)
-		$sourceslist .= "deb http://deb.debian.org/debian $suite $options->{components}\n";
-		if (any { $_ eq $suite } ('stable', 'oldstable', 'stretch') ) {
-		    $sourceslist .= "deb http://deb.debian.org/debian $suite-updates $options->{components}\n";
-		    $sourceslist .= "deb http://security.debian.org/debian-security $suite/updates $options->{components}\n";
+		my @debstable = ('stable', 'oldstable', 'stretch', 'buster');
+		my @ubuntustable = ('trusty', 'xenial', 'zesty', 'artful', 'bionic', 'cosmic');
+		my @tanglustable = ('aequorea', 'bartholomea', 'chromodoris', 'dasyatis');
+		my @kali = ('kali-dev', 'kali-rolling', 'kali-bleeding-edge');
+
+		my $mirror = 'http://deb.debian.org/debian';
+		my $secmirror = 'http://security.debian.org/debian-security';
+		if (any {$_ eq $suite} @ubuntustable) {
+		    if (any {$_ eq $options->{nativearch}} ('amd64', 'i386')) {
+			$mirror = 'http://archive.ubuntu.com/ubuntu';
+			$secmirror = 'http://archive.ubuntu.com/ubuntu';
+		    } else {
+			$mirror = 'http://ports.ubuntu.com/ubuntu-ports';
+			$secmirror = 'http://ports.ubuntu.com/ubuntu-ports';
+		    }
+		} elsif (any {$_ eq $suite} @tanglustable) {
+		    $mirror = 'http://archive.tanglu.org/tanglu'
+		} elsif (any {$_ eq $suite} @kali) {
+		    $mirror = 'https://http.kali.org/kali'
+		}
+		$sourceslist .= "deb $mirror $suite $options->{components}\n";
+		if (any {$_ eq $suite} @ubuntustable) {
+		    $sourceslist .= "deb $mirror $suite-updates $options->{components}\n";
+		    $sourceslist .= "deb $secmirror $suite-updates $options->{components}\n";
+		} elsif (any {$_ eq $suite} @tanglustable) {
+		    $sourceslist .= "deb $secmirror $suite-updates $options->{components}\n";
+		} elsif (any {$_ eq $suite} @debstable) {
+		    $sourceslist .= "deb $mirror $suite-updates $options->{components}\n";
+		    if (any {$_ eq $suite} ('stable', 'oldstable', 'stretch', 'buster')) {
+			$sourceslist .= "deb $secmirror $suite/updates $options->{components}\n";
+		    } else {
+			# starting from bullseye use
+			# https://lists.debian.org/87r26wqr2a.fsf@43-1.org
+			$sourceslist .= "deb $secmirror $suite-security $options->{components}\n";
+		    }
 		}
 	    }
 	}
