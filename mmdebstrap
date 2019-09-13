@@ -861,7 +861,7 @@ sub run_chroot(&$) {
 	    chmod 0755, "$options->{root}/usr/sbin/policy-rc.d" or error "cannot chmod policy-rc.d: $!";
 	}
 
-	{
+	if (-e "$options->{root}/sbin/start-stop-daemon") {
 	    move("$options->{root}/sbin/start-stop-daemon", "$options->{root}/sbin/start-stop-daemon.REAL") or error "cannot move start-stop-daemon: $!";
 	    open my $fh, '>', "$options->{root}/sbin/start-stop-daemon" or error "cannot open start-stop-daemon: $!";
 	    print $fh "#!/bin/sh\n";
@@ -873,7 +873,9 @@ sub run_chroot(&$) {
 	&{$cmd}();
 
 	# cleanup
-	move("$options->{root}/sbin/start-stop-daemon.REAL", "$options->{root}/sbin/start-stop-daemon") or error "cannot move start-stop-daemon: $!";
+	if (-e "$options->{root}/sbin/start-stop-daemon.REAL") {
+	    move("$options->{root}/sbin/start-stop-daemon.REAL", "$options->{root}/sbin/start-stop-daemon") or error "cannot move start-stop-daemon: $!";
+	}
 	unlink "$options->{root}/usr/sbin/policy-rc.d" or error "cannot unlink policy-rc.d: $!";
 
     };
