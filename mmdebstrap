@@ -862,7 +862,7 @@ sub run_chroot(&$) {
 	}
 
 	{
-	    move("$options->{root}/sbin/start-stop-daemon", "$options->{root}/sbin/start-stop-daemon.REAL") or error "cannot move start-stop-daemon";
+	    move("$options->{root}/sbin/start-stop-daemon", "$options->{root}/sbin/start-stop-daemon.REAL") or error "cannot move start-stop-daemon: $!";
 	    open my $fh, '>', "$options->{root}/sbin/start-stop-daemon" or error "cannot open start-stop-daemon: $!";
 	    print $fh "#!/bin/sh\n";
 	    print $fh "echo \"Warning: Fake start-stop-daemon called, doing nothing\">&2\n";
@@ -873,7 +873,7 @@ sub run_chroot(&$) {
 	&{$cmd}();
 
 	# cleanup
-	move("$options->{root}/sbin/start-stop-daemon.REAL", "$options->{root}/sbin/start-stop-daemon") or error "cannot move start-stop-daemon";
+	move("$options->{root}/sbin/start-stop-daemon.REAL", "$options->{root}/sbin/start-stop-daemon") or error "cannot move start-stop-daemon: $!";
 	unlink "$options->{root}/usr/sbin/policy-rc.d" or error "cannot unlink policy-rc.d: $!";
 
     };
