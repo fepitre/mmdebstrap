@@ -1787,6 +1787,7 @@ sub main() {
 	'resolve-deps' => sub { push @{$options->{noop}}, 'resolve-deps'; },
 	'merged-usr' => sub { push @{$options->{noop}}, 'merged-usr'; },
 	'no-merged-usr' => sub { push @{$options->{noop}}, 'no-merged-usr'; },
+	'force-check-gpg' => sub { push @{$options->{noop}}, 'force-check-gpg'; },
 	# hook options are hidden until I'm happy with them
 	'setup-hook=s@' => \$options->{setup_hook},
 	'essential-hook=s@' => \$options->{essential_hook},
@@ -2967,7 +2968,9 @@ Limitations in comparison to debootstrap:
 
 =item * No I<SCRIPT> argument
 
-=item * No I<--second-stage> option.
+=item * No I<--second-stage> and I<--exclude> option.
+
+=item * No-op options I<--resolve-deps>, I<--force-check-gpg>, I<--merged-usr> and I<--no-merged-usr>
 
 =back
 
