@@ -1103,8 +1103,16 @@ sub setup {
     }
 
     # allow network access from within
-    copy("/etc/resolv.conf", "$options->{root}/etc/resolv.conf") or error "cannot copy /etc/resolv.conf: $!";
-    copy("/etc/hostname", "$options->{root}/etc/hostname") or error "cannot copy /etc/hostname: $!";
+    if (-e "/etc/resolv.conf") {
+	copy("/etc/resolv.conf", "$options->{root}/etc/resolv.conf") or error "cannot copy /etc/resolv.conf: $!";
+    } else {
+	warning("Host system does not have a /etc/resolv.conf to copy into the rootfs.")
+    }
+    if (-e "/etc/hostname") {
+	copy("/etc/hostname", "$options->{root}/etc/hostname") or error "cannot copy /etc/hostname: $!";
+    } else {
+	warning("Host system does not have a /etc/hostname to copy into the rootfs.")
+    }
 
     if ($options->{havemknod}) {
 	foreach my $file (@devfiles) {
