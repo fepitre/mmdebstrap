@@ -48,7 +48,7 @@ if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
 fi
 
 starttime=
-total=98
+total=99
 i=1
 
 print_header() {
@@ -667,6 +667,24 @@ elif [ "$defaultmode" = "root" ]; then
 	./run_null.sh SUDO
 else
 	./run_null.sh
+fi
+
+print_header "mode=root,variant=apt: fail installing to /"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+ret=0
+$CMD --mode=root --variant=apt $DEFAULT_DIST / $mirror || ret=\$?
+if [ "\$ret" = 0 ]; then
+	echo expected failure but got exit \$ret
+	exit 1
+fi
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	./run_null.sh SUDO
 fi
 
 # to test foreign architecture package installation we choose a package which
