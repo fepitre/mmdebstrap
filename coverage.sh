@@ -48,7 +48,7 @@ if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
 fi
 
 starttime=
-total=95
+total=97
 i=1
 
 print_header() {
@@ -559,6 +559,40 @@ elif [ "$defaultmode" = "root" ]; then
 	./run_null.sh SUDO
 else
 	./run_null.sh
+fi
+
+print_header "mode=$defaultmode,variant=apt: copy:// mirror"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+$CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar "deb copy:///mnt/cache/debian unstable main"
+tar -tf /tmp/debian-chroot.tar | sort | diff -u tar1.txt -
+rm /tmp/debian-chroot.tar
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	echo "HAVE_QEMU != yes -- Skipping test..."
+fi
+
+print_header "mode=$defaultmode,variant=apt: fail with file:// mirror"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+ret=0
+$CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar "deb file:///mnt/cache/debian unstable main" || ret=\$?
+rm /tmp/debian-chroot.tar
+if [ "\$ret" = 0 ]; then
+	echo expected failure but got exit \$ret
+	exit 1
+fi
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	echo "HAVE_QEMU != yes -- Skipping test..."
 fi
 
 print_header "mode=$defaultmode,variant=apt: mirror is deb..."
