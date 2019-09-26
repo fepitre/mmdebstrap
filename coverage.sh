@@ -48,7 +48,7 @@ if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
 fi
 
 starttime=
-total=99
+total=100
 i=1
 
 print_header() {
@@ -676,6 +676,25 @@ set -eu
 export LC_ALL=C.UTF-8
 ret=0
 $CMD --mode=root --variant=apt $DEFAULT_DIST / $mirror || ret=\$?
+if [ "\$ret" = 0 ]; then
+	echo expected failure but got exit \$ret
+	exit 1
+fi
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	./run_null.sh SUDO
+fi
+
+print_header "mode=root,variant=apt: fail installing to existing file"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+touch /tmp/exists
+ret=0
+$CMD --mode=root --variant=apt $DEFAULT_DIST /tmp/exists $mirror || ret=\$?
 if [ "\$ret" = 0 ]; then
 	echo expected failure but got exit \$ret
 	exit 1
