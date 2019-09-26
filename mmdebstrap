@@ -1951,26 +1951,56 @@ sub main() {
 	};
 	chomp (my $hostarch = `dpkg --print-architecture`);
 	if ($hostarch ne $nativearch) {
-	    my $pid = open my $fh, '-|' // error "failed to fork(): $!";
-	    if ($pid == 0) {
-		{
-		    no warnings; # don't print a warning if the following fails
-		    exec 'arch-test', '-n', $nativearch;
+	    my $withemu = 0;
+	    my $noemu = 0;
+	    {
+		my $pid = open my $fh, '-|' // error "failed to fork(): $!";
+		if ($pid == 0) {
+		    {
+			no warnings; # don't print a warning if the following fails
+			exec 'arch-test', $nativearch;
+		    }
+		    # if exec didn't work (for example because the arch-test program is
+		    # missing) prepare for the worst and assume that the architecture
+		    # cannot be executed
+		    print "$nativearch: not supported on this machine/kernel\n";
+		    exit 1;
 		}
-		# if exec didn't work (for example because the arch-test program is
-		# missing) prepare for the worst and assume that the architecture
-		# cannot be executed
-		print "$nativearch: not supported on this machine/kernel\n";
-		exit 1;
+		chomp (my $content = do { local $/; <$fh> });
+		close $fh;
+		if ($? == 0 and $content eq "$nativearch: ok") {
+		    $withemu = 1;
+		}
 	    }
-	    chomp (my $content = do { local $/; <$fh> });
-	    close $fh;
-	    if ($? != 0 or $content ne "$nativearch: ok") {
-		info "$nativearch cannot be executed, falling back to qemu-user";
-		if (!exists $deb2qemu->{$nativearch}) {
-		    error "no mapping from $nativearch to qemu-user binary";
+	    {
+		my $pid = open my $fh, '-|' // error "failed to fork(): $!";
+		if ($pid == 0) {
+		    {
+			no warnings; # don't print a warning if the following fails
+			exec 'arch-test', '-n', $nativearch;
+		    }
+		    # if exec didn't work (for example because the arch-test program is
+		    # missing) prepare for the worst and assume that the architecture
+		    # cannot be executed
+		    print "$nativearch: not supported on this machine/kernel\n";
+		    exit 1;
 		}
-		$options->{qemu} = $deb2qemu->{$nativearch};
+		chomp (my $content = do { local $/; <$fh> });
+		close $fh;
+		if ($? == 0 and $content eq "$nativearch: ok") {
+		    $noemu = 1;
+		}
+	    }
+	    # four different outcomes, depending on whether arch-test
+	    # succeeded with or without emulation
+	    #
+	    # withemu | noemu |
+	    # --------+-------+-----------------
+	    #    0    |   0   | test why emu doesn't work and quit
+	    #    0    |   1   | should never happen
+	    #    1    |   0   | use qemu emulation
+	    #    1    |   1   | don't use qemu emulation
+	    if ($withemu == 0 and $noemu == 0) {
 		{
 		    open my $fh, '<', '/proc/filesystems' or error "failed to open /proc/filesystems: $!";
 		    unless (grep /^nodev\tbinfmt_misc$/, (<$fh>)) {
@@ -1993,8 +2023,19 @@ sub main() {
 			error "qemu-$options->{qemu} is not a supported binfmt name";
 		    }
 		}
+		error "qemu emulation of $nativearch failed for an unknown reason";
+	    } elsif ($withemu == 0 and $noemu == 1) {
+		error "arch-test succeeded without emu but not with emu";
+	    } elsif ($withemu == 1 and $noemu == 0) {
+		info "$nativearch cannot be executed, falling back to qemu-user";
+		if (!exists $deb2qemu->{$nativearch}) {
+		    error "no mapping from $nativearch to qemu-user binary";
+		}
+		$options->{qemu} = $deb2qemu->{$nativearch};
+	    } elsif ($withemu == 1 and $noemu == 1) {
+		info "$nativearch is different from $hostarch but can be executed natively";
 	    } else {
-		info "$nativearch can be executed on this $hostarch machine";
+		error "logic error";
 	    }
 	} else {
 	    info "chroot architecture $nativearch is equal to the host's architecture";
