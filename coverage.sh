@@ -48,7 +48,7 @@ if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
 fi
 
 starttime=
-total=97
+total=98
 i=1
 
 print_header() {
@@ -972,6 +972,25 @@ if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 else
 	./run_null.sh SUDO
+fi
+
+print_header "mode=$defaultmode,variant=apt: without /etc/resolv.conf and /etc/hostname"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+rm /etc/resolv.conf /etc/hostname
+$CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar $mirror
+{ tar -tf /tmp/debian-chroot.tar;
+  printf "./etc/hostname\n";
+  printf "./etc/resolv.conf\n";
+} | sort | diff -u tar1.txt -
+rm /tmp/debian-chroot.tar
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	echo "HAVE_QEMU != yes -- Skipping test..."
 fi
 
 # test all variants
