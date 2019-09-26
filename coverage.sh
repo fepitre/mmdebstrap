@@ -48,7 +48,7 @@ if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
 fi
 
 starttime=
-total=101
+total=102
 i=1
 
 print_header() {
@@ -718,6 +718,50 @@ if [ "\$ret" = 0 ]; then
 	echo expected failure but got exit \$ret
 	exit 1
 fi
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	echo "HAVE_QEMU != yes -- Skipping test..."
+fi
+
+print_header "mode=$defaultmode,variant=apt: test i386 (which can be executed without qemu)"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+# remove qemu just to be sure
+apt-get remove --yes qemu-user-static binfmt-support qemu-user
+$CMD --mode=$defaultmode --variant=apt --architectures=i386 $DEFAULT_DIST /tmp/debian-chroot.tar $mirror
+# we ignore differences between architectures by ignoring some files
+# and renaming others
+{ tar -tf /tmp/debian-chroot.tar \
+	| grep -v '^\./usr/bin/i386$' \
+	| grep -v '^\./lib/ld-linux\.so\.2$' \
+	| grep -v '^\./lib/i386-linux-gnu/ld-linux\.so\.2$' \
+	| grep -v '^\./usr/lib/gcc/i686-linux-gnu/$' \
+	| grep -v '^\./usr/lib/gcc/i686-linux-gnu/9/$' \
+	| grep -v '^\./usr/share/man/man8/i386\.8\.gz$' \
+	| grep -v '^\./usr/share/doc/[^/]\+/changelog\.Debian\.i386\.gz$' \
+	| sed 's/i386-linux-gnu/x86_64-linux-gnu/' \
+	| sed 's/i386/amd64/';
+} | sort > tar2.txt
+{ cat tar1.txt \
+	| grep -v '^\./usr/bin/i386$' \
+	| grep -v '^\./usr/bin/x86_64$' \
+	| grep -v '^\./lib64/$' \
+	| grep -v '^\./lib64/ld-linux-x86-64\.so\.2$' \
+	| grep -v '^\./usr/lib/gcc/x86_64-linux-gnu/$' \
+	| grep -v '^\./usr/lib/gcc/x86_64-linux-gnu/9/$' \
+	| grep -v '^\./lib/x86_64-linux-gnu/ld-linux-x86-64\.so\.2$' \
+	| grep -v '^\./lib/x86_64-linux-gnu/libmvec-2\.[0-9]\+\.so$' \
+	| grep -v '^\./lib/x86_64-linux-gnu/libmvec\.so\.1$' \
+	| grep -v '^\./usr/share/doc/[^/]\+/changelog\.Debian\.amd64\.gz$' \
+	| grep -v '^\./usr/share/doc/hostname/changelog\.amd64\.gz$' \
+	| grep -v '^\./usr/share/man/man8/i386\.8\.gz$' \
+	| grep -v '^\./usr/share/man/man8/x86_64\.8\.gz$';
+} | sort | diff -u - tar2.txt
+rm /tmp/debian-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh

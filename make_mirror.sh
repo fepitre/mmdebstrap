@@ -43,10 +43,9 @@ newmirrordir="$newcachedir/debian"
 
 mirror="http://deb.debian.org/debian"
 security_mirror="http://security.debian.org/debian-security"
-arch1=$(dpkg --print-architecture)
-arch2=armhf
-if [ "$arch1" = "$arch2" ]; then
-	arch2=amd64
+if [ "$(dpkg --print-architecture)" != amd64 ]; then
+	echo "script only supports being run on amd64" >&2
+	exit 1
 fi
 components=main
 
@@ -245,8 +244,12 @@ END
 	find "$rootdir" -depth -print0 | xargs -0 rmdir
 }
 
-for nativearch in "$arch1" "$arch2"; do
+for nativearch in amd64 armhf i386; do
 	for dist in stable testing unstable; do
+		# only store non-amd64 architectures for $DEFAULT_DIST
+		if [ $nativearch != amd64 ] && [ $DEFAULT_DIST != $dist ]; then
+			continue
+		fi
 		cat << END | update_cache "$dist" "$nativearch"
 deb [arch=$nativearch] $mirror $dist $components
 END
