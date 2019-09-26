@@ -48,7 +48,7 @@ if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
 fi
 
 starttime=
-total=100
+total=101
 i=1
 
 print_header() {
@@ -704,6 +704,25 @@ if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 else
 	./run_null.sh SUDO
+fi
+
+print_header "mode=$defaultmode,variant=apt: test armhf without qemu support"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+apt-get remove --yes qemu-user-static binfmt-support qemu-user
+ret=0
+$CMD --mode=$defaultmode --variant=apt --architectures=armhf $DEFAULT_DIST /tmp/debian-chroot.tar $mirror || ret=\$?
+if [ "\$ret" = 0 ]; then
+	echo expected failure but got exit \$ret
+	exit 1
+fi
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	echo "HAVE_QEMU != yes -- Skipping test..."
 fi
 
 # to test foreign architecture package installation we choose a package which
