@@ -48,7 +48,7 @@ if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
 fi
 
 starttime=
-total=93
+total=94
 i=1
 
 print_header() {
@@ -328,6 +328,32 @@ if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 else
 	./run_null.sh SUDO
+fi
+
+print_header "mode=$defaultmode,variant=apt: fail installing to non-empty lost+found"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+mkdir /tmp/debian-chroot
+mkdir /tmp/debian-chroot/lost+found
+touch /tmp/debian-chroot/lost+found/exists
+ret=0
+$CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST /tmp/debian-chroot $mirror || ret=\$?
+rm /tmp/debian-chroot/lost+found/exists
+rmdir /tmp/debian-chroot/lost+found
+rmdir /tmp/debian-chroot
+if [ "\$ret" = 0 ]; then
+	echo expected failure but got exit \$ret
+	exit 1
+fi
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+elif [ "$defaultmode" = "root" ]; then
+	./run_null.sh SUDO
+else
+	./run_null.sh
 fi
 
 print_header "mode=root,variant=apt: chroot directory not accessible by _apt user"
