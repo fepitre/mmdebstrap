@@ -94,14 +94,14 @@ for dist in stable testing unstable; do
 		if [ "$variant" = '-' ]; then
 			continue
 		fi
-		print_header "mode=root,variant=$variant: check against debootstrap $dist"
+		print_header "mode=$defaultmode,variant=$variant: check against debootstrap $dist"
 
 		cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
 export SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH
-$CMD --variant=$variant --mode=root $dist /tmp/debian-$dist-mm.tar $mirror
+$CMD --variant=$variant --mode=$defaultmode $dist /tmp/debian-$dist-mm.tar $mirror
 
 mkdir /tmp/debian-$dist-mm
 tar -C /tmp/debian-$dist-mm -xf /tmp/debian-$dist-mm.tar
@@ -196,8 +196,10 @@ rm -r /tmp/debian-$dist-debootstrap /tmp/debian-$dist-mm
 END
 		if [ "$HAVE_QEMU" = "yes" ]; then
 			./run_qemu.sh
-		else
+		elif [ "$defaultmode" = "root" ]; then
 			./run_null.sh SUDO
+		else
+			./run_null.sh
 		fi
 	done
 done
@@ -266,34 +268,38 @@ else
 	echo "HAVE_QEMU != yes -- Skipping test..."
 fi
 
-print_header "mode=root,variant=apt: test progress bars on fake tty"
+print_header "mode=$defaultmode,variant=apt: test progress bars on fake tty"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-script -qfc "$CMD --mode=root --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar $mirror" /dev/null
+script -qfc "$CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar $mirror" /dev/null
 tar -tf /tmp/debian-chroot.tar | sort | diff -u tar1.txt -
 rm /tmp/debian-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
-else
+elif [ "$defaultmode" = "root" ]; then
 	./run_null.sh SUDO
+else
+	./run_null.sh
 fi
 
-print_header "mode=root,variant=apt: test --debug output on fake tty"
+print_header "mode=$defaultmode,variant=apt: test --debug output on fake tty"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-script -qfc "$CMD --mode=root --debug --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar $mirror" /dev/null
+script -qfc "$CMD --mode=$defaultmode --debug --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar $mirror" /dev/null
 tar -tf /tmp/debian-chroot.tar | sort | diff -u tar1.txt -
 rm /tmp/debian-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
-else
+elif [ "$defaultmode" = "root" ]; then
 	./run_null.sh SUDO
+else
+	./run_null.sh
 fi
 
 print_header "mode=root,variant=apt: existing empty directory"
@@ -409,13 +415,13 @@ else
 	echo "HAVE_QEMU != yes -- Skipping test..."
 fi
 
-print_header "mode=root,variant=apt: fail with missing lz4"
+print_header "mode=$defaultmode,variant=apt: fail with missing lz4"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
 ret=0
-$CMD --mode=root --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar.lz4 $mirror || ret=\$?
+$CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar.lz4 $mirror || ret=\$?
 if [ "\$ret" = 0 ]; then
 	echo expected failure but got exit \$ret
 	exit 1
@@ -423,8 +429,10 @@ fi
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
-else
+elif [ "$defaultmode" = "root" ]; then
 	./run_null.sh SUDO
+else
+	./run_null.sh
 fi
 
 print_header "mode=$defaultmode,variant=apt: fail with path with quotes"
