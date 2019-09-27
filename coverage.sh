@@ -213,10 +213,8 @@ $CMD --help | grep --quiet SYNOPSIS
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
-elif [ "$defaultmode" = "root" ]; then
-	./run_null.sh SUDO
 else
-	./run_null.sh
+	./run_null.sh SUDO
 fi
 
 print_header "test --version"
@@ -228,10 +226,8 @@ $CMD --version | egrep --quiet '^mmdebstrap [0-9](\.[0-9])+$'
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
-elif [ "$defaultmode" = "root" ]; then
-	./run_null.sh SUDO
 else
-	./run_null.sh
+	./run_null.sh SUDO
 fi
 
 print_header "mode=root,variant=apt: create directory"
