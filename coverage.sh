@@ -659,11 +659,11 @@ set -eu
 export LC_ALL=C.UTF-8
 ret=0
 $CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar $mirror/invalid || ret=\$?
+rm /tmp/debian-chroot.tar
 if [ "\$ret" = 0 ]; then
 	echo expected failure but got exit \$ret
 	exit 1
 fi
-rm /tmp/debian-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -955,11 +955,11 @@ set -eu
 export LC_ALL=C.UTF-8
 ret=0
 $CMD --mode=root --variant=apt --customize-hook='chroot "\$1" sh -c "exit 1"' $DEFAULT_DIST /tmp/debian-chroot $mirror || ret=\$?
+rm -r /tmp/debian-chroot
 if [ "\$ret" = 0 ]; then
 	echo expected failure but got exit \$ret
 	exit 1
 fi
-rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -980,6 +980,7 @@ pgid=\$(echo \$(ps -p \$pid -o pgid=))
 /bin/kill --signal INT -- -\$pgid
 ret=0
 wait \$pid || ret=\$?
+rm -r /tmp/debian-chroot
 if [ -e fail ]; then
 	echo customize hook was not interrupted
 	rm fail
@@ -989,7 +990,6 @@ if [ "\$ret" = 0 ]; then
 	echo expected failure but got exit \$ret
 	exit 1
 fi
-rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
