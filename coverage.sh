@@ -246,7 +246,7 @@ else
 	./run_null.sh SUDO
 fi
 
-print_header "mode=root,variant=apt: fail with unshare as root user"
+print_header "mode=unshare,variant=apt: fail with unshare as root user"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
