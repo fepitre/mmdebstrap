@@ -746,7 +746,7 @@ $CMD --mode=$defaultmode --variant=apt --architectures=i386 $DEFAULT_DIST /tmp/d
 	| grep -v '^\./usr/lib/gcc/i686-linux-gnu/$' \
 	| grep -v '^\./usr/lib/gcc/i686-linux-gnu/9/$' \
 	| grep -v '^\./usr/share/man/man8/i386\.8\.gz$' \
-	| grep -v '^\./usr/share/doc/[^/]\+/changelog\.Debian\.i386\.gz$' \
+	| grep -v '^\./usr/share/doc/[^/]\+/changelog\(\.Debian\)\?\.i386\.gz$' \
 	| sed 's/i386-linux-gnu/x86_64-linux-gnu/' \
 	| sed 's/i386/amd64/';
 } | sort > tar2.txt
@@ -760,8 +760,7 @@ $CMD --mode=$defaultmode --variant=apt --architectures=i386 $DEFAULT_DIST /tmp/d
 	| grep -v '^\./lib/x86_64-linux-gnu/ld-linux-x86-64\.so\.2$' \
 	| grep -v '^\./lib/x86_64-linux-gnu/libmvec-2\.[0-9]\+\.so$' \
 	| grep -v '^\./lib/x86_64-linux-gnu/libmvec\.so\.1$' \
-	| grep -v '^\./usr/share/doc/[^/]\+/changelog\.Debian\.amd64\.gz$' \
-	| grep -v '^\./usr/share/doc/hostname/changelog\.amd64\.gz$' \
+	| grep -v '^\./usr/share/doc/[^/]\+/changelog\(\.Debian\)\?\.amd64\.gz$' \
 	| grep -v '^\./usr/share/man/man8/i386\.8\.gz$' \
 	| grep -v '^\./usr/share/man/man8/x86_64\.8\.gz$';
 } | sort | diff -u - tar2.txt
@@ -1515,7 +1514,7 @@ prefix=
 	| grep -v '^\./lib/ld-linux-armhf\.so\.3$' \
 	| grep -v '^\./lib/arm-linux-gnueabihf/ld-linux\.so\.3$' \
 	| grep -v '^\./lib/arm-linux-gnueabihf/ld-linux-armhf\.so\.3$' \
-	| grep -v '^\./usr/share/doc/[^/]\+/changelog\.Debian\.armhf\.gz$' \
+	| grep -v '^\./usr/share/doc/[^/]\+/changelog\(\.Debian\)\?\.armhf\.gz$' \
 	| sed 's/arm-linux-gnueabihf/x86_64-linux-gnu/' \
 	| sed 's/armhf/amd64/';
 	[ "$mode" = "fakechroot" ] && printf "./etc/ld.so.cache\n./var/cache/ldconfig/\n./etc/.pwd.lock\n";
@@ -1528,7 +1527,7 @@ prefix=
 	| grep -v '^\./lib/x86_64-linux-gnu/ld-linux-x86-64\.so\.2$' \
 	| grep -v '^\./lib/x86_64-linux-gnu/libmvec-2\.[0-9]\+\.so$' \
 	| grep -v '^\./lib/x86_64-linux-gnu/libmvec\.so\.1$' \
-	| grep -v '^\./usr/share/doc/[^/]\+/changelog\.Debian\.amd64\.gz$' \
+	| grep -v '^\./usr/share/doc/[^/]\+/changelog\(\.Debian\)\?\.amd64\.gz$' \
 	| grep -v '^\./usr/share/man/man8/i386\.8\.gz$' \
 	| grep -v '^\./usr/share/man/man8/x86_64\.8\.gz$';
 	[ "$mode" = "proot" ] && printf "./etc/ld.so.preload\n";
