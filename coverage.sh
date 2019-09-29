@@ -1001,7 +1001,7 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-$CMD --mode=root --variant=apt --resolve-deps --merged-usr --no-merged-usr $DEFAULT_DIST /tmp/debian-chroot $mirror
+$CMD --mode=root --variant=apt --resolve-deps --merged-usr --no-merged-usr --force-check-gpg $DEFAULT_DIST /tmp/debian-chroot $mirror
 tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
 rm -r /tmp/debian-chroot
 END
