@@ -1560,4 +1560,4 @@ if [ -e shared/cover_db/runs ]; then
 	echo
 fi
 
-rm shared/tar1.txt shared/tar2.txt shared/pkglist.txt doc-debian.tar.list
+rm shared/tar1.txt shared/tar2.txt shared/pkglist.txt shared/doc-debian.tar.list
