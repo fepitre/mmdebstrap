@@ -1455,7 +1455,6 @@ debianutils
 dpkg
 gcc-9-base:amd64
 libacl1:amd64
-libattr1:amd64
 libbz2-1.0:amd64
 libc-bin
 libc6:amd64
