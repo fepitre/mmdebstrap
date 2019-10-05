@@ -1403,6 +1403,16 @@ sub setup {
 	    '-oDPkg::Options::=--force-script-chrootless',
 	    '-oDPkg::Options::=--root=' . $options->{root},
 	    '-oDPkg::Options::=--log=' . "$options->{root}/var/log/dpkg.log");
+	if (defined $options->{qemu}) {
+	    # The binfmt support on the outside is used, so qemu needs to know
+	    # where it has to look for shared libraries
+	    if (defined $ENV{QEMU_LD_PREFIX}
+		&& $ENV{QEMU_LD_PREFIX} ne "") {
+		$ENV{QEMU_LD_PREFIX} = "$ENV{QEMU_LD_PREFIX}:$options->{root}";
+	    } else {
+		$ENV{QEMU_LD_PREFIX} = $options->{root};
+	    }
+	}
 	if ($options->{variant} eq 'extract') {
 	    # nothing to do
 	} else {
