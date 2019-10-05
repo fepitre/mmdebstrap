@@ -2942,6 +2942,26 @@ by a sources.list file on standard input.
 
     $ mmdebstrap < /etc/apt/sources.list > unstable-chroot.tar
 
+Since the tarball is output on stdout, members of it can be excluded using tar
+on-the-fly. For example the /dev directory can be removed from the final
+tarbal in cases where it is to be extracted by a non-root user who cannot
+create device nodes:
+
+    $ mmdebstrap unstable | tar --delete ./dev > unstable-chroot.tar
+
+By default, debootstrapping a stable distribution will add mirrors for security
+and updates to the sources.list.
+
+    $ mmdebstrap stable stable-chroot.tar
+
+If you don't want this behaviour, you can override it by manually specifying a
+mirror in various different ways:
+
+    $ mmdebstrap stable stable-chroot.tar http://deb.debian.org/debian
+    $ mmdebstrap stable stable-chroot.tar "deb http://deb.debian.org/debian stable main"
+    $ mmdebstrap stable stable-chroot.tar /path/to/sources.list
+    $ mmdebstrap stable stable-chroot.tar - < /path/to/sources.list
+
 Drop locales (but not the symlink to the locale name alias database),
 translated manual packages (but not the untranslated ones), and documentation
 (but not copyright and Debian changelog).
@@ -2992,6 +3012,10 @@ Use as replacement for autopkgtest-build-qemu and vmdb2:
     $ qemu-img convert -O qcow2 debian-unstable.img debian-unstable.qcow2
 
 =end comment
+
+Build a non-Debian chroot like Ubuntu bionic:
+
+    $ mmdebstrap --aptopt='Dir::Etc::Trusted "/usr/share/keyrings/ubuntu-keyring-2012-archive.gpg"' bionic bionic.tar
 
 =head1 ENVIRONMENT VARIABLES
 
