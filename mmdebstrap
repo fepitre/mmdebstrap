@@ -2108,7 +2108,7 @@ sub main() {
 		if (any {$_ eq $suite} @ubuntustable) {
 		    if (any {$_ eq $options->{nativearch}} ('amd64', 'i386')) {
 			$mirror = 'http://archive.ubuntu.com/ubuntu';
-			$secmirror = 'http://archive.ubuntu.com/ubuntu';
+			$secmirror = 'http://security.ubuntu.com/ubuntu';
 		    } else {
 			$mirror = 'http://ports.ubuntu.com/ubuntu-ports';
 			$secmirror = 'http://ports.ubuntu.com/ubuntu-ports';
@@ -2121,7 +2121,7 @@ sub main() {
 		$sourceslist .= "deb $mirror $suite $options->{components}\n";
 		if (any {$_ eq $suite} @ubuntustable) {
 		    $sourceslist .= "deb $mirror $suite-updates $options->{components}\n";
-		    $sourceslist .= "deb $secmirror $suite-updates $options->{components}\n";
+		    $sourceslist .= "deb $secmirror $suite-security $options->{components}\n";
 		} elsif (any {$_ eq $suite} @tanglustable) {
 		    $sourceslist .= "deb $secmirror $suite-updates $options->{components}\n";
 		} elsif (any {$_ eq $suite} @debstable) {
