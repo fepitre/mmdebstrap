@@ -3091,10 +3091,21 @@ extension to compressor applies:
 
 =head1 BUGS
 
+https://gitlab.mister-muffin.de/josch/mmdebstrap/issues
+
+https://bugs.debian.org/src:mmdebstrap
+
 As of version 1.19.5, dpkg does not provide facilities preventing it from
 reading the dpkg configuration of the machine running B<mmdebstrap>.
 Therefore, until this dpkg limitation is fixed, a default dpkg configuration
 is recommended on machines running B<mmdebstrap>.
+
+Setting [trusted=yes] to allow signed archives without a known public key will
+fail because of a gpg warning in the apt output. Since apt does not
+communicate its status via any other means than human readable strings,
+B<mmdebstrap> treats any warning from "apt-get update" as an error. Fixing
+this will require apt to provide a machine readable status interface. See
+Debian bugs #778357, #776152, #696335, and #745735.
 
 =head1 SEE ALSO
 
