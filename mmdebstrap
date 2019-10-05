@@ -1528,7 +1528,12 @@ sub setup {
 		} elsif ($options->{mode} eq 'fakechroot') {
 		    # The binfmt support on the outside is used, so qemu needs to know
 		    # where it has to look for shared libraries
-		    $ENV{QEMU_LD_PREFIX} = $options->{root};
+		    if (defined $ENV{QEMU_LD_PREFIX}
+			&& $ENV{QEMU_LD_PREFIX} ne "") {
+			$ENV{QEMU_LD_PREFIX} = "$ENV{QEMU_LD_PREFIX}:$options->{root}";
+		    } else {
+			$ENV{QEMU_LD_PREFIX} = $options->{root};
+		    }
 		    # Make sure that the fakeroot and fakechroot shared libraries
 		    # exist for the right architecture
 		    open my $fh, '-|', 'dpkg-architecture', '-a', $options->{nativearch}, '-qDEB_HOST_MULTIARCH' // error "failed to fork(): $!";
