@@ -11,6 +11,7 @@ rm -f shared/cover_db.img
 
 : "${DEFAULT_DIST:=unstable}"
 : "${HAVE_QEMU:=yes}"
+: "${RUN_MA_SAME_TESTS:=yes}"
 
 if [ "$HAVE_QEMU" = "yes" ]; then
 	# prepare image for cover_db
@@ -803,10 +804,14 @@ rmdir /tmp/debian-chroot/usr/lib/file/
 tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
 rm -r /tmp/debian-chroot
 END
-if [ "$HAVE_QEMU" = "yes" ]; then
-	./run_qemu.sh
+if [ "$RUN_MA_SAME_TESTS" = "yes" ]; then
+	if [ "$HAVE_QEMU" = "yes" ]; then
+		./run_qemu.sh
+	else
+		./run_null.sh SUDO
+	fi
 else
-	./run_null.sh SUDO
+	echo "RUN_MA_SAME_TESTS != yes -- Skipping test..."
 fi
 
 print_header "mode=root,variant=apt: test --aptopt"
