@@ -2031,11 +2031,16 @@ sub main() {
 		    close $fh;
 		}
 		{
-		    open my $fh, '-|', '/usr/sbin/update-binfmts', '--display', "qemu-$options->{qemu}" // error "failed to fork(): $!";
-		    chomp (my $binfmts = do { local $/; <$fh> });
-		    close $fh;
-		    if ($binfmts eq '') {
-			warning "qemu-$options->{qemu} is not a supported binfmt name";
+		    if (!exists $deb2qemu->{$nativearch}) {
+			warning "no mapping from $nativearch to qemu-user binary";
+		    } else {
+			my $binfmt_identifier = 'qemu-' . $deb2qemu->{$nativearch};
+			open my $fh, '-|', '/usr/sbin/update-binfmts', '--display', $binfmt_identifier // error "failed to fork(): $!";
+			chomp (my $binfmts = do { local $/; <$fh> });
+			close $fh;
+			if ($binfmts eq '') {
+			    warning "$binfmt_identifier is not a supported binfmt name";
+			}
 		    }
 		}
 		error "qemu user emulation of $nativearch using binfmt_misc failed";
