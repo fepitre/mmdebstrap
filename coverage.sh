@@ -1434,10 +1434,14 @@ rm /tmp/debian-chroot/var/lib/dpkg/info/libmagic-mgc.list
 # the rest should be empty directories that we can rmdir recursively
 find /tmp/debian-chroot -depth -print0 | xargs -0 rmdir
 END
-if [ "$HAVE_QEMU" = "yes" ]; then
-	./run_qemu.sh
+if [ "$HAVE_BINFMT" = "yes" ]; then
+	if [ "$HAVE_QEMU" = "yes" ]; then
+		./run_qemu.sh
+	else
+		./run_null.sh
+	fi
 else
-	./run_null.sh
+	echo "HAVE_BINFMT != yes -- Skipping test..."
 fi
 
 print_header "mode=root,variant=custom: install busybox-based sub-essential system"
