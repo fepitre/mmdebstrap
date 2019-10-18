@@ -4,7 +4,10 @@ set -eu
 
 mirrordir="./shared/cache/debian"
 
-./make_mirror.sh
+if [ ! -e "$mirrordir" ]; then
+	echo "run ./make_mirror.sh before running $0" >&2
+	exit 1
+fi
 
 # we use -f because the file might not exist
 rm -f shared/cover_db.img
