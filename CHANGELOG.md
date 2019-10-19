@@ -1,3 +1,11 @@
+0.5.1 (2019-10-19)
+------------------
+
+ - minor bugfixes and documentation clarification
+ - the --components option now takes component names as a comma or whitespace
+   separated list or as multiple --components options
+ - make_mirror.sh now has to be invoked manually before calling coverage.sh
+
 0.5.0 (2019-10-05)
 ------------------
 
