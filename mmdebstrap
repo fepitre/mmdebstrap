@@ -1695,18 +1695,19 @@ sub setup {
 		    }
 		    close $dh;
 		    if (scalar @debs_to_install == 0) {
-			error "nothing got downloaded";
-		    }
-		    # we need --force-depends because dpkg does not take Pre-Depends
-		    # into account and thus doesn't install them in the right order
-		    info 'installing ' . (join ', ', keys %pkgs_to_install_from_outside) . "...";
-		    run_dpkg_progress({
-			    ARGV => [@chrootcmd, 'env', '--unset=TMPDIR',
-				'dpkg',  '--install', '--force-depends'],
-			    PKGS => \@debs_to_install,
-			});
-		    foreach my $deb (@debs_to_install) {
-			unlink "$options->{root}/$deb" or error "cannot unlink $deb: $!";
+			warning "nothing got downloaded -- maybe the packages were already installed?";
+		    } else {
+			# we need --force-depends because dpkg does not take Pre-Depends
+			# into account and thus doesn't install them in the right order
+			info 'installing ' . (join ', ', keys %pkgs_to_install_from_outside) . "...";
+			run_dpkg_progress({
+				ARGV => [@chrootcmd, 'env', '--unset=TMPDIR',
+				    'dpkg',  '--install', '--force-depends'],
+				PKGS => \@debs_to_install,
+			    });
+			foreach my $deb (@debs_to_install) {
+			    unlink "$options->{root}/$deb" or error "cannot unlink $deb: $!";
+			}
 		    }
 		}
 

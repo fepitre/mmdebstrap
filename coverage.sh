@@ -52,7 +52,7 @@ if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
 fi
 
 starttime=
-total=103
+total=104
 i=1
 
 print_header() {
@@ -1141,6 +1141,23 @@ if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 else
 	echo "HAVE_QEMU != yes -- Skipping test..."
+fi
+
+print_header "mode=$defaultmode,variant=essential: test not having to installing apt with --include"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+$CMD --mode=$defaultmode --variant=essential --include=apt --setup-hook="apt-get update" --setup-hook="apt-get --yes -oApt::Get::Download-Only=true install apt" $DEFAULT_DIST /tmp/debian-chroot.tar $mirror
+tar -tf /tmp/debian-chroot.tar | sort | diff -u tar1.txt -
+rm /tmp/debian-chroot.tar
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+elif [ "$defaultmode" = "root" ]; then
+	./run_null.sh SUDO
+else
+	./run_null.sh
 fi
 
 # test all variants
