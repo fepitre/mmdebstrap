@@ -1836,7 +1836,7 @@ sub main() {
     }
 
     if ($options->{variant} eq 'essential' and defined $options->{include}) {
-	error "cannot install extra packages with variant essential because apt is missing";
+	warning "cannot install extra packages with variant essential because apt is missing";
     }
 
     # fakeroot is an alias for fakechroot
