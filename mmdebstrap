@@ -2044,7 +2044,7 @@ sub main() {
 			}
 		    }
 		}
-		error "qemu user emulation of $nativearch using binfmt_misc failed";
+		error "$nativearch can neither be executed natively nor via qemu user emulation with binfmt_misc";
 	    } elsif ($withemu == 0 and $noemu == 1) {
 		error "arch-test succeeded without emu but not with emu";
 	    } elsif ($withemu == 1 and $noemu == 0) {
