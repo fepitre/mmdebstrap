@@ -33,6 +33,7 @@ Summary:
  - unprivileged operation using Linux user namespaces, fakechroot or proot
  - can operate on filesystems mounted with nodev
  - foreign architecture chroots with qemu-user
+ - variant installing only Essential:yes packages and dependencies
 
 The author believes that a chroot of a Debian stable release should include the
 latest packages including security fixes by default. This has been a wontfix
