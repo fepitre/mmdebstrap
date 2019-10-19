@@ -52,7 +52,7 @@ if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
 fi
 
 starttime=
-total=102
+total=103
 i=1
 
 print_header() {
@@ -501,6 +501,24 @@ export LC_ALL=C.UTF-8
 echo "deb $mirror $DEFAULT_DIST main" | $CMD --mode=$defaultmode --variant=apt > /tmp/debian-chroot.tar
 tar -tf /tmp/debian-chroot.tar | sort | diff -u tar1.txt -
 rm /tmp/debian-chroot.tar
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+elif [ "$defaultmode" = "root" ]; then
+	./run_null.sh SUDO
+else
+	./run_null.sh
+fi
+
+print_header "mode=$defaultmode,variant=apt: supply components manually"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+$CMD --mode=$defaultmode --variant=apt --components="main main" --comp="main,main" $DEFAULT_DIST /tmp/debian-chroot $mirror
+echo "deb $mirror $DEFAULT_DIST main" | cmp /tmp/debian-chroot/etc/apt/sources.list
+tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
+rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh

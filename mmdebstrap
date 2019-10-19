@@ -1776,7 +1776,7 @@ sub main() {
     my @ARGVORIG = @ARGV;
 
     my $options = {
-	components => "main",
+	components => ["main"],
 	variant => "important",
 	include => undef,
 	mode => 'auto',
@@ -1793,7 +1793,7 @@ sub main() {
     GetOptions(
 	'h|help'   => sub { pod2usage(-exitval => 0, -verbose => 2) },
 	'version'  => sub { print STDOUT "mmdebstrap $VERSION\n"; exit 0; },
-	'components=s' => \$options->{components},
+	'components=s@' => \$options->{components},
 	'variant=s' => \$options->{variant},
 	'include=s' => \$options->{include},
 	'architectures=s' => \$options->{architectures},
@@ -2083,6 +2083,24 @@ sub main() {
 	    info "Reading sources.list from standard input...";
 	    $sourceslist = do { local $/; <STDIN> };
 	} else {
+	    my @components = ();
+	    foreach my $comp (@{$options->{components}}) {
+		my @comps = split /[,\s]+/, $comp;
+		foreach my $c (@comps) {
+		    # strip leading and trailing whitespace
+		    $c =~ s/^\s+|\s+$//g;
+		    # skip if the remainder is an empty string
+		    if ($c eq "") {
+			next;
+		    }
+		    # do not append component if it's already in the list
+		    if (any {$_ eq $c} @components) {
+			next;
+		    }
+		    push @components, $c;
+		}
+	    }
+	    my $compstr = join " ", @components;
 	    if (scalar @ARGV > 0) {
 		for my $arg (@ARGV) {
 		    if ($arg eq '-') {
@@ -2091,7 +2109,7 @@ sub main() {
 		    } elsif ($arg =~ /^deb(-src)? /) {
 			$sourceslist .= "$arg\n";
 		    } elsif ($arg =~ /:\/\//) {
-			$sourceslist .= "deb $arg $suite $options->{components}\n";
+			$sourceslist .= "deb $arg $suite $compstr\n";
 		    } elsif (-f $arg) {
 			open my $fh, '<', $arg or error "cannot open $arg: $!";
 			while (my $line = <$fh>) {
@@ -2123,20 +2141,20 @@ sub main() {
 		} elsif (any {$_ eq $suite} @kali) {
 		    $mirror = 'https://http.kali.org/kali'
 		}
-		$sourceslist .= "deb $mirror $suite $options->{components}\n";
+		$sourceslist .= "deb $mirror $suite $compstr\n";
 		if (any {$_ eq $suite} @ubuntustable) {
-		    $sourceslist .= "deb $mirror $suite-updates $options->{components}\n";
-		    $sourceslist .= "deb $secmirror $suite-security $options->{components}\n";
+		    $sourceslist .= "deb $mirror $suite-updates $compstr\n";
+		    $sourceslist .= "deb $secmirror $suite-security $compstr\n";
 		} elsif (any {$_ eq $suite} @tanglustable) {
-		    $sourceslist .= "deb $secmirror $suite-updates $options->{components}\n";
+		    $sourceslist .= "deb $secmirror $suite-updates $compstr\n";
 		} elsif (any {$_ eq $suite} @debstable) {
-		    $sourceslist .= "deb $mirror $suite-updates $options->{components}\n";
+		    $sourceslist .= "deb $mirror $suite-updates $compstr\n";
 		    if (any {$_ eq $suite} ('stable', 'oldstable', 'stretch', 'buster')) {
-			$sourceslist .= "deb $secmirror $suite/updates $options->{components}\n";
+			$sourceslist .= "deb $secmirror $suite/updates $compstr\n";
 		    } else {
 			# starting from bullseye use
 			# https://lists.debian.org/87r26wqr2a.fsf@43-1.org
-			$sourceslist .= "deb $secmirror $suite-security $options->{components}\n";
+			$sourceslist .= "deb $secmirror $suite-security $compstr\n";
 		    }
 		}
 	    }
@@ -2716,8 +2734,16 @@ C<pkg>. See apt(8) for the supported syntax.
 
 =item B<--components>=I<comp1>[,I<comp2>,...]
 
-Comma separated list of components like main, contrib and non-free which will
-be used for all URI-only I<MIRROR> arguments.
+Comma or whitespace separated list of components like main, contrib and
+non-free which will be used for all URI-only I<MIRROR> arguments. The option
+can be specified multiple times and the components are concatenated in the
+order in which they are given on the command line. If later list items are
+repeated, then they get dropped so that the resulting component list is free
+of duplicates. So the following are equivalent:
+
+    --components="main contrib non-free"
+    --components=main,contrib,non-free
+    --comp=main --comp="contrib non-free" --comp="main,non-free"
 
 =item B<--architectures>=I<native>[,I<foreign1>,...]
 
