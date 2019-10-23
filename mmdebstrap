@@ -876,7 +876,9 @@ sub run_chroot(&$) {
 	if (-e "$options->{root}/sbin/start-stop-daemon.REAL") {
 	    move("$options->{root}/sbin/start-stop-daemon.REAL", "$options->{root}/sbin/start-stop-daemon") or error "cannot move start-stop-daemon: $!";
 	}
-	unlink "$options->{root}/usr/sbin/policy-rc.d" or error "cannot unlink policy-rc.d: $!";
+	if (-e "$options->{root}/usr/sbin/policy-rc.d") {
+	    unlink "$options->{root}/usr/sbin/policy-rc.d" or error "cannot unlink policy-rc.d: $!";
+	}
 
     };
 
