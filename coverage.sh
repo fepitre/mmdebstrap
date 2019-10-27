@@ -52,7 +52,7 @@ if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
 fi
 
 starttime=
-total=104
+total=105
 i=1
 
 print_header() {
@@ -826,6 +826,42 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C.UTF-8
 $CMD --mode=root --variant=apt --architectures=amd64,armhf --include=libmagic-mgc:armhf $DEFAULT_DIST /tmp/debian-chroot $mirror
+{ echo "amd64"; echo "armhf"; } | cmp /tmp/debian-chroot/var/lib/dpkg/arch -
+rm /tmp/debian-chroot/var/lib/dpkg/arch
+rm /tmp/debian-chroot/var/log/apt/eipp.log.xz
+rm /tmp/debian-chroot/var/lib/apt/extended_states
+rm /tmp/debian-chroot/var/lib/dpkg/info/libmagic-mgc.list
+rm /tmp/debian-chroot/var/lib/dpkg/info/libmagic-mgc.md5sums
+rm /tmp/debian-chroot/usr/lib/file/magic.mgc
+rm /tmp/debian-chroot/usr/share/doc/libmagic-mgc/README.Debian
+rm /tmp/debian-chroot/usr/share/doc/libmagic-mgc/changelog.Debian.gz
+rm /tmp/debian-chroot/usr/share/doc/libmagic-mgc/changelog.gz
+rm /tmp/debian-chroot/usr/share/doc/libmagic-mgc/copyright
+rm /tmp/debian-chroot/usr/share/file/magic.mgc
+rm /tmp/debian-chroot/usr/share/misc/magic.mgc
+rmdir /tmp/debian-chroot/usr/share/doc/libmagic-mgc/
+rmdir /tmp/debian-chroot/usr/share/file/magic/
+rmdir /tmp/debian-chroot/usr/share/file/
+rmdir /tmp/debian-chroot/usr/lib/file/
+tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
+rm -r /tmp/debian-chroot
+END
+if [ "$RUN_MA_SAME_TESTS" = "yes" ]; then
+	if [ "$HAVE_QEMU" = "yes" ]; then
+		./run_qemu.sh
+	else
+		./run_null.sh SUDO
+	fi
+else
+	echo "RUN_MA_SAME_TESTS != yes -- Skipping test..."
+fi
+
+print_header "mode=root,variant=apt: test --include=libmagic-mgc:armhf with multiple --arch options"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+$CMD --mode=root --variant=apt --architectures=amd64 --architectures=armhf --include=libmagic-mgc:armhf $DEFAULT_DIST /tmp/debian-chroot $mirror
 { echo "amd64"; echo "armhf"; } | cmp /tmp/debian-chroot/var/lib/dpkg/arch -
 rm /tmp/debian-chroot/var/lib/dpkg/arch
 rm /tmp/debian-chroot/var/log/apt/eipp.log.xz
