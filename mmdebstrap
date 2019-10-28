@@ -853,7 +853,8 @@ sub run_chroot(&$) {
 	}
 
 	# prevent daemons from starting
-	{
+	# the directory might not exist in custom variant, for example
+	if (-d "$options->{root}/usr/sbin/") {
 	    open my $fh, '>', "$options->{root}/usr/sbin/policy-rc.d" or error "cannot open policy-rc.d: $!";
 	    print $fh "#!/bin/sh\n";
 	    print $fh "exit 101\n";
