@@ -1720,6 +1720,11 @@ END
 	fi
 done
 
+if [ "$((i-1))" -ne "$total" ]; then
+	echo unexpected number of tests: got $((i-1)) but expected $total
+	exit 1
+fi
+
 if [ "$HAVE_QEMU" = "yes" ]; then
 	guestfish add-ro shared/cover_db.img : run : mount /dev/sda / : tar-out / - \
 		| tar -C shared/cover_db --extract
