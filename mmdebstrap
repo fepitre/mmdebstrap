@@ -1201,14 +1201,24 @@ sub setup {
 	}
     }
 
-    my %pkgs_to_install;
-    if (defined $options->{include}) {
-	for my $pkg (split /,/, $options->{include}) {
-	    $pkgs_to_install{$pkg} = ();
+    my @pkgs_to_install;
+    for my $incl (@{$options->{include}}) {
+	for my $pkg (split /[,\s]+/, $incl) {
+	    # strip leading and trailing whitespace
+	    $pkg =~ s/^\s+|\s+$//g;
+	    # skip if the remainder is an empty string
+	    if ($pkg eq '') {
+		next;
+	    }
+	    # do not append component if it's already in the list
+	    if (any {$_ eq $pkg} @pkgs_to_install) {
+		next;
+	    }
+	    push @pkgs_to_install, $pkg;
 	}
     }
     if ($options->{variant} eq 'buildd') {
-	$pkgs_to_install{'build-essential'} = ();
+	push @pkgs_to_install, 'build-essential';
     }
     # To figure out the right package set for the apt variant we can use:
     #     $ apt-get dist-upgrade -o dir::state::status=/dev/null
@@ -1222,7 +1232,7 @@ sub setup {
 		ARGV => ['apt-get', '--yes',
 		    '-oApt::Get::Download-Only=true',
 		    'install'],
-		PKGS => [keys %pkgs_to_install],
+		PKGS => [@pkgs_to_install],
 	    });
     } elsif ($options->{variant} eq 'apt') {
 	# if we just want to install Essential:yes packages, apt and their
@@ -1287,16 +1297,16 @@ sub setup {
 			    # always ignore packages of priority optional and extra
 			} elsif ($prio eq 'standard') {
 			    if (none { $_ eq $options->{variant} } ('important', 'required', 'buildd', 'minbase')) {
-				$pkgs_to_install{$pkgname} = ();
+				push @pkgs_to_install, $pkgname;
 			    }
 			} elsif ($prio eq 'important') {
 			    if (none { $_ eq $options->{variant} } ('required', 'buildd', 'minbase')) {
-				$pkgs_to_install{$pkgname} = ();
+				push @pkgs_to_install, $pkgname;
 			    }
 			} elsif ($prio eq 'required') {
 			    # required packages are part of all sets except
 			    # essential and apt
-			    $pkgs_to_install{$pkgname} = ();
+			    push @pkgs_to_install, $pkgname;
 			} else {
 			    error "unknown priority: $prio";
 			}
@@ -1436,12 +1446,12 @@ sub setup {
 	    # run essential hooks
 	    run_hooks('essential', $options);
 
-	    if (%pkgs_to_install) {
+	    if (scalar @pkgs_to_install > 0) {
 		run_apt_progress({
 			ARGV => ['apt-get', '--yes',
 			    @chrootless_opts,
 			    'install'],
-			PKGS => [keys %pkgs_to_install],
+			PKGS => [@pkgs_to_install],
 		    });
 	    }
 	} else {
@@ -1639,7 +1649,7 @@ sub setup {
 		run_hooks('essential', $options);
 	    }
 
-	    if ($options->{variant} ne 'custom' and %pkgs_to_install) {
+	    if ($options->{variant} ne 'custom' and scalar @pkgs_to_install > 0) {
 		# some packages have to be installed from the outside before anything
 		# can be installed from the inside.
 		#
@@ -1652,11 +1662,11 @@ sub setup {
 		# installed during installation, then we might end up with a fully
 		# installed system without keyrings that are valid for its
 		# sources.list.
-		my %pkgs_to_install_from_outside;
+		my @pkgs_to_install_from_outside;
 
 		# install apt if necessary
 		if ($options->{variant} ne 'apt') {
-		    $pkgs_to_install_from_outside{apt} = ();
+		    push @pkgs_to_install_from_outside, 'apt';
 		}
 
 		# since apt will be run inside the chroot, make sure that
@@ -1666,26 +1676,26 @@ sub setup {
 		while (my $uri = <$pipe_apt>) {
 		    if ($uri =~ /^https:\/\//) {
 			# FIXME: support for https is part of apt >= 1.5
-			$pkgs_to_install_from_outside{'apt-transport-https'} = ();
-			$pkgs_to_install_from_outside{'ca-certificates'} = ();
+			push @pkgs_to_install_from_outside, 'apt-transport-https';
+			push @pkgs_to_install_from_outside, 'ca-certificates';
 			last;
 		    } elsif ($uri =~ /^tor(\+[a-z]+)*:\/\//) {
 			# tor URIs can be tor+http://, tor+https:// or even
 			# tor+mirror+file://
-			$pkgs_to_install_from_outside{'apt-transport-tor'} = ();
+			push @pkgs_to_install_from_outside, 'apt-transport-tor';
 			last;
 		    }
 		}
 		close $pipe_apt;
 		$? == 0 or error "apt-get indextargets failed";
 
-		if (%pkgs_to_install_from_outside) {
-		    info 'downloading ' . (join ', ', keys %pkgs_to_install_from_outside) . "...";
+		if (scalar @pkgs_to_install_from_outside > 0) {
+		    info 'downloading ' . (join ', ', @pkgs_to_install_from_outside) . "...";
 		    run_apt_progress({
 			    ARGV => ['apt-get', '--yes',
 				'-oApt::Get::Download-Only=true',
 				'install'],
-			    PKGS => [keys %pkgs_to_install_from_outside],
+			    PKGS => [@pkgs_to_install_from_outside],
 			});
 		    my @debs_to_install;
 		    my $apt_archives = "/var/cache/apt/archives/";
@@ -1706,7 +1716,7 @@ sub setup {
 		    } else {
 			# we need --force-depends because dpkg does not take Pre-Depends
 			# into account and thus doesn't install them in the right order
-			info 'installing ' . (join ', ', keys %pkgs_to_install_from_outside) . "...";
+			info 'installing ' . (join ', ', @pkgs_to_install_from_outside) . "...";
 			run_dpkg_progress({
 				ARGV => [@chrootcmd, 'env', '--unset=TMPDIR',
 				    'dpkg',  '--install', '--force-depends'],
@@ -1725,7 +1735,7 @@ sub setup {
 				'--unset=APT_CONFIG',
 				'--unset=TMPDIR',
 				'apt-get', '--yes', 'install'],
-			    PKGS => [keys %pkgs_to_install],
+			    PKGS => [@pkgs_to_install],
 			});
 		} $options;
 
@@ -1787,7 +1797,7 @@ sub main() {
     my $options = {
 	components => ["main"],
 	variant => "important",
-	include => undef,
+	include => [],
 	architectures => [$hostarch],
 	mode => 'auto',
 	dpkgopts => [],
@@ -1804,7 +1814,7 @@ sub main() {
 	'version'  => sub { print STDOUT "mmdebstrap $VERSION\n"; exit 0; },
 	'components=s@' => \$options->{components},
 	'variant=s' => \$options->{variant},
-	'include=s' => \$options->{include},
+	'include=s@' => \$options->{include},
 	'architectures=s@' => \$options->{architectures},
 	'mode=s' => \$options->{mode},
 	'dpkgopt=s@' => \$options->{dpkgopts},
@@ -1844,7 +1854,7 @@ sub main() {
 	$options->{variant} = 'important';
     }
 
-    if ($options->{variant} eq 'essential' and defined $options->{include}) {
+    if ($options->{variant} eq 'essential' and scalar @{$options->{include}} > 0) {
 	warning "cannot install extra packages with variant essential because apt is missing";
     }
 
@@ -2755,18 +2765,26 @@ Example: Exclude paths to reduce chroot size
 
 =item B<--include>=I<pkg1>[,I<pkg2>,...]
 
-Comma separated list of packages which will be installed in addition to the
-packages installed by the specified variant. The direct and indirect hard
-dependencies will also be installed. The behaviour of this option depends on
-the selected variant. The B<extract> and B<custom> variants install no packages
-by default, so for these variants, the packages specified by this option will
-be the only ones that get either extracted or installed by dpkg, respectively.
-For all other variants, apt is used to install the additional packages. The
-B<essential> variant does not include apt and thus, the include option will
-only work when the B<chrootless> mode is selected and thus apt from the outside
-can be used. Package names are directly passed to apt and thus, you can use apt
-features like C<pkg/suite>, C<pkg=version>, C<pkg-> or use a glob or regex for
-C<pkg>. See apt(8) for the supported syntax.
+Comma or whitespace separated list of packages which will be installed in
+addition to the packages installed by the specified variant. The direct and
+indirect hard dependencies will also be installed. The behaviour of this
+option depends on the selected variant. The B<extract> and B<custom> variants
+install no packages by default, so for these variants, the packages specified
+by this option will be the only ones that get either extracted or installed by
+dpkg, respectively.  For all other variants, apt is used to install the
+additional packages. The B<essential> variant does not include apt and thus,
+the include option will only work when the B<chrootless> mode is selected and
+thus apt from the outside can be used. Package names are directly passed to
+apt and thus, you can use apt features like C<pkg/suite>, C<pkg=version>,
+C<pkg-> or use a glob or regex for C<pkg>. See apt(8) for the supported
+syntax. The option can be specified multiple times and the packages are
+concatenated in the order in which they are given on the command line. If
+later list items are repeated, then they get dropped so that the resulting
+package list is free of duplicates. So the following are equivalent:
+
+    --include="pkg1/stable pkg2=1.0 pkg3-"
+    --include=pkg1/stable,pkg2=1.0,pkg3-
+    --incl=pkg1/stable --incl="pkg2=1.0 pkg3-" --incl=pkg2=1.0,pkg3-
 
 =item B<--components>=I<comp1>[,I<comp2>,...]
 

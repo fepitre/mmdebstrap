@@ -52,7 +52,7 @@ if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
 fi
 
 starttime=
-total=107
+total=108
 i=1
 
 print_header() {
@@ -942,6 +942,39 @@ rm /tmp/debian-chroot/var/log/apt/eipp.log.xz
 rm /tmp/debian-chroot/var/lib/apt/extended_states
 rm /tmp/debian-chroot/var/lib/dpkg/info/doc-debian.list
 rm /tmp/debian-chroot/var/lib/dpkg/info/doc-debian.md5sums
+tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
+rm -r /tmp/debian-chroot
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	./run_null.sh SUDO
+fi
+
+print_header "mode=root,variant=apt: test multiple --include"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+$CMD --mode=root --variant=apt --include=doc-debian --include=tzdata $DEFAULT_DIST /tmp/debian-chroot $mirror
+rm /tmp/debian-chroot/usr/share/doc-base/debian-*
+rm -r /tmp/debian-chroot/usr/share/doc/debian
+rm -r /tmp/debian-chroot/usr/share/doc/doc-debian
+rm /tmp/debian-chroot/etc/localtime
+rm /tmp/debian-chroot/etc/timezone
+rm /tmp/debian-chroot/usr/sbin/tzconfig
+rm -r /tmp/debian-chroot/usr/share/doc/tzdata
+rm -r /tmp/debian-chroot/usr/share/zoneinfo
+rm /tmp/debian-chroot/var/log/apt/eipp.log.xz
+rm /tmp/debian-chroot/var/lib/apt/extended_states
+rm /tmp/debian-chroot/var/lib/dpkg/info/doc-debian.list
+rm /tmp/debian-chroot/var/lib/dpkg/info/doc-debian.md5sums
+rm /tmp/debian-chroot/var/lib/dpkg/info/tzdata.list
+rm /tmp/debian-chroot/var/lib/dpkg/info/tzdata.md5sums
+rm /tmp/debian-chroot/var/lib/dpkg/info/tzdata.config
+rm /tmp/debian-chroot/var/lib/dpkg/info/tzdata.postinst
+rm /tmp/debian-chroot/var/lib/dpkg/info/tzdata.postrm
+rm /tmp/debian-chroot/var/lib/dpkg/info/tzdata.templates
 tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
 rm -r /tmp/debian-chroot
 END
