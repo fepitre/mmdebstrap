@@ -944,7 +944,7 @@ sub setup {
 	} elsif (ref $value eq 'ARRAY') {
 	    debug "$key: [" . (join ', ', @{$value}) . "]";
 	} else {
-	    error "unknown type";
+	    error "unknown type for key $key: " . (ref $value);
 	}
     }
 
