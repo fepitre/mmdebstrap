@@ -52,7 +52,7 @@ if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
 fi
 
 starttime=
-total=108
+total=109
 i=1
 
 print_header() {
@@ -900,6 +900,25 @@ export LC_ALL=C.UTF-8
 echo 'Acquire::Languages "none";' > config
 $CMD --mode=root --variant=apt --aptopt='Acquire::Check-Valid-Until "false"' --aptopt=config $DEFAULT_DIST /tmp/debian-chroot $mirror
 printf 'Acquire::Check-Valid-Until "false";\nAcquire::Languages "none";\n' | cmp /tmp/debian-chroot/etc/apt/apt.conf.d/99mmdebstrap -
+rm /tmp/debian-chroot/etc/apt/apt.conf.d/99mmdebstrap
+tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
+rm -r /tmp/debian-chroot
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	./run_null.sh SUDO
+fi
+
+print_header "mode=root,variant=apt: test --keyring"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+echo 'Acquire::Languages "none";' > config
+$CMD --mode=root --variant=apt --aptopt='Acquire::Check-Valid-Until "false"' --keyring=/usr/share/keyrings/debian-archive-keyring.gpg --keyring=/usr/share/keyrings/ --aptopt=config $DEFAULT_DIST /tmp/debian-chroot $mirror
+cat /tmp/debian-chroot/etc/apt/apt.conf.d/99mmdebstrap
+printf 'Acquire::Check-Valid-Until "false";\nDir::Etc::Trusted "/usr/share/keyrings/debian-archive-keyring.gpg";\nDir::Etc::TrustedParts "/usr/share/keyrings/";\nAcquire::Languages "none";\n' | cmp /tmp/debian-chroot/etc/apt/apt.conf.d/99mmdebstrap -
 rm /tmp/debian-chroot/etc/apt/apt.conf.d/99mmdebstrap
 tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
 rm -r /tmp/debian-chroot

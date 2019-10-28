@@ -1819,6 +1819,20 @@ sub main() {
 	'mode=s' => \$options->{mode},
 	'dpkgopt=s@' => \$options->{dpkgopts},
 	'aptopt=s@' => \$options->{aptopts},
+	'keyring=s' => sub {
+	    my ($opt_name, $opt_value) = @_;
+	    if ($opt_value =~ /"/) {
+		error "apt cannot handle paths with double quotes";
+	    }
+	    if (! -e $opt_value) {
+		error "keyring \"$opt_value\" does not exist";
+	    }
+	    if (-d $opt_value) {
+		push @{$options->{aptopts}}, "Dir::Etc::TrustedParts \"$opt_value\"";
+	    } else {
+		push @{$options->{aptopts}}, "Dir::Etc::Trusted \"$opt_value\"";
+	    }
+	},
 	's|silent' => sub { $verbosity_level = 0; },
 	'q|quiet' => sub { $verbosity_level = 0; },
 	'v|verbose' => sub { $verbosity_level = 2; },
@@ -2744,6 +2758,19 @@ Example: Minimizing the number of packages installed from experimental
 
     --aptopt='APT::Solver "aspcud"'
     --aptopt='APT::Solver::aspcud::Preferences "-count(solution,APT-Release:=/a=experimental/),-removed,-changed,-new"'
+
+=item B<--keyring>=I<file>|I<directory>
+
+A shorthand for using C<--aptopt='Dir::Etc::Trusted "file"'> or
+C<-aptopt='Dir::Etc::TrustedParts "directory"'> when passing a file or
+directory to the B<--keyring> option, respectively. B<mmdebstrap> will add the
+right keyring for the given I<SUITE> if it knows about the distribution and if
+the keyring is installed in a path known by B<mmdebstrap>, usually
+F</usr/share/keyrings>. If B<mmdebstrap> does not know or cannot find the
+right keyring for the given I<SUITE> it will only know about the keys that apt
+on the host system knows about. If you want to prevent B<mmdebstrap> from
+choosing the right keyring for you for known values of I<SUITE>, choose an
+arbitrary value for I<SUITE> and specify the right apt line manually.
 
 =item B<--dpkgopt>=I<option>|I<file>
 
