@@ -52,7 +52,7 @@ if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
 fi
 
 starttime=
-total=106
+total=107
 i=1
 
 print_header() {
@@ -1185,6 +1185,23 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C.UTF-8
 $CMD --mode=$defaultmode --variant=essential --include=apt --setup-hook="apt-get update" --setup-hook="apt-get --yes -oApt::Get::Download-Only=true install apt" $DEFAULT_DIST /tmp/debian-chroot.tar $mirror
+tar -tf /tmp/debian-chroot.tar | sort | diff -u tar1.txt -
+rm /tmp/debian-chroot.tar
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+elif [ "$defaultmode" = "root" ]; then
+	./run_null.sh SUDO
+else
+	./run_null.sh
+fi
+
+print_header "mode=$defaultmode,variant=apt: remove start-stop-daemon and policy-rc.d in hook"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+$CMD --mode=$defaultmode --variant=apt --customize-hook='rm "\$1/usr/sbin/policy-rc.d"; rm "\$1/sbin/start-stop-daemon"' $DEFAULT_DIST /tmp/debian-chroot.tar $mirror
 tar -tf /tmp/debian-chroot.tar | sort | diff -u tar1.txt -
 rm /tmp/debian-chroot.tar
 END
