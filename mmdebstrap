@@ -862,7 +862,11 @@ sub run_chroot(&$) {
 	    chmod 0755, "$options->{root}/usr/sbin/policy-rc.d" or error "cannot chmod policy-rc.d: $!";
 	}
 
+	# the file might not exist if it was removed in a hook
 	if (-e "$options->{root}/sbin/start-stop-daemon") {
+	    if (-e "$options->{root}/sbin/start-stop-daemon.REAL") {
+		error "$options->{root}/sbin/start-stop-daemon.REAL already exists";
+	    }
 	    move("$options->{root}/sbin/start-stop-daemon", "$options->{root}/sbin/start-stop-daemon.REAL") or error "cannot move start-stop-daemon: $!";
 	    open my $fh, '>', "$options->{root}/sbin/start-stop-daemon" or error "cannot open start-stop-daemon: $!";
 	    print $fh "#!/bin/sh\n";
