@@ -792,7 +792,7 @@ sub run_chroot(&$) {
 		    error "unsupported type: $type";
 		}
 	    }
-	} elsif (any { $_ eq $options->{mode} } ('proot', 'fakechroot')) {
+	} elsif (any { $_ eq $options->{mode} } ('proot', 'fakechroot', 'chrootless')) {
 	    # we cannot mount in fakechroot and proot mode
 	    # in proot mode we have /dev bind-mounted already through --bind=/dev
 	} else {
@@ -823,7 +823,7 @@ sub run_chroot(&$) {
 	    # we have to rbind because just using bind results in "wrong fs
 	    # type, bad option, bad superblock" error
 	    0 == system('mount', '-o', 'rbind', '/sys', "$options->{root}/sys") or error "mount /sys failed: $?";
-	} elsif (any { $_ eq $options->{mode} } ('proot', 'fakechroot')) {
+	} elsif (any { $_ eq $options->{mode} } ('proot', 'fakechroot', 'chrootless')) {
 	    # we cannot mount in fakechroot and proot mode
 	    # in proot mode we have /proc bind-mounted already through --bind=/proc
 	} else {
@@ -845,7 +845,7 @@ sub run_chroot(&$) {
 		0 == system('umount', '--no-mtab', "$options->{root}/proc") or error "umount /proc failed: $?";
 	    };
 	    0 == system('mount', '-t', 'proc', 'proc', "$options->{root}/proc") or error "mount /proc failed: $?";
-	} elsif (any { $_ eq $options->{mode} } ('proot', 'fakechroot')) {
+	} elsif (any { $_ eq $options->{mode} } ('proot', 'fakechroot', 'chrootless')) {
 	    # we cannot mount in fakechroot and proot mode
 	    # in proot mode we have /sys bind-mounted already through --bind=/sys
 	} else {
