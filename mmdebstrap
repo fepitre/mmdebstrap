@@ -2403,6 +2403,11 @@ sub main() {
     my $exitstatus = 0;
     my @taropts = ('--sort=name', "--mtime=\@$mtime", '--clamp-mtime', '--numeric-owner', '--one-file-system', '-c', '--exclude=./dev');
 
+    # Use parallel xz compression
+    if (defined $tar_compressor and $tar_compressor eq 'xz') {
+	push @taropts, '-Ixz --threads=0'
+    }
+
     # disable signals so that we can fork and change behaviour of the signal
     # handler in the parent and child without getting interrupted
     my $sigset = POSIX::SigSet->new(SIGINT, SIGHUP, SIGPIPE, SIGTERM);
