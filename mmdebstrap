@@ -781,7 +781,18 @@ sub run_chroot(&$) {
 				rmdir "$options->{root}/$fname" or warn "cannot rmdir $fname: $!";
 			    }
 			}
-			make_path "$options->{root}/$fname" or error "cannot make_path $fname";
+			if (-e "$options->{root}/$fname") {
+			    if (! -d "$options->{root}/$fname") {
+				error "$fname already exists but is not a directory";
+			    }
+			} else {
+			    my $num_created = make_path "$options->{root}/$fname", {error => \my $err};
+			    if ($err && @$err) {
+				error (join "; ", (map {"cannot create " . (join ": ", %{$_})} @$err));
+			    } elsif ($num_created == 0) {
+				error "cannot create $options->{root}/$fname";
+			    }
+			}
 			chmod $mode, "$options->{root}/$fname" or error "cannot chmod $fname: $!";
 		    }
 		    if ($options->{mode} eq 'unshare') {
@@ -1004,7 +1015,18 @@ sub setup {
 		'/var/lib/dpkg/updates');
 	}
 	foreach my $dir (@directories) {
-	    make_path("$options->{root}/$dir") or error "failed to create $dir: $!";
+	    if (-e "$options->{root}/$dir") {
+		if (! -d "$options->{root}/$dir") {
+		    error "$dir already exists but is not a directory";
+		}
+	    } else {
+		my $num_created = make_path "$options->{root}/$dir", {error => \my $err};
+		if ($err && @$err) {
+		    error (join "; ", (map {"cannot create " . (join ": ", %{$_})} @$err));
+		} elsif ($num_created == 0) {
+		    error "cannot create $options->{root}/$dir";
+		}
+	    }
 	}
     }
 
@@ -1148,9 +1170,17 @@ sub setup {
 	    } elsif ($type == 4) { # block special
 		0 == system('mknod', "$options->{root}/$fname", 'b', $devmajor, $devminor) or error "mknod failed: $?";
 	    } elsif ($type == 5) { # directory
-		make_path "$options->{root}/$fname", { error => \my $err };
-		if (@$err) {
-		    error "cannot create $fname";
+		if (-e "$options->{root}/$fname") {
+		    if (! -d "$options->{root}/$fname") {
+			error "$fname already exists but is not a directory";
+		    }
+		} else {
+		    my $num_created = make_path "$options->{root}/$fname", {error => \my $err};
+		    if ($err && @$err) {
+			error (join "; ", (map {"cannot create " . (join ": ", %{$_})} @$err));
+		    } elsif ($num_created == 0) {
+			error "cannot create $options->{root}/$fname";
+		    }
 		}
 	    } else {
 		error "unsupported type: $type";
@@ -2326,7 +2356,12 @@ sub main() {
 	    }
 	    closedir($dh);
 	} else {
-	    make_path($options->{root}) or error "cannot create root: $!";
+	    my $num_created = make_path "$options->{root}", {error => \my $err};
+	    if ($err && @$err) {
+		error (join "; ", (map {"cannot create " . (join ": ", %{$_})} @$err));
+	    } elsif ($num_created == 0) {
+		error "cannot create $options->{root}";
+	    }
 	}
     }
 
