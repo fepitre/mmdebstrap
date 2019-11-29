@@ -1852,7 +1852,8 @@ sub main() {
     my $logfile = undef;
     Getopt::Long::Configure ('default', 'bundling', 'auto_abbrev', 'ignore_case_always');
     GetOptions(
-	'h|help'   => sub { pod2usage(-exitval => 0, -verbose => 2) },
+	'h|help'   => sub { pod2usage(-exitval => 0, -verbose => 1) },
+	'man'      => sub { pod2usage(-exitval => 0, -verbose => 2) },
 	'version'  => sub { print STDOUT "mmdebstrap $VERSION\n"; exit 0; },
 	'components=s@' => \$options->{components},
 	'variant=s' => \$options->{variant},
@@ -2756,7 +2757,14 @@ require a double dash and may be abbreviated to uniqueness.
 
 =item B<-h,--help>
 
-Print this help text and exit.
+Print synopsis and options of this man page and exit.
+
+=item B<--man>
+
+Show the full man page as generated from Perl POD in a pager. This requires
+the perldoc program from the perl-doc package. This is the same as running:
+
+    pod2man /usr/bin/mmdebstrap | man -l -
 
 =item B<--version>
 

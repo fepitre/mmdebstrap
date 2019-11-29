@@ -52,7 +52,7 @@ if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
 fi
 
 starttime=
-total=109
+total=110
 i=1
 
 print_header() {
@@ -233,7 +233,20 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-$CMD --help | grep --quiet SYNOPSIS
+$CMD --help | grep --quiet --fixed-strings 'mmdebstrap [OPTION...] [SUITE [TARGET [MIRROR...]]]'
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	./run_null.sh SUDO
+fi
+
+print_header "test --man"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+$CMD --man | grep --quiet --fixed-strings 'mmdebstrap [OPTION...] [*SUITE* [*TARGET* [*MIRROR*...]]]'
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
