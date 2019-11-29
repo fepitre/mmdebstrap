@@ -1654,11 +1654,13 @@ sub setup {
 	    # account and thus doesn't install them in the right order
 	    # And the --predep-package option is broken: #539133
 	    info "installing packages...";
-	    run_dpkg_progress({
-		    ARGV => [@chrootcmd, 'env', '--unset=TMPDIR',
-			'dpkg', '--install', '--force-depends'],
-		    PKGS => \@essential_pkgs,
-		});
+	    run_chroot {
+		run_dpkg_progress({
+			ARGV => [@chrootcmd, 'env', '--unset=TMPDIR',
+			    'dpkg', '--install', '--force-depends'],
+			PKGS => \@essential_pkgs,
+		    });
+	    } $options;
 
 	    # if the path-excluded option was added to the dpkg config, reinstall all
 	    # packages
