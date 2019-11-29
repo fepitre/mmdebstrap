@@ -149,7 +149,6 @@ rm /tmp/debian-$dist-debootstrap/var/cache/ldconfig/aux-cache
 # remove logs
 rm /tmp/debian-$dist-debootstrap/var/log/dpkg.log \
 	/tmp/debian-$dist-debootstrap/var/log/bootstrap.log \
-	/tmp/debian-$dist-mm/var/log/apt/eipp.log.xz \
 	/tmp/debian-$dist-debootstrap/var/log/alternatives.log
 # remove *-old files
 rm /tmp/debian-$dist-debootstrap/var/cache/debconf/config.dat-old \
@@ -828,7 +827,6 @@ export LC_ALL=C.UTF-8
 $CMD --mode=root --variant=apt --architectures=amd64,armhf --include=libmagic-mgc:armhf $DEFAULT_DIST /tmp/debian-chroot $mirror
 { echo "amd64"; echo "armhf"; } | cmp /tmp/debian-chroot/var/lib/dpkg/arch -
 rm /tmp/debian-chroot/var/lib/dpkg/arch
-rm /tmp/debian-chroot/var/log/apt/eipp.log.xz
 rm /tmp/debian-chroot/var/lib/apt/extended_states
 rm /tmp/debian-chroot/var/lib/dpkg/info/libmagic-mgc.list
 rm /tmp/debian-chroot/var/lib/dpkg/info/libmagic-mgc.md5sums
@@ -864,7 +862,6 @@ export LC_ALL=C.UTF-8
 $CMD --mode=root --variant=apt --architectures=amd64 --architectures=armhf --include=libmagic-mgc:armhf $DEFAULT_DIST /tmp/debian-chroot $mirror
 { echo "amd64"; echo "armhf"; } | cmp /tmp/debian-chroot/var/lib/dpkg/arch -
 rm /tmp/debian-chroot/var/lib/dpkg/arch
-rm /tmp/debian-chroot/var/log/apt/eipp.log.xz
 rm /tmp/debian-chroot/var/lib/apt/extended_states
 rm /tmp/debian-chroot/var/lib/dpkg/info/libmagic-mgc.list
 rm /tmp/debian-chroot/var/lib/dpkg/info/libmagic-mgc.md5sums
@@ -957,7 +954,6 @@ $CMD --mode=root --variant=apt --include=doc-debian $DEFAULT_DIST /tmp/debian-ch
 rm /tmp/debian-chroot/usr/share/doc-base/debian-*
 rm -r /tmp/debian-chroot/usr/share/doc/debian
 rm -r /tmp/debian-chroot/usr/share/doc/doc-debian
-rm /tmp/debian-chroot/var/log/apt/eipp.log.xz
 rm /tmp/debian-chroot/var/lib/apt/extended_states
 rm /tmp/debian-chroot/var/lib/dpkg/info/doc-debian.list
 rm /tmp/debian-chroot/var/lib/dpkg/info/doc-debian.md5sums
@@ -984,7 +980,6 @@ rm /tmp/debian-chroot/etc/timezone
 rm /tmp/debian-chroot/usr/sbin/tzconfig
 rm -r /tmp/debian-chroot/usr/share/doc/tzdata
 rm -r /tmp/debian-chroot/usr/share/zoneinfo
-rm /tmp/debian-chroot/var/log/apt/eipp.log.xz
 rm /tmp/debian-chroot/var/lib/apt/extended_states
 rm /tmp/debian-chroot/var/lib/dpkg/info/doc-debian.list
 rm /tmp/debian-chroot/var/lib/dpkg/info/doc-debian.md5sums
@@ -1044,7 +1039,6 @@ tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort \
 	| grep -v '^./usr/share/doc/tzdata' \
 	| grep -v '^./usr/share/zoneinfo' \
 	| grep -v '^./var/lib/dpkg/info/tzdata.' \
-	| grep -v '^./var/log/apt/eipp.log.xz$' \
 	| grep -v '^./var/lib/apt/extended_states$' \
 	| diff -u tar1.txt -
 rm customize.sh
@@ -1514,7 +1508,6 @@ rm /tmp/debian-chroot/var/lib/apt/extended_states
 #rm /tmp/debian-chroot/bin
 #rm /tmp/debian-chroot/lib
 # in chrootless mode, there is more to remove
-rm /tmp/debian-chroot/var/log/apt/eipp.log.xz
 rm /tmp/debian-chroot/var/lib/dpkg/triggers/Lock
 rm /tmp/debian-chroot/var/lib/dpkg/triggers/Unincorp
 rm /tmp/debian-chroot/var/lib/dpkg/status-old
@@ -1590,7 +1583,6 @@ rm /tmp/debian-chroot/var/lib/apt/extended_states
 #rm /tmp/debian-chroot/bin
 #rm /tmp/debian-chroot/lib
 # in chrootless mode, there is more to remove
-rm /tmp/debian-chroot/var/log/apt/eipp.log.xz
 rm /tmp/debian-chroot/var/lib/dpkg/triggers/Lock
 rm /tmp/debian-chroot/var/lib/dpkg/triggers/Unincorp
 rm /tmp/debian-chroot/var/lib/dpkg/status-old
@@ -1644,7 +1636,6 @@ rm /tmp/debian-chroot/var/lib/apt/extended_states
 #rm /tmp/debian-chroot/bin
 #rm /tmp/debian-chroot/lib
 # in chrootless mode, there is more to remove
-rm /tmp/debian-chroot/var/log/apt/eipp.log.xz
 rm /tmp/debian-chroot/var/lib/dpkg/arch
 rm /tmp/debian-chroot/var/lib/dpkg/triggers/Lock
 rm /tmp/debian-chroot/var/lib/dpkg/triggers/Unincorp

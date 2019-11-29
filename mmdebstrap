@@ -1807,11 +1807,13 @@ sub setup {
     }
 
     # clean up certain files to make output reproducible
-    unlink "$options->{root}/var/log/dpkg.log";
-    unlink "$options->{root}/var/log/apt/history.log";
-    unlink "$options->{root}/var/log/apt/term.log";
-    unlink "$options->{root}/var/log/alternatives.log";
-    unlink "$options->{root}/var/cache/ldconfig/aux-cache";
+    foreach my $fname ('/var/log/dpkg.log', '/var/log/apt/history.log', '/var/log/apt/term.log', '/var/log/alternatives.log', '/var/cache/ldconfig/aux-cache', '/var/log/apt/eipp.log.xz') {
+	my $path = "$options->{root}$fname";
+	if (! -e $path) {
+	    next;
+	}
+	unlink $path or error "cannot unlink $path: $!";
+    }
 }
 
 sub main() {
