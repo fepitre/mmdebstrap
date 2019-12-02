@@ -137,6 +137,26 @@ sub error {
     }
 }
 
+# check whether a directory is mounted by comparing the device number of the
+# directory itself with its parent
+sub is_mountpoint($) {
+    my $dir = shift;
+    if (! -e $dir) {
+	return 0;
+    }
+    my @a = stat "$dir/.";
+    my @b = stat "$dir/..";
+    # if the device number is different, then the directory must be mounted
+    if ($a[0] != $b[0]) {
+	return 1;
+    }
+    # if the inode number is the same, then the directory must be mounted
+    if ($a[1] == $b[1]) {
+	return 1;
+    }
+    return 0;
+}
+
 # tar cannot figure out the decompression program when receiving data on
 # standard input, thus we do it ourselves. This is copied from tar's
 # src/suffix.c
@@ -850,6 +870,11 @@ sub run_chroot(&$) {
 	}
 	if ($options->{mode} eq 'root') {
 	    push @cleanup_tasks, sub {
+		# some maintainer scripts mount additional stuff into /proc
+		# which we need to unmount beforehand
+		if (is_mountpoint("$options->{root}/proc/sys/fs/binfmt_misc")) {
+		    0 == system('umount', "$options->{root}/proc/sys/fs/binfmt_misc") or error "umount /proc/sys/fs/binfmt_misc failed: $?";
+		}
 		0 == system('umount', "$options->{root}/proc") or error "umount /proc failed: $?";
 	    };
 	    0 == system('mount', '-t', 'proc', 'proc', "$options->{root}/proc") or error "mount /proc failed: $?";
