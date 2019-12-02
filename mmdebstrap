@@ -2249,7 +2249,7 @@ sub main() {
 		    }
 		}
 	    } else {
-		my @debstable = ('stable', 'oldstable', 'stretch', 'buster');
+		my @debstable = ('oldoldstable', 'oldstable', 'stable', 'jessie', 'stretch', 'buster', 'bullseye', 'bookworm');
 		my @ubuntustable = ('trusty', 'xenial', 'zesty', 'artful', 'bionic', 'cosmic');
 		my @tanglustable = ('aequorea', 'bartholomea', 'chromodoris', 'dasyatis');
 		my @kali = ('kali-dev', 'kali-rolling', 'kali-bleeding-edge');
@@ -2277,7 +2277,7 @@ sub main() {
 		    $sourceslist .= "deb $secmirror $suite-updates $compstr\n";
 		} elsif (any {$_ eq $suite} @debstable) {
 		    $sourceslist .= "deb $mirror $suite-updates $compstr\n";
-		    if (any {$_ eq $suite} ('stable', 'oldstable', 'stretch', 'buster')) {
+		    if (any {$_ eq $suite} ('oldoldstable', 'oldstable', 'stable', 'jessie', 'stretch', 'buster')) {
 			$sourceslist .= "deb $secmirror $suite/updates $compstr\n";
 		    } else {
 			# starting from bullseye use
