@@ -52,7 +52,7 @@ if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
 fi
 
 starttime=
-total=110
+total=111
 i=1
 
 print_header() {
@@ -427,6 +427,24 @@ if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 else
 	echo "HAVE_QEMU != yes -- Skipping test..."
+fi
+
+print_header "mode=$defaultmode,variant=apt: test xz compressed tarball"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+$CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar.xz $mirror
+printf '\3757zXZ\0' | cmp --bytes=6 /tmp/debian-chroot.tar.xz -
+tar -tf /tmp/debian-chroot.tar.xz | sort | diff -u tar1.txt -
+rm /tmp/debian-chroot.tar.xz
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+elif [ "$defaultmode" = "root" ]; then
+	./run_null.sh SUDO
+else
+	./run_null.sh
 fi
 
 print_header "mode=auto,variant=apt: test auto-mode without unshare capabilities"

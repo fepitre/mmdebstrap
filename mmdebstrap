@@ -147,23 +147,23 @@ sub get_tar_compressor($) {
     } elsif ($filename =~ /\.tar$/) {
 	return undef
     } elsif ($filename =~ /\.(gz|tgz|taz)$/) {
-	return 'gzip';
+	return ['gzip'];
     } elsif ($filename =~ /\.(Z|taZ)$/) {
-	return 'compress';
+	return ['compress'];
     } elsif ($filename =~ /\.(bz2|tbz|tbz2|tz2)$/) {
-	return 'bzip2';
+	return ['bzip2'];
     } elsif ($filename =~ /\.lz$/) {
-	return 'lzip';
+	return ['lzip'];
     } elsif ($filename =~ /\.(lzma|tlz)$/) {
-	return 'lzma';
+	return ['lzma'];
     } elsif ($filename =~ /\.lzo$/) {
-	return 'lzop';
+	return ['lzop'];
     } elsif ($filename =~ /\.lz4$/) {
-	return 'lz4';
+	return ['lz4'];
     } elsif ($filename =~ /\.(xz|txz)$/) {
-	return ('xz', '--threads=0');
+	return ['xz', '--threads=0'];
     } elsif ($filename =~ /\.zst$/) {
-	return 'zstd';
+	return ['zstd'];
     }
     return undef
 }
@@ -2300,11 +2300,11 @@ sub main() {
 	    if ($pid == 0) {
 		open(STDOUT, '>', '/dev/null') or error "cannot open /dev/null for writing: $!";
 		open(STDIN, '<', '/dev/null') or error "cannot open /dev/null for reading: $!";
-		exec $tar_compressor or error "cannot exec $tar_compressor: $!";
+		exec { $tar_compressor->[0] } @{$tar_compressor} or error ("cannot exec " . (join " ", @{$tar_compressor}) . ": $!");
 	    }
 	    waitpid $pid, 0;
 	    if ($? != 0) {
-		error "failed to start $tar_compressor";
+		error ("failed to start " . (join " ", @{$tar_compressor}));
 	    }
 	}
     }
@@ -2593,12 +2593,12 @@ sub main() {
 			POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or error "Can't unblock signals: $!";
 			open(STDOUT, '>', $options->{target}) or error "cannot open $options->{target} for writing: $!";
 			open(STDIN, '<&', $rfh) or error "cannot open file handle for reading: $!";
-			exec $tar_compressor or error "cannot exec $tar_compressor: $!";
+			exec { $tar_compressor->[0] } @{$tar_compressor} or error ("cannot exec " . (join " ", @{$tar_compressor}) . ": $!");
 		    }
 		    POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or error "Can't unblock signals: $!";
 		    waitpid $cpid, 0;
 		    if ($? != 0) {
-			error "failed to start $tar_compressor";
+			error ("failed to start " . (join " ", @{$tar_compressor}));
 		    }
 		} else {
 		    if(!copy($rfh, $options->{target})) {
