@@ -541,7 +541,7 @@ sub print_progress {
 	return;
     }
     my $perc = shift;
-    if (!-t STDERR) {
+    if (! -t STDERR) {
 	return;
     }
     if ($perc eq "done") {
@@ -1416,7 +1416,7 @@ sub setup {
 		next;
 	    }
 	    $deb = "$apt_archives/$deb";
-	    if (!-f "$options->{root}/$deb") {
+	    if (! -f "$options->{root}/$deb") {
 		next;
 	    }
 	    push @essential_pkgs, $deb;
@@ -1623,11 +1623,11 @@ sub setup {
 			error "dpkg-architecture failed: $?";
 		    }
 		    my $fakechrootdir = "/usr/lib/$deb_host_multiarch/fakechroot";
-		    if (!-e "$fakechrootdir/libfakechroot.so") {
+		    if (! -e "$fakechrootdir/libfakechroot.so") {
 			error "$fakechrootdir/libfakechroot.so doesn't exist. Install libfakechroot:$options->{nativearch} outside the chroot";
 		    }
 		    my $fakerootdir = "/usr/lib/$deb_host_multiarch/libfakeroot";
-		    if (!-e "$fakerootdir/libfakeroot-sysv.so") {
+		    if (! -e "$fakerootdir/libfakeroot-sysv.so") {
 			error "$fakerootdir/libfakeroot-sysv.so doesn't exist. Install libfakeroot:$options->{nativearch} outside the chroot";
 		    }
 		    # fakechroot only fills LD_LIBRARY_PATH with the directories of
@@ -1637,7 +1637,7 @@ sub setup {
 		} elsif (any { $_ eq $options->{mode} } ('root', 'unshare')) {
 		    # other modes require a static qemu-user binary
 		    my $qemubin = "/usr/bin/qemu-$options->{qemu}-static";
-		    if (!-e $qemubin) {
+		    if (! -e $qemubin) {
 			error "cannot find $qemubin";
 		    }
 		    copy $qemubin, "$options->{root}/$qemubin" or error "cannot copy $qemubin: $!";
@@ -1770,7 +1770,7 @@ sub setup {
 			    next;
 			}
 			$deb = "$apt_archives/$deb";
-			if (!-f "$options->{root}/$deb") {
+			if (! -f "$options->{root}/$deb") {
 			    next;
 			}
 			push @debs_to_install, $deb;
@@ -2353,7 +2353,7 @@ sub main() {
 	# directly in the supplied directory
 	$options->{root} = $options->{target};
 	if (-e $options->{root}) {
-	    if (!-d $options->{root}) {
+	    if (! -d $options->{root}) {
 		error "$options->{root} exists and is not a directory";
 	    }
 	    # check if the directory is empty or contains nothing more than an
