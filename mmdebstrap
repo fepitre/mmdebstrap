@@ -1009,8 +1009,8 @@ sub setup {
     # not needed anymore for apt 1.3 and newer
     print $conf "Dir::State::Status \"$options->{root}/var/lib/dpkg/status\";\n";
     # for authentication, use the keyrings from the host
-    print $conf "Dir::Etc::Trusted \"/etc/apt/trusted.gpg\";\n";
-    print $conf "Dir::Etc::TrustedParts \"/etc/apt/trusted.gpg.d\";\n";
+    print $conf "Dir::Etc::Trusted \"$options->{apttrusted}\";\n";
+    print $conf "Dir::Etc::TrustedParts \"$options->{apttrustedparts}\";\n";
     if ($options->{variant} ne 'apt') {
 	# apt considers itself essential. Thus, when generating an EDSP
 	# document for an external solver, it will add the Essential:yes field
@@ -1869,6 +1869,8 @@ sub main() {
 	mode => 'auto',
 	dpkgopts => [],
 	aptopts => [],
+	apttrusted => "/etc/apt/trusted.gpg",
+	apttrustedparts => "/etc/apt/trusted.gpg.d",
 	noop => [],
 	setup_hook => [],
 	essential_hook => [],
@@ -1890,15 +1892,21 @@ sub main() {
 	'keyring=s' => sub {
 	    my ($opt_name, $opt_value) = @_;
 	    if ($opt_value =~ /"/) {
-		error "apt cannot handle paths with double quotes";
+		error "--keyring: apt cannot handle paths with double quotes: $opt_value";
 	    }
 	    if (! -e $opt_value) {
 		error "keyring \"$opt_value\" does not exist";
 	    }
+	    my $abs_path = abs_path($opt_value);
+	    if (!defined $abs_path) {
+		error "unable to get absolute path of --keyring: $opt_value";
+	    }
+	    # since abs_path resolved all symlinks for us, we can now test
+	    # what the actual target actually is
 	    if (-d $opt_value) {
-		push @{$options->{aptopts}}, "Dir::Etc::TrustedParts \"$opt_value\"";
+		$options->{apttrustedparts} = $opt_value;
 	    } else {
-		push @{$options->{aptopts}}, "Dir::Etc::Trusted \"$opt_value\"";
+		$options->{apttrusted} = $opt_value;
 	    }
 	},
 	's|silent' => sub { $verbosity_level = 0; },
@@ -2229,6 +2237,96 @@ sub main() {
 		}
 	    }
 	    my $compstr = join " ", @components;
+	    # if the currently selected apt keyrings do not contain the
+	    # necessary key material for the chosen suite, then attempt adding
+	    # a signed-by option
+	    my $signedby = '';
+	    {
+		# try to guess the right keyring path for the given suite
+		my $keyring;
+		if (any {$_ eq $suite} ('potato', 'woody', 'sarge', 'etch', 'lenny', 'squeeze', 'wheezy')) {
+		    $keyring = '/usr/share/keyrings/debian-archive-removed-keys.gpg';
+		} elsif (any {$_ eq $suite} ('aequorea', 'bartholomea', 'chromodoris', 'dasyatis')) {
+		    $keyring = '/usr/share/keyrings/tanglu-archive-keyring.gpg';
+		} elsif (any {$_ eq $suite} ('kali-dev', 'kali-rolling', 'kali-bleeding-edge')) {
+		    $keyring = '/usr/share/keyrings/kali-archive-keyring.gpg';
+		} elsif (any {$_ eq $suite} ('trusty', 'xenial', 'zesty', 'artful', 'bionic', 'cosmic')) {
+		    $keyring = '/usr/share/keyrings/ubuntu-archive-keyring.gpg';
+		} elsif (any {$_ eq $suite} ('unstable', 'stable', 'oldstable', 'jessie', 'stretch', 'buster', 'bullseye', 'bookworm')) {
+		    $keyring = '/usr/share/keyrings/debian-archive-keyring.gpg';
+		}
+		# we can only check if we need the signed-by entry if we u
+		# automatically chosen keyring exists
+		if (defined $keyring && -e $keyring) {
+		    # we can only check key material if gpg is installed
+		    my $gpghome = tempdir("mmdebstrap.gpghome.XXXXXXXXXXXX", TMPDIR => 1, CLEANUP => 1);
+		    my @gpgcmd = ('gpg', '--quiet', '--ignore-time-conflict', '--no-options', '--no-default-keyring', '--homedir', $gpghome, '--no-auto-check-trustdb', '--trust-model', 'always');
+		    my ($ret, $fh, $message);
+		    {
+			# change warning handler to prevent message
+			# Can't exec "gpg": No such file or directory
+			local $SIG{__WARN__} = sub { $message = shift; };
+			$ret = open $fh, '-|', @gpgcmd, '--version';
+		    }
+		    close $fh; # we only want to check if the gpg command exists
+		    if ($? == 0 && defined $ret && !defined $message) {
+			# find all the fingerprints of the keys apt currently
+			# knows about
+			my @aptfingerprints = ();
+			my $collect_fingerprints = sub {
+			    my $filename = shift;
+			    open my $fh, '-|', @gpgcmd, '--keyring', $filename, '--with-colons', '--list-keys' // error "failed to fork(): $!";
+			    while (my $line = <$fh>) {
+				if ($line !~ /^fpr:::::::::([^:]+):/) {
+				    next;
+				}
+				push @aptfingerprints, $1;
+			    }
+			    close $fh;
+			};
+			opendir my $dh, "$options->{apttrustedparts}" or error "cannot read $options->{apttrustedparts}";
+			while (my $filename = readdir $dh) {
+			    if ($filename !~ /\.(asc|gpg)$/) {
+				next;
+			    }
+			    $collect_fingerprints->("$options->{apttrustedparts}/$filename");
+			}
+			if (-e $options->{apttrusted}) {
+			    $collect_fingerprints->($options->{apttrusted});
+			}
+			# check if all fingerprints from the keyring that we
+			# guessed are known by apt and only add signed-by
+			# option if that's not the case
+			my @suitefingerprints = ();
+			open my $suitefh, '-|', @gpgcmd, '--keyring', $keyring, '--with-colons', '--list-keys' // error "failed to fork(): $!";
+			while (my $line = <$suitefh>) {
+			    if ($line !~ /^fpr:::::::::([^:]+):/) {
+				next;
+			    }
+			    # if this fingerprint is not known by apt, then we
+			    # need to add the signed-by option
+			    if (none { $_ eq $1 } @aptfingerprints) {
+				$signedby = " [signed-by=\"$keyring\"]";
+				last;
+			    }
+			}
+			close $suitefh;
+			if ($? != 0) {
+			    error "gpg failed";
+			}
+		    } else {
+			info "gpg --version failed: cannot determine the right signed-by value"
+		    }
+		    remove_tree($gpghome, {error => \my $err});
+		    if (@$err) {
+			for my $diag (@$err) {
+			    my ($file, $message) = %$diag;
+			    if ($file eq '') { warning "general error: $message"; }
+			    else { warning "problem unlinking $file: $message"; }
+			}
+		    }
+		}
+	    }
 	    if (scalar @ARGV > 0) {
 		for my $arg (@ARGV) {
 		    if ($arg eq '-') {
@@ -2237,7 +2335,7 @@ sub main() {
 		    } elsif ($arg =~ /^deb(-src)? /) {
 			$sourceslist .= "$arg\n";
 		    } elsif ($arg =~ /:\/\//) {
-			$sourceslist .= "deb $arg $suite $compstr\n";
+			$sourceslist .= "deb$signedby $arg $suite $compstr\n";
 		    } elsif (-f $arg) {
 			open my $fh, '<', $arg or error "cannot open $arg: $!";
 			while (my $line = <$fh>) {
@@ -2269,20 +2367,20 @@ sub main() {
 		} elsif (any {$_ eq $suite} @kali) {
 		    $mirror = 'https://http.kali.org/kali'
 		}
-		$sourceslist .= "deb $mirror $suite $compstr\n";
+		$sourceslist .= "deb$signedby $mirror $suite $compstr\n";
 		if (any {$_ eq $suite} @ubuntustable) {
-		    $sourceslist .= "deb $mirror $suite-updates $compstr\n";
-		    $sourceslist .= "deb $secmirror $suite-security $compstr\n";
+		    $sourceslist .= "deb$signedby $mirror $suite-updates $compstr\n";
+		    $sourceslist .= "deb$signedby $secmirror $suite-security $compstr\n";
 		} elsif (any {$_ eq $suite} @tanglustable) {
-		    $sourceslist .= "deb $secmirror $suite-updates $compstr\n";
+		    $sourceslist .= "deb$signedby $secmirror $suite-updates $compstr\n";
 		} elsif (any {$_ eq $suite} @debstable) {
-		    $sourceslist .= "deb $mirror $suite-updates $compstr\n";
+		    $sourceslist .= "deb$signedby $mirror $suite-updates $compstr\n";
 		    if (any {$_ eq $suite} ('oldoldstable', 'oldstable', 'stable', 'jessie', 'stretch', 'buster')) {
-			$sourceslist .= "deb $secmirror $suite/updates $compstr\n";
+			$sourceslist .= "deb$signedby $secmirror $suite/updates $compstr\n";
 		    } else {
 			# starting from bullseye use
 			# https://lists.debian.org/87r26wqr2a.fsf@43-1.org
-			$sourceslist .= "deb $secmirror $suite-security $compstr\n";
+			$sourceslist .= "deb$signedby $secmirror $suite-security $compstr\n";
 		    }
 		}
 	    }
@@ -2841,16 +2939,31 @@ Example: Minimizing the number of packages installed from experimental
 
 =item B<--keyring>=I<file>|I<directory>
 
-A shorthand for using C<--aptopt='Dir::Etc::Trusted "file"'> or
-C<-aptopt='Dir::Etc::TrustedParts "directory"'> when passing a file or
-directory to the B<--keyring> option, respectively. B<mmdebstrap> will add the
-right keyring for the given I<SUITE> if it knows about the distribution and if
-the keyring is installed in a path known by B<mmdebstrap>, usually
-F</usr/share/keyrings>. If B<mmdebstrap> does not know or cannot find the
-right keyring for the given I<SUITE> it will only know about the keys that apt
-on the host system knows about. If you want to prevent B<mmdebstrap> from
-choosing the right keyring for you for known values of I<SUITE>, choose an
-arbitrary value for I<SUITE> and specify the right apt line manually.
+Change the default keyring to use by apt. By default, F</etc/apt/trusted.gpg>
+and F</etc/apt/trusted.gpg.d> are used. Depending on whether a file or
+directory is passed to this option, the former and latter default can be
+changed, respectively.  Since apt only supports a single keyring file and
+directory, respectively, you can B<not> use this option to pass multiple files
+and/or directories. Using the C<--keyring> argument in the following way is
+equal to keeping the default:
+
+    --keyring=/etc/apt/trusted.gpg --keyring=/etc/apt/trusted.gpg.d
+
+If you need to pass multiple keyrings, use the C<signed-by> option when
+specifying the mirror like this:
+
+    mmdebstrap mysuite out.tar "deb [signed-by=/path/to/key.gpg] http://..."
+
+The C<signed-by> option will automatically be added to the final
+C<sources.list> if the keyring required for the selected I<SUITE> is not yet
+trusted by apt. Automatically adding the C<signed-by> option in these cases
+requires C<gpg> to be installed. If C<gpg> and C<ubuntu-archive-keyring> are
+installed, then you can create a Ubuntu Bionic chroot on Debian like this:
+
+    mmdebstrap bionic ubuntu-bionic.tar
+
+The resulting chroot will have a C<source.list> with a C<signed-by> option
+pointing to F</usr/share/keyrings/ubuntu-archive-keyring.gpg>.
 
 =item B<--dpkgopt>=I<option>|I<file>
 

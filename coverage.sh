@@ -52,7 +52,7 @@ if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
 fi
 
 starttime=
-total=112
+total=115
 i=1
 
 print_header() {
@@ -969,18 +969,78 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-echo 'Acquire::Languages "none";' > config
-$CMD --mode=root --variant=apt --aptopt='Acquire::Check-Valid-Until "false"' --keyring=/usr/share/keyrings/debian-archive-keyring.gpg --keyring=/usr/share/keyrings/ --aptopt=config $DEFAULT_DIST /tmp/debian-chroot $mirror
-cat /tmp/debian-chroot/etc/apt/apt.conf.d/99mmdebstrap
-printf 'Acquire::Check-Valid-Until "false";\nDir::Etc::Trusted "/usr/share/keyrings/debian-archive-keyring.gpg";\nDir::Etc::TrustedParts "/usr/share/keyrings/";\nAcquire::Languages "none";\n' | cmp /tmp/debian-chroot/etc/apt/apt.conf.d/99mmdebstrap -
-rm /tmp/debian-chroot/etc/apt/apt.conf.d/99mmdebstrap
+rm /etc/apt/trusted.gpg.d/*.gpg
+$CMD --mode=root --variant=apt --keyring=/usr/share/keyrings/debian-archive-keyring.gpg --keyring=/usr/share/keyrings/ $DEFAULT_DIST /tmp/debian-chroot $mirror
 tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
 rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 else
+	echo "HAVE_QEMU != yes -- Skipping test..."
+fi
+
+print_header "mode=root,variant=apt: test --keyring overwrites"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+mkdir -p emptydir
+touch emptyfile
+# this overwrites the apt keyring options and should fail
+ret=0
+$CMD --mode=root --variant=apt --keyring=./emptydir --keyring=./emptyfile $DEFAULT_DIST /tmp/debian-chroot $mirror || ret=\$?
+rm -r /tmp/debian-chroot
+rmdir emptydir
+rm emptyfile
+if [ "\$ret" = 0 ]; then
+	echo expected failure but got exit \$ret
+	exit 1
+fi
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
 	./run_null.sh SUDO
+fi
+
+print_header "mode=root,variant=apt: test signed-by without host keys"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+echo "deb $mirror $DEFAULT_DIST main" > /etc/apt/sources.list
+apt-get -o Acquire::Languages=none update
+apt-get install --yes --no-install-recommends gpg
+rm /etc/apt/trusted.gpg.d/*.gpg
+$CMD --mode=root --variant=apt $DEFAULT_DIST /tmp/debian-chroot $mirror
+printf 'deb [signed-by="/usr/share/keyrings/debian-archive-keyring.gpg"] $mirror $DEFAULT_DIST main\n' | cmp /tmp/debian-chroot/etc/apt/sources.list -
+tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
+rm -r /tmp/debian-chroot
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	echo "HAVE_QEMU != yes -- Skipping test..."
+fi
+
+print_header "mode=root,variant=apt: test signed-by with host keys"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+echo "deb $mirror $DEFAULT_DIST main" > /etc/apt/sources.list
+apt-get -o Acquire::Languages=none update
+apt-get install --yes --no-install-recommends gpg
+$CMD --mode=root --variant=apt $DEFAULT_DIST /tmp/debian-chroot $mirror
+printf 'deb $mirror $DEFAULT_DIST main\n' | cmp /tmp/debian-chroot/etc/apt/sources.list -
+tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
+rm -r /tmp/debian-chroot
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+else
+	echo "HAVE_QEMU != yes -- Skipping test..."
 fi
 
 print_header "mode=root,variant=apt: test --dpkgopt"
