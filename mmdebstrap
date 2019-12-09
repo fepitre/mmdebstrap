@@ -31,6 +31,7 @@ use Pod::Usage;
 use File::Copy;
 use File::Path qw(make_path remove_tree);
 use File::Temp qw(tempfile tempdir);
+use File::Basename;
 use Cwd qw(abs_path);
 require "syscall.ph";
 use Fcntl qw(S_IFCHR S_IFBLK FD_CLOEXEC F_GETFD F_SETFD);
@@ -38,6 +39,7 @@ use List::Util qw(any none);
 use POSIX qw(SIGINT SIGHUP SIGPIPE SIGTERM SIG_BLOCK SIG_UNBLOCK);
 use Carp;
 use Term::ANSIColor;
+use Socket;
 
 # from sched.h
 use constant {
@@ -951,7 +953,31 @@ sub run_hooks($$) {
 
     my $runner = sub {
 	foreach my $script (@{$options->{"${name}_hook"}}) {
-	    if ( -x $script || $script !~ m/[^\w@\%+=:,.\/-]/a) {
+	    if ($script =~ /^(copy-in|copy-out|tar-in|tar-out|upload|download) /) {
+		info "running special hook: $script";
+		if (any { $_ eq $options->{variant} } ('extract', 'custom')
+			and any { $_ eq $options->{mode} } ('fakechroot', 'proot')
+			and $name ne 'setup') {
+		    info "the copy-in, copy-out, tar-in and tar-out commands in fakechroot mode or proot mode might fail in extract and custom variants because there might be no tar inside the chroot";
+		}
+
+		my $pid = fork() // error "fork() failed: $!";
+		if ($pid == 0) {
+		    # whatever the script writes on stdout is sent to the
+		    # socket
+		    # whatever is written to the socket, send to stdin
+		    open(STDOUT, '>&', $options->{hooksock}) or error "cannot open STDOUT: $!";
+		    open(STDIN, '<&', $options->{hooksock}) or error "cannot open STDIN: $!";
+
+		    # we execute ourselves under sh to avoid having to
+		    # implement a clever parser of the quoting used in $script
+		    # for the filenames
+		    exec 'sh', '-c', "$PROGRAM_NAME --hook-helper \"\$1\" \"\$2\" \"\$3\" \"\$4\" \"\$5\" $script",
+			'exec', $options->{root}, $options->{mode}, $name, (defined $options->{qemu} ? "qemu-$options->{qemu}" : 'env', $verbosity_level);
+		}
+		waitpid($pid, 0);
+		$? == 0 or error "special hook failed with exit code $?";
+	    } elsif ( -x $script || $script !~ m/[^\w@\%+=:,.\/-]/a) {
 		info "running --$name-hook directly: $script $options->{root}";
 		# execute it directly if it's an executable file
 		# or if it there are no shell metacharacters
@@ -987,6 +1013,8 @@ sub setup {
 	    debug "$key: $options->{$key}";
 	} elsif (ref $value eq 'ARRAY') {
 	    debug "$key: [" . (join ', ', @{$value}) . "]";
+	} elsif (ref $value eq 'GLOB') {
+	    debug "$key: GLOB";
 	} else {
 	    error "unknown type for key $key: " . (ref $value);
 	}
@@ -1843,8 +1871,252 @@ sub setup {
     }
 }
 
+# messages from process inside unshared namespace to the outside
+#    openw -- open file for writing
+#    untar -- extract tar into directory
+#    write -- write data to last opened file or tar process
+#    close -- finish file writing or tar extraction
+#    adios -- last message and tear-down
+# messages from process outside unshared namespace to the inside
+#    okthx -- success
+sub checkokthx {
+    my $fh = shift;
+    my $ret = read ($fh, my $buf, 2+5) // error "cannot read from socket: $!";
+    if ($ret == 0) { error "received eof on socket"; }
+    my ($len, $msg) = unpack("nA5", $buf);
+    if ($msg ne "okthx") { error "expected okthx but got: $msg"; }
+    if ($len != 0) { error "expected no payload but got $len bytes"; }
+}
+
 sub main() {
     umask 022;
+
+    if (scalar @ARGV >= 7 && $ARGV[0] eq "--hook-helper") {
+	my $root = $ARGV[1];
+	my $mode = $ARGV[2];
+	my $hook = $ARGV[3];
+	my $qemu = $ARGV[4];
+	$verbosity_level = $ARGV[5];
+	my $command = $ARGV[6];
+
+	# unless we are in the setup hook (where there is no tar inside the
+	# chroot) we need to run tar on the inside because otherwise, possible
+	# absolute symlinks in the path given via --directory are not
+	# correctly resolved
+	#
+	# FIXME: the issue above can be fixed by a function that is able to
+	# resolve absolute symlinks even inside the chroot directory to a full
+	# path that is valid on the outside -- fakechroot and proot have their
+	# own reasons, see below
+	my @cmdprefix = ();
+	my @tarcmd = ('tar');
+	if ($hook eq 'setup') {
+	    if ($mode eq 'proot') {
+		# since we cannot run tar inside the chroot under proot during
+		# the setup hook because the chroot is empty, we have to run
+		# tar from the outside, which leads to all files being owned
+		# by the user running mmdebstrap. To let the ownership
+		# information not be completely off, we force all files be
+		# owned by the root user.
+		push @tarcmd, '--owner=root', '--group=root';
+	    }
+	} elsif (any { $_ eq $hook} ('essential', 'customize')) {
+	    if ($mode eq 'fakechroot') {
+		# Fakechroot requires tar to run inside the chroot or
+		# otherwise absolute symlinks will include the path to the
+		# root directory
+		push @cmdprefix, '/usr/sbin/chroot', $root;
+	    } elsif ($mode eq 'proot') {
+		# proot requires tar to run inside proot or otherwise
+		# permissions will be completely off
+		push @cmdprefix, 'proot', '--root-id', "--rootfs=$root", '--cwd=/', "--qemu=$qemu";
+	    } elsif (any { $_ eq $mode } ('root', 'chrootless', 'unshare')) {
+		push @cmdprefix, '/usr/sbin/chroot', $root;
+	    } else {
+		error "unknown mode: $mode";
+	    }
+	} else {
+	    error "unknown hook: $hook";
+	}
+
+	if (any { $_ eq $command} ('copy-in', 'tar-in', 'upload')) {
+	    if (scalar @ARGV < 9) {
+		error "copy-in and tar-in need at least one path on the outside and the output path inside the chroot"
+	    }
+	    my $outpath = $ARGV[-1];
+	    for (my $i = 7; $i < $#ARGV; $i++) {
+		# the right argument for tar's --directory argument depends on
+		# whether tar is called from inside the chroot or from the
+		# outside
+		my $directory;
+		if ($hook eq 'setup') {
+		    $directory = "$root/$outpath";
+		} elsif (any { $_ eq $hook} ('essential', 'customize')) {
+		    $directory = $outpath;
+		} else {
+		    error "unknown hook: $hook";
+		}
+
+		# FIXME: here we would like to check if the path inside the
+		# chroot given by $directory actually exists but we cannot
+		# because we are missing a function that can resolve even
+		# paths including absolute symlinks to paths that are valid
+		# outside the chroot
+
+		my $fh;
+		if ($command eq 'upload') {
+		    # open the requested file for writing
+		    open $fh, '|-', @cmdprefix, 'sh', '-c', 'cat > "$1"', 'exec', $directory // error "failed to fork(): $!";
+		} else {
+		    # open a tar process that extracts the tarfile that we supply
+		    # it with on stdin to the output directory inside the chroot
+		    open $fh, '|-', @cmdprefix, @tarcmd, '--directory', $directory, '--extract', '--file', '-' // error "failed to fork(): $!";
+		}
+
+		if ($command eq 'copy-in') {
+		    # instruct the parent process to create a tarball of the
+		    # requested path outside the chroot
+		    debug "sending mktar";
+		    print STDOUT (pack("n", length $ARGV[$i]) . "mktar" . $ARGV[$i]);
+		} else {
+		    # instruct parent process to open a tarball of the
+		    # requested path outside the chroot for reading
+		    debug "sending openr";
+		    print STDOUT (pack("n", length $ARGV[$i]) . "openr" . $ARGV[$i]);
+		}
+		STDOUT->flush();
+		debug "waiting for okthx";
+		checkokthx \*STDIN;
+
+		# handle "write" messages from the parent process and feed
+		# their payload into the tar process until a "close" message
+		# is encountered
+		while(1) {
+		    # receive the next message
+		    my $ret = read (STDIN, my $buf, 2+5) // error "cannot read from socket: $!";
+		    if ($ret == 0) {
+			error "received eof on socket";
+		    }
+		    my ($len, $msg) = unpack("nA5", $buf);
+		    debug "received message: $msg";
+		    if ($msg eq "close") {
+			# finish the loop
+			if ($len != 0) {
+			    error "expected no payload but got $len bytes";
+			}
+			debug "sending okthx";
+			print STDOUT (pack("n", 0) . "okthx") or error "cannot write to socket: $!";
+			STDOUT->flush();
+			last;
+		    } elsif ($msg ne "write") {
+			# we should not receive this message at this point
+			print STDOUT (pack("n", 0) . "error") or error "cannot write to socket: $!";
+			STDOUT->flush();
+			error "expected write but got: $msg";
+		    }
+		    # read the payload
+		    my $content;
+		    {
+			my $ret = read (STDIN, $content, $len) // error "error cannot read from socket: $!";
+			if ($ret == 0) {
+			    error "received eof on socket";
+			}
+		    }
+		    # write the payload to the tar process
+		    print $fh $content or error "cannot write to tar process: $!";
+		    debug "sending okthx";
+		    print STDOUT (pack("n", 0) . "okthx") or error "cannot write to socket: $!";
+		    STDOUT->flush();
+		}
+		close $fh;
+		if ($command ne 'upload' and $? != 0) {
+		    error "tar failed";
+		}
+	    }
+	} elsif (any { $_ eq $command} ('copy-out', 'tar-out', 'download')) {
+	    if (scalar @ARGV < 9) {
+		error "copy-out needs at least one path inside the chroot and the output path on the outside"
+	    }
+	    my $outpath = $ARGV[-1];
+	    for (my $i = 7; $i < $#ARGV; $i++) {
+		# the right argument for tar's --directory argument depends on
+		# whether tar is called from inside the chroot or from the
+		# outside
+		my $directory;
+		if ($hook eq 'setup') {
+		    $directory = "$root/$ARGV[$i]";
+		} elsif (any { $_ eq $hook} ('essential', 'customize')) {
+		    $directory = $ARGV[$i];
+		} else {
+		    error "unknown hook: $hook";
+		}
+
+		# FIXME: here we would like to check if the path inside the
+		# chroot given by $directory actually exists but we cannot
+		# because we are missing a function that can resolve even
+		# paths including absolute symlinks to paths that are valid
+		# outside the chroot
+
+		my $fh;
+		if ($command eq 'download') {
+		    # open the requested file for reading
+		    open $fh, '-|', @cmdprefix, 'sh', '-c', 'cat "$1"', 'exec', $directory // error "failed to fork(): $!";
+		} else {
+		    # Open a tar process that creates a tarfile of everything in
+		    # the requested directory inside the chroot and writes it to
+		    # stdout. To emulate the behaviour of cp, change to the
+		    # dirname of the requested path first.
+		    open $fh, '-|', @cmdprefix, @tarcmd, '--directory', dirname($directory), '--create', '--file', '-', basename($directory) // error "failed to fork(): $!";
+		}
+
+		if ($command eq 'copy-out') {
+		    # instruct the parent process to extract a tarball to a
+		    # certain path outside the chroot
+		    debug "sending untar";
+		    print STDOUT (pack("n", length $outpath) . "untar" . $outpath);
+		} else {
+		    # instruct parent process to open a tarball of the
+		    # requested path outside the chroot for writing
+		    debug "sending openw";
+		    print STDOUT (pack("n", length $outpath) . "openw" . $outpath);
+		}
+		STDOUT->flush();
+		debug "waiting for okthx";
+		checkokthx \*STDIN;
+
+		# read from the tar process and send as payload to the parent
+		# process
+		while (1) {
+		    # read from tar
+		    my $ret = read ($fh, my $cont, 4096) // error "cannot read from pipe: $!";
+		    if ($ret == 0) { last; }
+		    debug "sending write";
+		    # send to parent
+		    print STDOUT pack("n", $ret) . "write" . $cont;
+		    STDOUT->flush();
+		    debug "waiting for okthx";
+		    checkokthx \*STDIN;
+		    if ($ret < 4096) { last; }
+		}
+
+		# signal to the parent process that we are done
+		debug "sending close";
+		print STDOUT pack("n", 0) . "close";
+		STDOUT->flush();
+		debug "waiting for okthx";
+		checkokthx \*STDIN;
+
+		close $fh;
+		if ($command ne 'download' and $? != 0) {
+		    error "tar failed";
+		}
+	    }
+	} else {
+	    error "unknown command: $command";
+	}
+
+	exit 0;
+    }
 
     my $mtime = time;
     if (exists $ENV{SOURCE_DATE_EPOCH}) {
@@ -2572,7 +2844,13 @@ sub main() {
     POSIX::sigprocmask(SIG_BLOCK, $sigset) or error "Can't block signals: $!";
 
     my $pid;
+
+    # a pipe to transfer the final tarball from the child to the parent
     pipe my $rfh, my $wfh;
+
+    # instead of two pipe calls, creating four file handles, we use socketpair
+    socketpair my $childsock, my $parentsock, AF_UNIX, SOCK_STREAM, PF_UNSPEC or error "socketpair failed: $!";
+    $options->{hooksock} = $childsock;
     if ($options->{mode} eq 'unshare') {
 	$pid = get_unshare_cmd {
 	    # child
@@ -2586,8 +2864,14 @@ sub main() {
 
 	    close $rfh;
 	    open(STDOUT, '>&', STDERR);
+	    close $parentsock;
 
 	    setup($options);
+
+	    print $childsock (pack('n', 0) . 'adios');
+	    $childsock->flush();
+
+	    close $childsock;
 
 	    if ($options->{maketar}) {
 		info "creating tarball...";
@@ -2622,8 +2906,14 @@ sub main() {
 
 	    close $rfh;
 	    open(STDOUT, '>&', STDERR);
+	    close $parentsock;
 
 	    setup($options);
+
+	    print $childsock (pack('n', 0) . 'adios');
+	    $childsock->flush();
+
+	    close $childsock;
 
 	    if ($options->{maketar}) {
 		info "creating tarball...";
@@ -2692,6 +2982,301 @@ sub main() {
     POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or error "Can't unblock signals: $!";
 
     close $wfh;
+    close $childsock;
+
+    debug "starting to listen for hooks";
+    # handle special hook commands via parentsock
+    # we use eval() so that error() doesn't take this process down and
+    # thus leaves the setup() process without a parent
+    eval {
+	while (1) {
+	    # get the next message
+	    my $msg = "error";
+	    my $len = -1;
+	    {
+		debug "reading from parentsock";
+		my $ret = read ($parentsock, my $buf, 2+5) // error "cannot read from socket: $!";
+		debug "finished reading from parentsock";
+		if ($ret == 0) {
+		    error "received eof on socket";
+		}
+		($len, $msg) = unpack("nA5", $buf);
+	    }
+	    if ($msg eq "adios") {
+		# setup finished, so we break out of the loop
+		if ($len != 0) {
+		    error "expected no payload but got $len bytes";
+		}
+		last;
+	    } elsif ($msg eq "openr") {
+		# handle the openr message
+		debug "received message: openr";
+		my $infile;
+		{
+		    my $ret = read ($parentsock, $infile, $len) // error "cannot read from socket: $!";
+		    if ($ret == 0) {
+			error "received eof on socket";
+		    }
+		}
+		# make sure that the requested path exists outside the chroot
+		if (! -e $infile) {
+		    print $parentsock (pack("n", 0) . "error") or error "cannot write to socket: $!";
+		    $parentsock->flush();
+		    error "$infile does not exist";
+		}
+		debug "sending okthx";
+		print $parentsock (pack("n", 0) . "okthx") or error "cannot write to socket: $!";
+		$parentsock->flush();
+
+		open my $fh, '<', $infile or error "failed to open $infile for reading: $!";
+
+		# read from the file and send as payload to the child process
+		while (1) {
+		    # read from file
+		    my $ret = read ($fh, my $cont, 4096) // error "cannot read from pipe: $!";
+		    if ($ret == 0) { last; }
+		    debug "sending write";
+		    # send to child
+		    print $parentsock pack("n", $ret) . "write" . $cont;
+		    $parentsock->flush();
+		    debug "waiting for okthx";
+		    checkokthx $parentsock;
+		    if ($ret < 4096) { last; }
+		}
+
+		# signal to the child process that we are done
+		debug "sending close";
+		print $parentsock pack("n", 0) . "close";
+		$parentsock->flush();
+		debug "waiting for okthx";
+		checkokthx $parentsock;
+
+		close $fh;
+	    } elsif ($msg eq "openw") {
+		debug "received message: openw";
+		# payload is the output directory
+		my $outfile;
+		{
+		    my $ret = read ($parentsock, $outfile, $len) // error "cannot read from socket: $!";
+		    if ($ret == 0) {
+			error "received eof on socket";
+		    }
+		}
+		# make sure that the directory exists
+		my $outdir = dirname($outfile);
+		if (-e $outdir) {
+		    if (! -d $outdir) {
+			print $parentsock (pack("n", 0) . "error") or error "cannot write to socket: $!";
+			$parentsock->flush();
+			error "$outdir already exists but is not a directory";
+		    }
+		} else {
+		    my $num_created = make_path $outdir, {error => \my $err};
+		    if ($err && @$err) {
+			print $parentsock (pack("n", 0) . "error") or error "cannot write to socket: $!";
+			$parentsock->flush();
+			error (join "; ", (map {"cannot create " . (join ": ", %{$_})} @$err));
+		    } elsif ($num_created == 0) {
+			print $parentsock (pack("n", 0) . "error") or error "cannot write to socket: $!";
+			$parentsock->flush();
+			error "cannot create $outdir";
+		    }
+		}
+		debug "sending okthx";
+		print $parentsock (pack("n", 0) . "okthx") or error "cannot write to socket: $!";
+		$parentsock->flush();
+
+		# now we expect one or more "write" messages containing the
+		# tarball to write
+		open my $fh, '>', $outfile or error "failed to open $outfile for writing: $!";
+
+		# handle "write" messages from the child process and feed
+		# their payload into the file handle until a "close" message
+		# is encountered
+		while(1) {
+		    # receive the next message
+		    my $ret = read ($parentsock, my $buf, 2+5) // error "cannot read from socket: $!";
+		    if ($ret == 0) {
+			error "received eof on socket";
+		    }
+		    my ($len, $msg) = unpack("nA5", $buf);
+		    debug "received message: $msg";
+		    if ($msg eq "close") {
+			# finish the loop
+			if ($len != 0) {
+			    error "expected no payload but got $len bytes";
+			}
+			debug "sending okthx";
+			print $parentsock (pack("n", 0) . "okthx") or error "cannot write to socket: $!";
+			$parentsock->flush();
+			last;
+		    } elsif ($msg ne "write") {
+			# we should not receive this message at this point
+			print $parentsock (pack("n", 0) . "error") or error "cannot write to socket: $!";
+			$parentsock->flush();
+			error "expected write but got: $msg";
+		    }
+		    # read the payload
+		    my $content;
+		    {
+			my $ret = read ($parentsock, $content, $len) // error "error cannot read from socket: $!";
+			if ($ret == 0) {
+			    error "received eof on socket";
+			}
+		    }
+		    # write the payload to the file handle
+		    print $fh $content or error "cannot write to file handle: $!";
+		    debug "sending okthx";
+		    print $parentsock (pack("n", 0) . "okthx") or error "cannot write to socket: $!";
+		    $parentsock->flush();
+		}
+		close $fh;
+	    } elsif ($msg eq "mktar") {
+		# handle the mktar message
+		debug "received message: mktar";
+		my $indir;
+		{
+		    my $ret = read ($parentsock, $indir, $len) // error "cannot read from socket: $!";
+		    if ($ret == 0) {
+			error "received eof on socket";
+		    }
+		}
+		# make sure that the requested path exists outside the chroot
+		if (! -e $indir) {
+		    print $parentsock (pack("n", 0) . "error") or error "cannot write to socket: $!";
+		    $parentsock->flush();
+		    error "$indir does not exist";
+		}
+		debug "sending okthx";
+		print $parentsock (pack("n", 0) . "okthx") or error "cannot write to socket: $!";
+		$parentsock->flush();
+
+		# Open a tar process creating a tarfile of the instructed
+		# path. To emulate the behaviour of cp, change to the
+		# dirname of the requested path first.
+		open my $fh, '-|', 'tar', '--directory', dirname($indir), '--create', '--file', '-', basename($indir) // error "failed to fork(): $!";
+
+		# read from the tar process and send as payload to the child
+		# process
+		while (1) {
+		    # read from tar
+		    my $ret = read ($fh, my $cont, 4096) // error "cannot read from pipe: $!";
+		    if ($ret == 0) { last; }
+		    debug "sending write";
+		    # send to child
+		    print $parentsock pack("n", $ret) . "write" . $cont;
+		    $parentsock->flush();
+		    debug "waiting for okthx";
+		    checkokthx $parentsock;
+		    if ($ret < 4096) { last; }
+		}
+
+		# signal to the child process that we are done
+		debug "sending close";
+		print $parentsock pack("n", 0) . "close";
+		$parentsock->flush();
+		debug "waiting for okthx";
+		checkokthx $parentsock;
+
+		close $fh;
+		if ($? != 0) {
+		    error "tar failed";
+		}
+	    } elsif ($msg eq "untar") {
+		debug "received message: untar";
+		# payload is the output directory
+		my $outdir;
+		{
+		    my $ret = read ($parentsock, $outdir, $len) // error "cannot read from socket: $!";
+		    if ($ret == 0) {
+			error "received eof on socket";
+		    }
+		}
+		# make sure that the directory exists
+		if (-e $outdir) {
+		    if (! -d $outdir) {
+			print $parentsock (pack("n", 0) . "error") or error "cannot write to socket: $!";
+			$parentsock->flush();
+			error "$outdir already exists but is not a directory";
+		    }
+		} else {
+		    my $num_created = make_path $outdir, {error => \my $err};
+		    if ($err && @$err) {
+			print $parentsock (pack("n", 0) . "error") or error "cannot write to socket: $!";
+			$parentsock->flush();
+			error (join "; ", (map {"cannot create " . (join ": ", %{$_})} @$err));
+		    } elsif ($num_created == 0) {
+			print $parentsock (pack("n", 0) . "error") or error "cannot write to socket: $!";
+			$parentsock->flush();
+			error "cannot create $outdir";
+		    }
+		}
+		debug "sending okthx";
+		print $parentsock (pack("n", 0) . "okthx") or error "cannot write to socket: $!";
+		$parentsock->flush();
+
+		# now we expect one or more "write" messages containing the
+		# tarball to unpack
+		open my $fh, '|-', 'tar', '--directory', $outdir, '--extract', '--file', '-' // error "failed to fork(): $!";
+
+		# handle "write" messages from the child process and feed
+		# their payload into the tar process until a "close" message
+		# is encountered
+		while(1) {
+		    # receive the next message
+		    my $ret = read ($parentsock, my $buf, 2+5) // error "cannot read from socket: $!";
+		    if ($ret == 0) {
+			error "received eof on socket";
+		    }
+		    my ($len, $msg) = unpack("nA5", $buf);
+		    debug "received message: $msg";
+		    if ($msg eq "close") {
+			# finish the loop
+			if ($len != 0) {
+			    error "expected no payload but got $len bytes";
+			}
+			debug "sending okthx";
+			print $parentsock (pack("n", 0) . "okthx") or error "cannot write to socket: $!";
+			$parentsock->flush();
+			last;
+		    } elsif ($msg ne "write") {
+			# we should not receive this message at this point
+			print $parentsock (pack("n", 0) . "error") or error "cannot write to socket: $!";
+			$parentsock->flush();
+			error "expected write but got: $msg";
+		    }
+		    # read the payload
+		    my $content;
+		    {
+			my $ret = read ($parentsock, $content, $len) // error "error cannot read from socket: $!";
+			if ($ret == 0) {
+			    error "received eof on socket";
+			}
+		    }
+		    # write the payload to the tar process
+		    print $fh $content or error "cannot write to tar process: $!";
+		    debug "sending okthx";
+		    print $parentsock (pack("n", 0) . "okthx") or error "cannot write to socket: $!";
+		    $parentsock->flush();
+		}
+		close $fh;
+		if ($? != 0) {
+		    error "tar failed";
+		}
+	    } else {
+		error "unknown message: $msg";
+	    }
+	}
+    };
+    if ($@) {
+	# we cannot die here because that would leave the other thread
+	# running without a parent
+	warning "listening on child socket failed: $@";
+	$exitstatus = 1;
+    }
+    debug "finish to listen for hooks";
+
+    close $parentsock;
 
     if ($options->{maketar}) {
 	# we use eval() so that error() doesn't take this process down and
@@ -3041,15 +3626,8 @@ equivalent:
 Execute arbitrary I<command>s right after initial setup (directory creation,
 configuration of apt and dpkg, ...) but before any packages are downloaded or
 installed. At that point, the chroot directory does not contain any
-executables and thus cannot be chroot-ed into.  The option can be specified
-multiple times and the commands are executed in the order in which they are
-given on the command line. If I<command> is an existing executable file or if
-I<command> does not contain any shell metacharacters, then I<command> is
-directly exec-ed with the path to the chroot directory passed as the first
-argument. Otherwise, I<command> is executed under I<sh> and the chroot
-directory can be accessed via I<$1>. All environment variables used by
-B<mmdebstrap> (like C<APT_CONFIG>, C<DEBIAN_FRONTEND>, C<LC_ALL> and C<PATH>)
-are preserved.
+executables and thus cannot be chroot-ed into. See section B<HOOKS> for more
+information.
 
 Example: Setup merged-/usr via symlinks
 
@@ -3067,15 +3645,8 @@ Example: Setup chroot for installing a sub-essential busybox-based chroot with
 
 Execute arbitrary I<command>s after the Essential:yes packages have been
 installed but before installing the remaining packages. The hook is not
-executed for the B<extract> and B<custom> variants. The option can be
-specified multiple times and the commands are executed in the order in which
-they are given on the command line. If I<command> is an existing executable
-file or if I<command> does not contain any shell metacharacters, then
-I<command> is directly exec-ed with the path to the chroot directory passed as
-the first argument. Otherwise, I<command> is executed under I<sh> and the
-chroot directory can be accessed via I<$1>. All environment variables used by
-B<mmdebstrap> (like C<APT_CONFIG>, C<DEBIAN_FRONTEND>, C<LC_ALL> and C<PATH>)
-are preserved.
+executed for the B<extract> and B<custom> variants. See section B<HOOKS> for
+more information.
 
 Example: Enable unattended upgrades
 
@@ -3089,15 +3660,8 @@ Example: Select Europe/Berlin as the timezone
 =item B<--customize-hook>=I<command>
 
 Execute arbitrary I<command>s after the chroot is set up and all packages got
-installed but before final cleanup actions are carried out.  The option can be
-specified multiple times and the commands are executed in the order in which
-they are given on the command line. If I<command> is an existing executable
-file or if I<command> does not contain any shell metacharacters, then
-I<command> is directly exec-ed with the path to the chroot directory passed as
-the first argument. Otherwise, I<command> is executed under I<sh> and the
-chroot directory can be accessed via I<$1>. All environment variables used by
-B<mmdebstrap> (like C<APT_CONFIG>, C<DEBIAN_FRONTEND>, C<LC_ALL> and C<PATH>)
-are preserved.
+installed but before final cleanup actions are carried out. See section
+B<HOOKS> for more information.
 
 Example: Preparing a chroot for use with autopkgtest
 
@@ -3238,6 +3802,84 @@ The B<required> set plus all packages with Priority:important. This is the defau
 The B<important> set plus all packages with Priority:standard.
 
 =back
+
+=begin comment
+
+=head1 HOOKS
+
+This section describes properties of the hook options B<--setup-hook>,
+B<--essential-hook> and B<--customize-hook> which are common to all three of
+them. Any information specific to each hook is documented under the specific
+hook options in the section B<OPTIONS>.
+
+The options can be specified multiple times and the commands are executed in
+the order in which they are given on the command line. There are three
+different types of hook option arguments. If the argument passed to the hook
+option starts with C<copy-in>, C<copy-out>, C<tar-in>, C<tar-out>, C<upload>
+or C<download> followed by a space, then the hook is interpreted as a special
+hook. Otherwise, if I<command> is an existing executable file from C<$PATH> or
+if I<command> does not contain any shell metacharacters, then I<command> is
+directly exec-ed with the path to the chroot directory passed as the first
+argument. Otherwise, I<command> is executed under I<sh> and the chroot
+directory can be accessed via I<$1>. All environment variables used by
+B<mmdebstrap> (like C<APT_CONFIG>, C<DEBIAN_FRONTEND>, C<LC_ALL> and C<PATH>)
+are preserved.
+
+The paths inside the chroot are relative to the root directory of the chroot.
+The path on the outside is relative to current directory of the original
+B<mmdebstrap> invocation. The path inside the chroot must already exist. Paths
+outside the chroot are created as necessary.
+
+To be able to resolve even absolute symlinks, C<tar> or C<sh> and C<cat> are
+executed inside the chroot for the B<essential> and B<customize> hooks. This
+means that the special hooks might fail for the B<extract> and B<custom>
+variants if no C<tar> or C<sh> and C<cat> is available inside the chroot.
+Since nothing is yet installed at the time of the B<setup> hook, no absolute
+symlinks in paths inside the chroot are supported during that hook.
+
+=over 8
+
+=item B<copy-out> I<pathinside> [I<pathinside> ...] I<pathoutside>
+
+Recursively copies one or more files and directories out of the chroot into,
+placing them into I<pathoutside> outside of the chroot.
+
+=item B<copy-in> I<pathoutside> [I<pathoutside> ...] I<pathinside>
+
+Recursively copies one or more files and directories into the chroot into,
+placing them into I<pathinside> inside of the chroot.
+
+=item B<tar-in> I<outside.tar> I<pathinside>
+
+Unpacks a tarball I<outside.tar> from outside the chroot into a certain
+location I<pathinside> inside the chroot.
+
+=item B<tar-out> I<pathinside> I<outside.tar>
+
+Packs the path I<pathinside> from inside the chroot into a tarball, placing it
+into a certain location I<outside.tar> outside the chroot.
+
+=item B<download> I<fileinside> I<fileoutside>
+
+Copy the file given by I<fileinside> from inside the chroot to outside the
+chroot as I<fileoutside>. In contrast to B<copy-out>, this command only
+handles files and not directories. To copy a directory recursively out of the
+chroot, use B<copy-out> or B<tar-out>. Its advantage is, that by being able to
+specify the full path on the outside, including the filename, the file on the
+outside can have a different name from the file on the inside.
+
+=item B<upload> I<fileoutside> I<fileinside>
+
+Copy the file given by I<fileoutside> from outside the chroot to inside the
+chroot as I<fileinside>. In contrast to B<copy-in>, this command only
+handles files and not directories. To copy a directory recursively into the
+chroot, use B<copy-in> or B<tar-in>. Its advantage is, that by being able to
+specify the full path on the inside, including the filename, the file on the
+inside can have a different name from the file on the outside.
+
+=back
+
+=end comment
 
 =head1 EXAMPLES
 
@@ -3418,6 +4060,19 @@ communicate its status via any other means than human readable strings,
 B<mmdebstrap> treats any warning from "apt-get update" as an error. Fixing
 this will require apt to provide a machine readable status interface. See
 Debian bugs #778357, #776152, #696335, and #745735.
+
+=begin comment
+
+Special hooks either require C<tar> or C<sh> and C<cat> be present inside the
+chroot or otherwise there is no support for absolute symlinks. This limitation
+can be dropped for the B<root> and B<unshare> modes as well as for the
+B<setup> hook in all modes if code is added that supports resolving paths with
+absolute symlinks even inside the chroot directory reliably. Due to how
+symlinks are handled by B<fakechroot> and B<proot>, the requirement of having
+C<tar> or C<sh> and C<cat> inside the chroot can never be dropped for these
+modes.
+
+=end comment
 
 =head1 SEE ALSO
 

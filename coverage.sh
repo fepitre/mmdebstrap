@@ -52,7 +52,7 @@ if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
 fi
 
 starttime=
-total=115
+total=119
 i=1
 
 print_header() {
@@ -1241,6 +1241,147 @@ if [ "$HAVE_QEMU" = "yes" ]; then
 else
 	./run_null.sh SUDO
 fi
+
+# test special hooks
+for mode in root unshare fakechroot proot; do
+	print_header "mode=$mode,variant=apt: test special hooks with $mode mode"
+	if [ "$mode" = "unshare" ] && [ "$HAVE_UNSHARE" != "yes" ]; then
+		echo "HAVE_UNSHARE != yes -- Skipping test..."
+		continue
+	fi
+	if [ "$mode" = "proot" ] && [ "$HAVE_PROOT" != "yes" ]; then
+		echo "HAVE_PROOT != yes -- Skipping test..."
+		continue
+	fi
+	cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+[ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1 && adduser --gecos user --disabled-password user
+[ "$mode" = unshare ] && sysctl -w kernel.unprivileged_userns_clone=1
+prefix=
+[ "\$(id -u)" -eq 0 ] && [ "$mode" != "root" ] && prefix="runuser -u user --"
+[ "$mode" = "fakechroot" ] && prefix="\$prefix fakechroot fakeroot"
+symlinktarget=/real
+case $mode in fakechroot|proot) symlinktarget='\$1/real';; esac
+echo copy-in-setup > /tmp/copy-in-setup
+echo copy-in-essential > /tmp/copy-in-essential
+echo copy-in-customize > /tmp/copy-in-customize
+echo tar-in-setup > /tmp/tar-in-setup
+echo tar-in-essential > /tmp/tar-in-essential
+echo tar-in-customize > /tmp/tar-in-customize
+tar -C /tmp -cf /tmp/tar-in-setup.tar tar-in-setup
+tar -C /tmp -cf /tmp/tar-in-essential.tar tar-in-essential
+tar -C /tmp -cf /tmp/tar-in-customize.tar tar-in-customize
+rm /tmp/tar-in-setup
+rm /tmp/tar-in-essential
+rm /tmp/tar-in-customize
+echo upload-in-setup > /tmp/upload-in-setup
+echo upload-in-essential > /tmp/upload-in-essential
+echo upload-in-customize > /tmp/upload-in-customize
+\$prefix $CMD --mode=$mode --variant=apt \
+	--setup-hook='mkdir "\$1/real"' \
+	--setup-hook='copy-in /tmp/copy-in-setup /real' \
+	--setup-hook='echo copy-in-setup | cmp "\$1/real/copy-in-setup" -' \
+	--setup-hook='rm "\$1/real/copy-in-setup"' \
+	--setup-hook='echo copy-out-setup > "\$1/real/copy-out-setup"' \
+	--setup-hook='copy-out /real/copy-out-setup /tmp' \
+	--setup-hook='rm "\$1/real/copy-out-setup"' \
+	--setup-hook='tar-in /tmp/tar-in-setup.tar /real' \
+	--setup-hook='echo tar-in-setup | cmp "\$1/real/tar-in-setup" -' \
+	--setup-hook='tar-out /real/tar-in-setup /tmp/tar-out-setup.tar' \
+	--setup-hook='rm "\$1"/real/tar-in-setup' \
+	--setup-hook='upload /tmp/upload-in-setup /real/upload' \
+	--setup-hook='echo upload-in-setup | cmp "\$1/real/upload" -' \
+	--setup-hook='download /real/upload /tmp/download-in-setup' \
+	--setup-hook='rm "\$1/real/upload"' \
+	--essential-hook='ln -s "'"\$symlinktarget"'" "\$1/symlink"' \
+	--essential-hook='copy-in /tmp/copy-in-essential /symlink' \
+	--essential-hook='echo copy-in-essential | cmp "\$1/real/copy-in-essential" -' \
+	--essential-hook='rm "\$1/real/copy-in-essential"' \
+	--essential-hook='echo copy-out-essential > "\$1/real/copy-out-essential"' \
+	--essential-hook='copy-out /symlink/copy-out-essential /tmp' \
+	--essential-hook='rm "\$1/real/copy-out-essential"' \
+	--essential-hook='tar-in /tmp/tar-in-essential.tar /symlink' \
+	--essential-hook='echo tar-in-essential | cmp "\$1/real/tar-in-essential" -' \
+	--essential-hook='tar-out /symlink/tar-in-essential /tmp/tar-out-essential.tar' \
+	--essential-hook='rm "\$1"/real/tar-in-essential' \
+	--essential-hook='upload /tmp/upload-in-essential /symlink/upload' \
+	--essential-hook='echo upload-in-essential | cmp "\$1/real/upload" -' \
+	--essential-hook='download /symlink/upload /tmp/download-in-essential' \
+	--essential-hook='rm "\$1/real/upload"' \
+	--customize-hook='copy-in /tmp/copy-in-customize /symlink' \
+	--customize-hook='echo copy-in-customize | cmp "\$1/real/copy-in-customize" -' \
+	--customize-hook='rm "\$1/real/copy-in-customize"' \
+	--customize-hook='echo copy-out-customize > "\$1/real/copy-out-customize"' \
+	--customize-hook='copy-out /symlink/copy-out-customize /tmp' \
+	--customize-hook='rm "\$1/real/copy-out-customize"' \
+	--customize-hook='tar-in /tmp/tar-in-customize.tar /symlink' \
+	--customize-hook='echo tar-in-customize | cmp "\$1/real/tar-in-customize" -' \
+	--customize-hook='tar-out /symlink/tar-in-customize /tmp/tar-out-customize.tar' \
+	--customize-hook='rm "\$1"/real/tar-in-customize' \
+	--customize-hook='upload /tmp/upload-in-customize /symlink/upload' \
+	--customize-hook='echo upload-in-customize | cmp "\$1/real/upload" -' \
+	--customize-hook='download /symlink/upload /tmp/download-in-customize' \
+	--customize-hook='rm "\$1/real/upload"' \
+	--customize-hook='rmdir "\$1/real"' \
+	--customize-hook='rm "\$1/symlink"' \
+	$DEFAULT_DIST /tmp/debian-chroot.tar $mirror
+for n in setup essential customize; do
+	ret=0
+	cmp /tmp/tar-in-\$n.tar /tmp/tar-out-\$n.tar || ret=\$?
+	if [ "\$ret" -ne 0 ]; then
+		if type diffoscope >/dev/null; then
+			diffoscope /tmp/tar-in-\$n.tar /tmp/tar-out-\$n.tar
+			continue
+		else
+			echo "no diffoscope installed" >&2
+		fi
+		if type base64 >/dev/null; then
+			base64 /tmp/tar-in-\$n.tar
+			base64 /tmp/tar-out-\$n.tar
+			continue
+		else
+			echo "no base64 installed" >&2
+		fi
+		if type xxd >/dev/null; then
+			xxd /tmp/tar-in-\$n.tar
+			xxd /tmp/tar-out-\$n.tar
+			continue
+		else
+			echo "no xxd installed" >&2
+		fi
+		exit 1
+	fi
+done
+echo copy-out-setup | cmp /tmp/copy-out-setup -
+echo copy-out-essential | cmp /tmp/copy-out-essential -
+echo copy-out-customize | cmp /tmp/copy-out-customize -
+echo upload-in-setup | cmp /tmp/download-in-setup -
+echo upload-in-essential | cmp /tmp/download-in-essential -
+echo upload-in-customize | cmp /tmp/download-in-customize -
+# in fakechroot mode, we use a fake ldconfig, so we have to
+# artificially add some files
+{ tar -tf /tmp/debian-chroot.tar;
+  [ "$mode" = "fakechroot" ] && printf "./etc/ld.so.cache\n./var/cache/ldconfig/\n";
+  [ "$mode" = "fakechroot" ] && [ "$variant" != "essential" ] && printf "./etc/.pwd.lock\n";
+} | sort | diff -u tar1.txt -
+rm /tmp/debian-chroot.tar \
+	/tmp/copy-in-setup /tmp/copy-in-essential /tmp/copy-in-customize \
+	/tmp/copy-out-setup /tmp/copy-out-essential /tmp/copy-out-customize \
+	/tmp/tar-in-setup.tar /tmp/tar-in-essential.tar /tmp/tar-in-customize.tar \
+	/tmp/tar-out-setup.tar /tmp/tar-out-essential.tar /tmp/tar-out-customize.tar \
+	/tmp/upload-in-setup /tmp/upload-in-essential /tmp/upload-in-customize \
+	/tmp/download-in-setup /tmp/download-in-essential /tmp/download-in-customize
+END
+	if [ "$HAVE_QEMU" = "yes" ]; then
+		./run_qemu.sh
+	elif [ "$mode" = "root" ]; then
+		./run_null.sh SUDO
+	else
+		./run_null.sh
+	fi
+done
 
 print_header "mode=root,variant=apt: debootstrap no-op options"
 cat << END > shared/test.sh
