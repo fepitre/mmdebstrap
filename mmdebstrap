@@ -2836,7 +2836,7 @@ sub main() {
     }
 
     my $exitstatus = 0;
-    my @taropts = ('--sort=name', "--mtime=\@$mtime", '--clamp-mtime', '--numeric-owner', '--one-file-system', '-c', '--exclude=./dev');
+    my @taropts = ('--sort=name', "--mtime=\@$mtime", '--clamp-mtime', '--numeric-owner', '--one-file-system', '--xattrs', '-c', '--exclude=./dev');
 
     # disable signals so that we can fork and change behaviour of the signal
     # handler in the parent and child without getting interrupted
