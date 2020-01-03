@@ -522,7 +522,7 @@ sub havemknod($) {
 	# we fork so that we can read STDERR
 	my $pid = open my $fh, '-|' // error "failed to fork(): $!";
 	if ($pid == 0) {
-	    open(STDERR, '>&', STDOUT);
+	    open(STDERR, '>&', STDOUT) or error "cannot open STDERR: $!";
 	    # we use mknod(1) instead of the system call because creating the
 	    # right dev_t argument requires makedev(3)
 	    exec 'mknod', "$root/test-dev-null", 'c', '1', '3';
@@ -601,7 +601,7 @@ sub run_progress {
 	fcntl($wfh, F_SETFD, $flags & ~FD_CLOEXEC ) or error "fcntl F_SETFD: $!";
 	my $fd = fileno $wfh;
 	# redirect stderr to stdout so that we can capture it
-	open(STDERR, '>&', STDOUT);
+	open(STDERR, '>&', STDOUT) or error "cannot open STDOUT: $!";
 	my @execargs = $get_exec->($fd);
 	# before apt 1.5, "apt-get update" attempted to chdir() into the
 	# working directory. This will fail if the current working directory
@@ -1486,13 +1486,13 @@ sub setup {
 	    pipe my $rfh, my $wfh;
 	    my $pid1 = fork() // error "fork() failed: $!";
 	    if ($pid1 == 0) {
-		open(STDOUT, '>&', $wfh);
+		open(STDOUT, '>&', $wfh) or error "cannot open STDOUT: $!";
 		debug("running dpkg-deb --fsys-tarfile $options->{root}/$deb");
 		exec 'dpkg-deb', '--fsys-tarfile', "$options->{root}/$deb";
 	    }
 	    my $pid2 = fork() // error "fork() failed: $!";
 	    if ($pid2 == 0) {
-		open(STDIN, '<&', $rfh);
+		open(STDIN, '<&', $rfh) or error "cannot open STDIN: $!";
 		debug("running tar -C $options->{root} --keep-directory-symlink --extract --file -");
 		exec 'tar', '-C', $options->{root}, '--keep-directory-symlink', '--extract', '--file', '-';
 	    }
@@ -2696,7 +2696,7 @@ sub main() {
 	}
 	# check if the compressor is installed
 	if (defined $tar_compressor) {
-	    my $pid = fork();
+	    my $pid = fork() // error "fork() failed: $!";
 	    if ($pid == 0) {
 		open(STDOUT, '>', '/dev/null') or error "cannot open /dev/null for writing: $!";
 		open(STDIN, '<', '/dev/null') or error "cannot open /dev/null for reading: $!";
@@ -2868,8 +2868,8 @@ sub main() {
 	    POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or error "Can't unblock signals: $!";
 
 	    close $rfh;
-	    open(STDOUT, '>&', STDERR);
 	    close $parentsock;
+	    open(STDOUT, '>&', STDERR) or error "cannot open STDOUT: $!";
 
 	    setup($options);
 
@@ -2883,7 +2883,7 @@ sub main() {
 
 		# redirect tar output to the writing end of the pipe so that the
 		# parent process can capture the output
-		open(STDOUT, '>&', $wfh);
+		open(STDOUT, '>&', $wfh) or error "cannot open STDOUT: $!";
 
 		# Add ./dev as the first entries of the tar file.
 		# We cannot add them after calling tar, because there is no way to
@@ -2910,8 +2910,8 @@ sub main() {
 	    POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or error "Can't unblock signals: $!";
 
 	    close $rfh;
-	    open(STDOUT, '>&', STDERR);
 	    close $parentsock;
+	    open(STDOUT, '>&', STDERR) or error "cannot open STDOUT: $!";
 
 	    setup($options);
 
@@ -2925,7 +2925,7 @@ sub main() {
 
 		# redirect tar output to the writing end of the pipe so that the
 		# parent process can capture the output
-		open(STDOUT, '>&', $wfh);
+		open(STDOUT, '>&', $wfh) or error "cannot open STDOUT: $!";
 
 		# Add ./dev as the first entries of the tar file.
 		# We cannot add them after calling tar, because there is no way to
@@ -3294,7 +3294,7 @@ sub main() {
 	    } else {
 		if (defined $tar_compressor) {
 		    POSIX::sigprocmask(SIG_BLOCK, $sigset) or error "Can't block signals: $!";
-		    my $cpid = fork();
+		    my $cpid = fork() // error "fork() failed: $!";
 		    if ($cpid == 0) {
 			# child: default signal handlers
 			$SIG{'INT'} = 'DEFAULT';
