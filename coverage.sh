@@ -113,18 +113,21 @@ cmp dev1.tar dev2.tar || ret=\$?
 if [ "\$ret" -ne 0 ]; then
 	if type diffoscope >/dev/null; then
 		diffoscope dev1.tar dev2.tar
+		continue
 	else
 		echo "no diffoscope installed" >&2
 	fi
 	if type base64 >/dev/null; then
 		base64 dev1.tar
 		base64 dev2.tar
+		continue
 	else
 		echo "no base64 installed" >&2
 	fi
 	if type xxd >/dev/null; then
 		xxd dev1.tar
 		xxd dev2.tar
+		continue
 	else
 		echo "no xxd installed" >&2
 	fi
