@@ -29,7 +29,9 @@ trap cleanup INT TERM EXIT
 qemu-img create -f qcow2 -b "$(realpath $cachedir)/debian-$DEFAULT_DIST.qcow" "$tmpdir/debian-$DEFAULT_DIST-overlay.qcow"
 # to connect to serial use:
 #   minicom -D 'unix#/tmp/ttyS0'
-qemu-system-x86_64 -M accel=kvm:tcg -m 1G -nographic \
+qemu-system-x86_64 \
+	-no-user-config \
+	-M accel=kvm:tcg -m 1G -nographic \
 	-monitor unix:/tmp/monitor,server,nowait \
 	-serial unix:/tmp/ttyS0,server,nowait \
 	-serial unix:/tmp/ttyS1,server,nowait \
