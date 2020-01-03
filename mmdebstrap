@@ -3429,13 +3429,15 @@ B<mmdebstrap> will create a tarball of that directory and store it as
 I<TARGET>, optionally applying a compression algorithm as indicated by its
 filename extension. If I<TARGET> is C<-> or if no I<TARGET> was specified,
 then an uncompressed tarball of that directory will be sent to standard
-output. If I<TARGET> does not end in C<.tar> or with any of the filename
-extensions listed in the section B<COMPRESSION>, then I<TARGET> will be
-interpreted as the path to a directory. If the directory already exists, it
-must either be empty or only contain an empty C<lost+found> directory.  If a
-directory is chosen as output in any other mode than B<sudo>, then its
-contents will have wrong ownership information and special device files will
-be missing.
+output. When B<mmdebstrap> creates a tarball it also stores extended
+attributes. To preserve the extended attributes, you have to pass B<--xattrs
+--xattrs-include='*'> to tar when extracting the tarball. If I<TARGET> does
+not end in C<.tar> or with any of the filename extensions listed in the
+section B<COMPRESSION>, then I<TARGET> will be interpreted as the path to a
+directory. If the directory already exists, it must either be empty or only
+contain an empty C<lost+found> directory.  If a directory is chosen as output
+in any other mode than B<sudo>, then its contents will have wrong ownership
+information and special device files will be missing.
 
 The I<SUITE> may be a valid release code name (eg, sid, stretch, jessie) or a
 symbolic name (eg, unstable, testing, stable, oldstable). Any suite name that
@@ -3960,7 +3962,7 @@ Use as replacement for autopkgtest-build-qemu and vmdb2:
         part-disk /dev/sda mbr : \
         part-set-bootable /dev/sda 1 true : \
         mkfs ext2 /dev/sda1 : mount /dev/sda1 / : \
-        tar-in debian-unstable.tar / : \
+        tar-in debian-unstable.tar / xattrs:true : \
         extlinux / : \
         copy-in extlinux.conf /
     $ qemu-img convert -O qcow2 debian-unstable.img debian-unstable.qcow2
