@@ -89,7 +89,8 @@ sub debug {
 	return;
     }
     my $msg = shift;
-    $msg = "D: $msg";
+    my ($package, $filename, $line) = caller;
+    $msg = "D: $PID $line $msg";
     if ( -t STDERR ) {
 	$msg = colored($msg, 'clear')
     }
@@ -101,6 +102,10 @@ sub info {
 	return;
     }
     my $msg = shift;
+    if ($verbosity_level >= 3) {
+	my ($package, $filename, $line) = caller;
+	$msg = "$PID $line $msg"
+    }
     $msg = "I: $msg";
     if ( -t STDERR ) {
 	$msg = colored($msg, 'green')
