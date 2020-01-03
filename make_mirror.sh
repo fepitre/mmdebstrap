@@ -378,14 +378,6 @@ mirror="http://127.0.0.1/debian"
 SOURCE_DATE_EPOCH=$(date --date="$(grep-dctrl -s Date -n '' "$newmirrordir/dists/unstable/Release")" +%s)
 for dist in stable testing unstable; do
 	for variant in minbase buildd -; do
-		# skip because of different userids for apt/systemd
-		if [ "$dist" = 'stable' ] && [ "$variant" = '-' ]; then
-			continue
-		fi
-		# skip because of #917386 and #917407
-		if [ "$dist" = 'unstable' ] && [ "$variant" = '-' ]; then
-			continue
-		fi
 		echo running debootstrap --no-merged-usr --variant=$variant $dist /tmp/debian-$dist-debootstrap $mirror
 		cat << END > shared/test.sh
 #!/bin/sh

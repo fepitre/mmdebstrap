@@ -30,11 +30,6 @@ fi
 notfound=0
 for dist in stable testing unstable; do
 	for variant in minbase buildd -; do
-		# skip because of #917386 and #917407
-		if [ "$variant" = '-' ]; then
-			continue
-		fi
-
 		if [ ! -e "shared/cache/debian-$dist-$variant.tar" ]; then
 			echo "shared/cache/debian-$dist-$variant.tar does not exist" >&2
 			notfound=1
@@ -52,7 +47,7 @@ if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
 fi
 
 starttime=
-total=119
+total=122
 i=1
 
 print_header() {
@@ -94,10 +89,6 @@ mirror="http://127.0.0.1/debian"
 
 for dist in stable testing unstable; do
 	for variant in minbase buildd -; do
-		# skip because of #917386 and #917407
-		if [ "$variant" = '-' ]; then
-			continue
-		fi
 		print_header "mode=$defaultmode,variant=$variant: check against debootstrap $dist"
 
 		cat << END > shared/test.sh
