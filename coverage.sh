@@ -453,6 +453,7 @@ export LC_ALL=C.UTF-8
 adduser --gecos user --disabled-password user
 sysctl -w kernel.unprivileged_userns_clone=1
 runuser -u user -- $CMD --mode=unshare --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar.gz $mirror
+printf '\037\213\010' | cmp --bytes=3 /tmp/debian-chroot.tar.gz -
 tar -tf /tmp/debian-chroot.tar.gz | sort | diff -u tar1.txt -
 rm /tmp/debian-chroot.tar.gz
 END
