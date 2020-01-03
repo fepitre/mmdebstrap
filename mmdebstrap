@@ -2686,8 +2686,8 @@ sub main() {
     $options->{maketar} = 0;
     if (defined $tar_compressor or $options->{target} =~ /\.tar$/ or $options->{target} eq '-') {
 	$options->{maketar} = 1;
-	if (any { $_ eq $options->{variant} } ('extract', 'custom') and $options->{mode} eq 'fakechroot') {
-	    info "creating a tarball in fakechroot mode might fail in extract and custom variants because there might be no tar inside the chroot";
+	if (any { $_ eq $options->{variant} } ('extract', 'custom') and any { $_ eq $options->{mode} } ('fakechroot', 'proot')) {
+	    info "creating a tarball in fakechroot mode or proot mode might fail in extract and custom variants because there might be no tar inside the chroot";
 	}
 	# try to fail early if target tarball cannot be opened for writing
 	if ($options->{target} ne '-') {
