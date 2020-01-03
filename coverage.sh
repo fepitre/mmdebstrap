@@ -108,10 +108,10 @@ export SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH
 $CMD --variant=$variant --mode=$defaultmode $dist /tmp/debian-$dist-mm.tar $mirror
 
 mkdir /tmp/debian-$dist-mm
-tar -C /tmp/debian-$dist-mm -xf /tmp/debian-$dist-mm.tar
+tar --xattrs --xattrs-include='*' -C /tmp/debian-$dist-mm -xf /tmp/debian-$dist-mm.tar
 
 mkdir /tmp/debian-$dist-debootstrap
-tar -C /tmp/debian-$dist-debootstrap -xf "cache/debian-$dist-$variant.tar"
+tar --xattrs --xattrs-include='*' -C /tmp/debian-$dist-debootstrap -xf "cache/debian-$dist-$variant.tar"
 
 # diff cannot compare device nodes, so we use tar to do that for us and then
 # delete the directory
@@ -191,6 +191,19 @@ if [ "$variant" = "-" ]; then
 	rm /tmp/debian-$dist-mm/etc/machine-id
 	rm /tmp/debian-$dist-debootstrap/var/lib/systemd/catalog/database
 	rm /tmp/debian-$dist-mm/var/lib/systemd/catalog/database
+
+	cap=\$(chroot /tmp/debian-$dist-debootstrap /sbin/getcap /bin/ping)
+	if [ "\$cap" != "/bin/ping = cap_net_raw+ep" ]; then
+		echo "expected bin/ping to have capabilities cap_net_raw+ep" >&2
+		echo "but debootstrap produced: \$cap"
+		exit 1
+	fi
+	cap=\$(chroot /tmp/debian-$dist-mm /sbin/getcap /bin/ping)
+	if [ "\$cap" != "/bin/ping = cap_net_raw+ep" ]; then
+		echo "expected bin/ping to have capabilities cap_net_raw+ep" >&2
+		echo "but mmdebstrap produced: \$cap"
+		exit 1
+	fi
 fi
 rm /tmp/debian-$dist-mm/var/cache/apt/archives/lock
 rm /tmp/debian-$dist-mm/var/lib/apt/extended_states
