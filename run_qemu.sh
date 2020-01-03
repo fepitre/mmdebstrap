@@ -32,6 +32,7 @@ qemu-img create -f qcow2 -b "$(realpath $cachedir)/debian-$DEFAULT_DIST.qcow" "$
 qemu-system-x86_64 \
 	-no-user-config \
 	-M accel=kvm:tcg -m 1G -nographic \
+	-object rng-random,filename=/dev/urandom,id=rng0 -device virtio-rng-pci,rng=rng0 \
 	-monitor unix:/tmp/monitor,server,nowait \
 	-serial unix:/tmp/ttyS0,server,nowait \
 	-serial unix:/tmp/ttyS1,server,nowait \
