@@ -3323,7 +3323,7 @@ sub main() {
 	if ($@) {
 	    # we cannot die here because that would leave the other thread
 	    # running without a parent
-	    warning "run_chroot failed: $@";
+	    warning "creating tarball failed: $@";
 	    $exitstatus = 1;
 	}
     }
