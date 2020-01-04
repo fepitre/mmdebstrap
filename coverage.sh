@@ -253,7 +253,10 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-$CMD --man | grep --quiet --fixed-strings 'mmdebstrap [OPTION...] [*SUITE* [*TARGET* [*MIRROR*...]]]'
+
+# we redirect to /dev/null instead of using --quiet to not cause a broken pipe
+# when grep exits before mmdebstrap was able to write all its output
+$CMD --man | grep --fixed-strings 'mmdebstrap [OPTION...] [*SUITE* [*TARGET* [*MIRROR*...]]]' >/dev/null
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
