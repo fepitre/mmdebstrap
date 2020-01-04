@@ -367,7 +367,8 @@ END
 		copy-in "$tmpdir/mmdebstrap.service" /etc/systemd/system/ : \
 		copy-in "$tmpdir/worker.sh" / : \
 		copy-in "$tmpdir/mini-httpd" /etc/default : \
-		copy-in "$tmpdir/hosts" /etc/ :
+		copy-in "$tmpdir/hosts" /etc/ : \
+		touch /mmdebstrap-testenv :
 	rm "$tmpdir/extlinux.conf" "$tmpdir/worker.sh" "$tmpdir/mini-httpd" "$tmpdir/hosts" "$tmpdir/debian-chroot.tar" "$tmpdir/mmdebstrap.service"
 	qemu-img convert -O qcow2 "$tmpdir/debian-$DEFAULT_DIST.img" "$newcachedir/debian-$DEFAULT_DIST.qcow"
 	rm "$tmpdir/debian-$DEFAULT_DIST.img"

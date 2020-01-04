@@ -298,6 +298,11 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
+if [ ! -e /mmdebstrap-testenv ]; then
+	echo "this test modifies the system and should only be run inside a container" >&2
+	exit 1
+fi
+sysctl -w kernel.unprivileged_userns_clone=1
 ret=0
 $CMD --mode=unshare --variant=apt $DEFAULT_DIST /tmp/debian-chroot $mirror || ret=\$?
 if [ "\$ret" = 0 ]; then
@@ -453,6 +458,10 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
+if [ ! -e /mmdebstrap-testenv ]; then
+	echo "this test modifies the system and should only be run inside a container" >&2
+	exit 1
+fi
 adduser --gecos user --disabled-password user
 sysctl -w kernel.unprivileged_userns_clone=1
 runuser -u user -- $CMD --mode=unshare --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar.gz $mirror
@@ -489,6 +498,10 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
+if [ ! -e /mmdebstrap-testenv ]; then
+	echo "this test modifies the system and should only be run inside a container" >&2
+	exit 1
+fi
 adduser --gecos user --disabled-password user
 sysctl -w kernel.unprivileged_userns_clone=0
 runuser -u user -- $CMD --mode=auto --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar.gz $mirror
@@ -548,6 +561,10 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
+if [ ! -e /mmdebstrap-testenv ]; then
+	echo "this test modifies the system and should only be run inside a container" >&2
+	exit 1
+fi
 mount -t tmpfs -o nodev,nosuid,size=300M tmpfs /tmp
 # use --customize-hook to exercise the mounting/unmounting code of block devices in root mode
 $CMD --mode=root --variant=apt --customize-hook='mount | grep /dev/full' --customize-hook='test "\$(echo foo | tee /dev/full 2>&1 1>/dev/null)" = "tee: /dev/full: No space left on device"' $DEFAULT_DIST /tmp/debian-chroot.tar $mirror
@@ -600,6 +617,10 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
+if [ ! -e /mmdebstrap-testenv ]; then
+	echo "this test modifies the system and should only be run inside a container" >&2
+	exit 1
+fi
 cat << HOSTS >> /etc/hosts
 127.0.0.1 deb.debian.org
 127.0.0.1 security.debian.org
@@ -625,6 +646,10 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
+if [ ! -e /mmdebstrap-testenv ]; then
+	echo "this test modifies the system and should only be run inside a container" >&2
+	exit 1
+fi
 echo "127.0.0.1 deb.debian.org" >> /etc/hosts
 $CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST > /tmp/debian-chroot.tar
 tar -tf /tmp/debian-chroot.tar | sort | diff -u tar1.txt -
@@ -680,6 +705,10 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
+if [ ! -e /mmdebstrap-testenv ]; then
+	echo "this test requires the cache directory to be mounted on /mnt and should only be run inside a container" >&2
+	exit 1
+fi
 $CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar "deb copy:///mnt/cache/debian unstable main"
 tar -tf /tmp/debian-chroot.tar | sort | diff -u tar1.txt -
 rm /tmp/debian-chroot.tar
@@ -695,6 +724,10 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
+if [ ! -e /mmdebstrap-testenv ]; then
+	echo "this test requires the cache directory to be mounted on /mnt and should only be run inside a container" >&2
+	exit 1
+fi
 ret=0
 $CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar "deb file:///mnt/cache/debian unstable main" || ret=\$?
 rm /tmp/debian-chroot.tar
@@ -825,6 +858,10 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
+if [ ! -e /mmdebstrap-testenv ]; then
+	echo "this test modifies the system and should only be run inside a container" >&2
+	exit 1
+fi
 apt-get remove --yes qemu-user-static binfmt-support qemu-user
 ret=0
 $CMD --mode=$defaultmode --variant=apt --architectures=armhf $DEFAULT_DIST /tmp/debian-chroot.tar $mirror || ret=\$?
@@ -844,6 +881,10 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
+if [ ! -e /mmdebstrap-testenv ]; then
+	echo "this test modifies the system and should only be run inside a container" >&2
+	exit 1
+fi
 # remove qemu just to be sure
 apt-get remove --yes qemu-user-static binfmt-support qemu-user
 $CMD --mode=$defaultmode --variant=apt --architectures=i386 $DEFAULT_DIST /tmp/debian-chroot.tar $mirror
@@ -980,6 +1021,10 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
+if [ ! -e /mmdebstrap-testenv ]; then
+	echo "this test modifies the system and should only be run inside a container" >&2
+	exit 1
+fi
 rm /etc/apt/trusted.gpg.d/*.gpg
 $CMD --mode=root --variant=apt --keyring=/usr/share/keyrings/debian-archive-keyring.gpg --keyring=/usr/share/keyrings/ $DEFAULT_DIST /tmp/debian-chroot $mirror
 tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
@@ -1020,6 +1065,10 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
+if [ ! -e /mmdebstrap-testenv ]; then
+	echo "this test modifies the system and should only be run inside a container" >&2
+	exit 1
+fi
 echo "deb $mirror $DEFAULT_DIST main" > /etc/apt/sources.list
 apt-get -o Acquire::Languages=none update
 apt-get install --yes --no-install-recommends gpg
@@ -1040,6 +1089,10 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
+if [ ! -e /mmdebstrap-testenv ]; then
+	echo "this test modifies the system and should only be run inside a container" >&2
+	exit 1
+fi
 echo "deb $mirror $DEFAULT_DIST main" > /etc/apt/sources.list
 apt-get -o Acquire::Languages=none update
 apt-get install --yes --no-install-recommends gpg
@@ -1480,6 +1533,10 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
+if [ ! -e /mmdebstrap-testenv ]; then
+	echo "this test modifies the system and should only be run inside a container" >&2
+	exit 1
+fi
 rm /etc/resolv.conf /etc/hostname
 $CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar $mirror
 { tar -tf /tmp/debian-chroot.tar;
