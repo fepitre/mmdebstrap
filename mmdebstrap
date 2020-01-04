@@ -3734,20 +3734,25 @@ by the _apt user, then apt sandboxing will be automatically disabled.
 This mode uses Linux user namespaces to allow unprivileged use of chroot and
 creation of files that appear to be owned by the superuser inside the unshared
 namespace. A directory chroot created with this mode will end up with wrong
-permissions. Choose to create a tarball instead.
+permissions. Choose to create a tarball instead. This mode requires the sysctl
+C<kernel.unprivileged_userns_clone> being set to C<1>.
 
 =item B<fakeroot>, B<fakechroot>
 
 This mode will exec B<mmdebstrap> again under C<fakechroot fakeroot>. A
 directory chroot created with this mode will end up with wrong permissions.
-Choose to create a tarball instead.
+Choose to create a tarball instead. This mode will not work if maintainer
+scripts are unable to handle C<LD_PRELOAD> correctly like the package
+B<initramfs-tools> until version 0.132.
 
 =item B<proot>
 
 This mode will carry out all calls to chroot with proot instead. Since
-permissions are only retained while proot is still running, this will lead to
-wrong permissions in the final directory and tarball. This mode is useful if
-you plan to use the chroot with proot.
+ownership information is only retained while proot is still running, this will
+lead to wrong ownership information in the final directory (everything will be
+owned by the user that executed B<mmdebstrap>) and tarball (everything will be
+owned by the root user). Extended attributes are not retained. This mode is
+useful if you plan to use the chroot with proot.
 
 =item B<chrootless>
 
