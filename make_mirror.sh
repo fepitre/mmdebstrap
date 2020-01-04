@@ -399,15 +399,12 @@ done
 
 if [ "$HAVE_QEMU" = "yes" ]; then
 	# now replace the minihttpd config with one that serves the new repository
-	# create a temporary directory because "copy-in" cannot rename the file
-	tmpdir="$(mktemp -d)"
-	cat << END > "$tmpdir/mini-httpd"
+	guestfish -a "$newcachedir/debian-$DEFAULT_DIST.qcow" -i <<EOF
+upload -<<END /etc/default/mini-httpd
 START=1
 DAEMON_OPTS="-h 127.0.0.1 -p 80 -u nobody -dd /mnt/cache -i /var/run/mini-httpd.pid -T UTF-8"
 END
-	guestfish -a "$newcachedir/debian-$DEFAULT_DIST.qcow" -i copy-in "$tmpdir/mini-httpd" /etc/default
-	rm "$tmpdir/mini-httpd"
-	rmdir "$tmpdir"
+EOF
 fi
 
 # delete possibly leftover symlink
