@@ -1987,36 +1987,28 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
+pkgs=base-files,base-passwd,busybox,debianutils,dpkg,libc-bin,mawk,tar
 $CMD --mode=root --variant=custom \
-    --include=dpkg,busybox,libc-bin,base-files,base-passwd,debianutils \
+    --include=\$pkgs \
     --setup-hook='mkdir -p "\$1/bin"' \
     --setup-hook='for p in awk cat chmod chown cp diff echo env grep less ln mkdir mount rm rmdir sed sh sleep sort touch uname; do ln -s busybox "\$1/bin/\$p"; done' \
     --setup-hook='echo root:x:0:0:root:/root:/bin/sh > "\$1/etc/passwd"' \
     --setup-hook='printf "root:x:0:\nmail:x:8:\nutmp:x:43:\n" > "\$1/etc/group"' \
     $DEFAULT_DIST /tmp/debian-chroot $mirror
-cat << FILE > expected
-base-files
-base-passwd
-busybox
-debianutils
-dpkg
-gcc-9-base:amd64
-libacl1:amd64
-libbz2-1.0:amd64
-libc-bin
-libc6:amd64
-libcrypt1:amd64
-libdebconfclient0:amd64
-libgcc1:amd64
-liblzma5:amd64
-libpcre2-8-0:amd64
-libselinux1:amd64
-mawk
-tar
-zlib1g:amd64
-FILE
-chroot /tmp/debian-chroot dpkg-query -f '\${binary:Package}\n' -W | diff -u - expected
-rm expected
+echo "\$pkgs" | tr ',' '\n' > /tmp/expected
+chroot /tmp/debian-chroot dpkg-query -f '\${binary:Package}\n' -W \
+	| comm -12 - /tmp/expected \
+	| diff -u - /tmp/expected
+rm /tmp/expected
+for cmd in echo cat sort sed grep; do
+	test -L /tmp/debian-chroot/bin/\$cmd
+	test "\$(readlink /tmp/debian-chroot/bin/\$cmd)" = "busybox"
+done
+chroot /tmp/debian-chroot echo foobar \
+	| chroot /tmp/debian-chroot cat \
+	| chroot /tmp/debian-chroot sort \
+	| chroot /tmp/debian-chroot sed 's/foobar/blubber/' \
+	| chroot /tmp/debian-chroot grep blubber
 rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
