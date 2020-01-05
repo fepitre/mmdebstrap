@@ -9,57 +9,71 @@ set -eu
 # Working with two directories also automatically prunes old packages in
 # the local repository.
 
-if [ -e "./shared/cache.A" ] && [ -e "./shared/cache.B" ]; then
-	echo "both ./shared/cache.A and ./shared/cache.B exist" >&2
-	echo "was a former run of the script aborted?" >&2
-	if [ -e ./shared/cache ]; then
-		echo "cache symlink points to $(readlink ./shared/cache)" >&2
-		case "$(readlink ./shared/cache)" in
-			cache.A)
-				echo "maybe rm -r ./shared/cache.B" >&2
-				;;
-			cache.B)
-				echo "maybe rm -r ./shared/cache.A" >&2
-				;;
-			*)
-				echo "unexpected" >&2
-		esac
+deletecache() {
+	dir="$1"
+	echo "running deletecache $dir">&2
+	if [ ! -e "$dir" ]; then
+		return
 	fi
-	exit 1
-fi
+	if [ ! -e "$dir/mmdebstrapcache" ]; then
+		echo "$dir cannot be the mmdebstrap cache" >&2
+		return 1
+	fi
+	# be very careful with removing the old directory
+	for dist in stable testing unstable; do
+		for variant in minbase buildd -; do
+			if [ -e "$dir/debian-$dist-$variant.tar" ]; then
+				rm "$dir/debian-$dist-$variant.tar"
+			else
+				echo "does not exist: $dir/debian-$dist-$variant.tar" >&2
+			fi
+		done
+		if [ -e "$dir/debian/dists/$dist" ]; then
+			rm --one-file-system --recursive "$dir/debian/dists/$dist"
+		else
+			echo "does not exist: $dir/debian/dists/$dist" >&2
+		fi
+		if [ "$dist" = "stable" ]; then
+			if [ -e "$dir/debian/dists/stable-updates" ]; then
+				rm --one-file-system --recursive "$dir/debian/dists/stable-updates"
+			else
+				echo "does not exist: $dir/debian/dists/stable-updates" >&2
+			fi
+			if [ -e "$dir/debian-security/dists/stable/updates" ]; then
+				rm --one-file-system --recursive "$dir/debian-security/dists/stable/updates"
+			else
+				echo "does not exist: $dir/debian-security/dists/stable/updates" >&2
+			fi
+		fi
+	done
+	if [ -e $dir/debian-*.qcow ]; then
+		rm --one-file-system "$dir"/debian-*.qcow
+	else
+		echo "does not exist: $dir/debian-*.qcow" >&2
+	fi
+	if [ -e "$dir/debian/pool/main" ]; then
+		rm --one-file-system --recursive "$dir/debian/pool/main"
+	else
+		echo "does not exist: $dir/debian/pool/main" >&2
+	fi
+	if [ -e "$dir/debian-security/pool/updates/main" ]; then
+		rm --one-file-system --recursive "$dir/debian-security/pool/updates/main"
+	else
+		echo "does not exist: $dir/debian-security/pool/updates/main" >&2
+	fi
+	rm "$dir/mmdebstrapcache"
+	# now the rest should only be empty directories
+	if [ -e "$dir" ]; then
+		find "$dir" -depth -print0 | xargs -0 --no-run-if-empty rmdir
+	else
+		echo "does not exist: $dir" >&2
+	fi
+}
 
-if [ -e "./shared/cache.A" ]; then
-	oldcache=cache.A
-	newcache=cache.B
-else
-	oldcache=cache.B
-	newcache=cache.A
-fi
-
-oldcachedir="./shared/$oldcache"
-newcachedir="./shared/$newcache"
-oldmirrordir="$oldcachedir/debian"
-newmirrordir="$newcachedir/debian"
-
-mirror="http://deb.debian.org/debian"
-security_mirror="http://security.debian.org/debian-security"
-if [ "$(dpkg --print-architecture)" != amd64 ]; then
-	echo "script only supports being run on amd64" >&2
-	exit 1
-fi
-components=main
-
-: "${DEFAULT_DIST:=unstable}"
-: "${HAVE_QEMU:=yes}"
-
-if [ -e "$oldmirrordir/dists/$DEFAULT_DIST/Release" ]; then
-	http_code=$(curl --output /dev/null --silent --location --head --time-cond "$oldmirrordir/dists/$DEFAULT_DIST/Release" --write-out '%{http_code}' "$mirror/dists/$DEFAULT_DIST/Release")
-	case "$http_code" in
-		200) ;; # need update
-		304) echo up-to-date; exit 0;;
-		*) echo "unexpected status: $http_code"; exit 1;;
-	esac
-fi
+cleanup_newcachedir() {
+	echo "running cleanup_newcachedir"
+	deletecache "$newcachedir"
+}
 
 get_oldaptnames() {
 	if [ ! -e "$1/$2" ]; then
@@ -127,7 +141,40 @@ get_newaptnames() {
 		done
 }
 
-update_cache() {
+cleanupapt() {
+	echo "running cleanupapt" >&2
+	if [ ! -e "$rootdir" ]; then
+		return
+	fi
+	for f in \
+		"$rootdir/var/cache/apt/archives/"*.deb \
+		"$rootdir/var/cache/apt/archives/partial/"*.deb \
+		"$rootdir/var/cache/apt/"*.bin \
+		"$rootdir/var/lib/apt/lists/"* \
+		"$rootdir/var/lib/dpkg/status" \
+		"$rootdir/var/lib/dpkg/lock-frontend" \
+		"$rootdir/var/lib/dpkg/lock" \
+		"$rootdir/etc/apt/apt.conf" \
+		"$rootdir/etc/apt/sources.list" \
+		"$rootdir/oldaptnames" \
+		"$rootdir/newaptnames" \
+		"$rootdir/var/cache/apt/archives/lock"; do
+		if [ ! -e "$f" ]; then
+			echo "does not exist: $f" >&2
+			continue
+		fi
+		if [ -d "$f" ]; then
+			rmdir "$f"
+		else
+			rm "$f"
+		fi
+	done
+	find "$rootdir" -depth -print0 | xargs -0 --no-run-if-empty rmdir
+}
+
+# note: this function uses brackets instead of curly braces, so that it's run
+# in its own process and we can handle traps independent from the outside
+update_cache() (
 	dist="$1"
 	nativearch="$2"
 
@@ -135,6 +182,11 @@ update_cache() {
 	# hardlinks
 	rootdir="$newcachedir/apt"
 	mkdir -p "$rootdir"
+
+	# we only set this trap here and overwrite the previous trap, because
+	# the update_cache function is run as part of a pipe and thus in its
+	# own process which will EXIT after it finished
+	trap "cleanupapt" EXIT INT TERM
 
 	for p in /etc/apt/apt.conf.d /etc/apt/sources.list.d /etc/apt/preferences.d /var/cache/apt/archives /var/lib/apt/lists/partial /var/lib/dpkg; do
 		mkdir -p "$rootdir/$p"
@@ -229,20 +281,73 @@ END
 		exit 1
 	fi
 
-	# cleanup
 	APT_CONFIG="$rootdir/etc/apt/apt.conf" apt-get --option Dir::Etc::SourceList=/dev/null update
 	APT_CONFIG="$rootdir/etc/apt/apt.conf" apt-get clean
-	rm "$rootdir/var/cache/apt/archives/lock"
-	rm "$rootdir/var/lib/apt/lists/lock"
-	rm "$rootdir/var/lib/dpkg/status"
-	rm "$rootdir/var/lib/dpkg/lock-frontend"
-	rm "$rootdir/var/lib/dpkg/lock"
-	rm "$rootdir/etc/apt/apt.conf"
-	rm "$rootdir/etc/apt/sources.list"
-	rm "$rootdir/oldaptnames"
-	rm "$rootdir/newaptnames"
-	find "$rootdir" -depth -print0 | xargs -0 rmdir
-}
+
+	cleanupapt
+
+	# this function is run in its own process, so we unset all traps before
+	# returning
+	trap "-" EXIT INT TERM
+)
+
+if [ -e "./shared/cache.A" ] && [ -e "./shared/cache.B" ]; then
+	echo "both ./shared/cache.A and ./shared/cache.B exist" >&2
+	echo "was a former run of the script aborted?" >&2
+	if [ -e ./shared/cache ]; then
+		echo "cache symlink points to $(readlink ./shared/cache)" >&2
+		case "$(readlink ./shared/cache)" in
+			cache.A)
+				echo "maybe rm -r ./shared/cache.B" >&2
+				;;
+			cache.B)
+				echo "maybe rm -r ./shared/cache.A" >&2
+				;;
+			*)
+				echo "unexpected" >&2
+		esac
+	fi
+	exit 1
+fi
+
+if [ -e "./shared/cache.A" ]; then
+	oldcache=cache.A
+	newcache=cache.B
+else
+	oldcache=cache.B
+	newcache=cache.A
+fi
+
+oldcachedir="./shared/$oldcache"
+newcachedir="./shared/$newcache"
+
+oldmirrordir="$oldcachedir/debian"
+newmirrordir="$newcachedir/debian"
+
+mirror="http://deb.debian.org/debian"
+security_mirror="http://security.debian.org/debian-security"
+if [ "$(dpkg --print-architecture)" != amd64 ]; then
+	echo "script only supports being run on amd64" >&2
+	exit 1
+fi
+components=main
+
+: "${DEFAULT_DIST:=unstable}"
+: "${HAVE_QEMU:=yes}"
+
+if [ -e "$oldmirrordir/dists/$DEFAULT_DIST/Release" ]; then
+	http_code=$(curl --output /dev/null --silent --location --head --time-cond "$oldmirrordir/dists/$DEFAULT_DIST/Release" --write-out '%{http_code}' "$mirror/dists/$DEFAULT_DIST/Release")
+	case "$http_code" in
+		200) ;; # need update
+		304) echo up-to-date; exit 0;;
+		*) echo "unexpected status: $http_code"; exit 1;;
+	esac
+fi
+
+trap "cleanup_newcachedir" EXIT INT TERM
+
+mkdir -p "$newcachedir"
+touch "$newcachedir/mmdebstrapcache"
 
 for nativearch in amd64 armhf i386; do
 	for dist in stable testing unstable; do
@@ -264,6 +369,30 @@ END
 	done
 done
 
+tmpdir=""
+
+cleanuptmpdir() {
+	if [ -z "$tmpdir" ]; then
+		return
+	fi
+	if [ ! -e "$tmpdir" ]; then
+		return
+	fi
+	for f in "$tmpdir/extlinux.conf" \
+		"$tmpdir/worker.sh" \
+		"$tmpdir/mini-httpd" "$tmpdir/hosts" \
+		"$tmpdir/debian-chroot.tar" \
+		"$tmpdir/mmdebstrap.service" \
+		"$tmpdir/debian-$DEFAULT_DIST.img"; do
+		if [ ! -e "$f" ]; then
+			echo "does not exist: $f" >&2
+			continue
+		fi
+		rm "$f"
+	done
+	rmdir "$tmpdir"
+}
+
 if [ "$HAVE_QEMU" = "yes" ]; then
 	# We must not use any --dpkgopt here because any dpkg options still
 	# leak into the chroot with chrootless mode.
@@ -272,6 +401,8 @@ if [ "$HAVE_QEMU" = "yes" ]; then
 	#   - it doesn't matter if the base system is from a different mirror timestamp
 	# procps is needed for /sbin/sysctl
 	tmpdir="$(mktemp -d)"
+	trap "cleanuptmpdir; cleanup_newcachedir" EXIT INT TERM
+
 	./mmdebstrap --variant=apt --architectures=amd64,armhf \
 		--include=perl-doc,linux-image-amd64,systemd-sysv,perl,arch-test,fakechroot,fakeroot,mount,uidmap,proot,qemu-user-static,binfmt-support,qemu-user,dpkg-dev,mini-httpd,libdevel-cover-perl,debootstrap,libfakechroot:armhf,libfakeroot:armhf,procps,apt-cudf,aspcud \
 		$DEFAULT_DIST - "$mirror" > "$tmpdir/debian-chroot.tar"
@@ -369,10 +500,9 @@ END
 		copy-in "$tmpdir/mini-httpd" /etc/default : \
 		copy-in "$tmpdir/hosts" /etc/ : \
 		touch /mmdebstrap-testenv :
-	rm "$tmpdir/extlinux.conf" "$tmpdir/worker.sh" "$tmpdir/mini-httpd" "$tmpdir/hosts" "$tmpdir/debian-chroot.tar" "$tmpdir/mmdebstrap.service"
 	qemu-img convert -O qcow2 "$tmpdir/debian-$DEFAULT_DIST.img" "$newcachedir/debian-$DEFAULT_DIST.qcow"
-	rm "$tmpdir/debian-$DEFAULT_DIST.img"
-	rmdir "$tmpdir"
+	cleanuptmpdir
+	trap "cleanup_newcachedir" EXIT INT TERM
 fi
 
 mirror="http://127.0.0.1/debian"
@@ -414,35 +544,7 @@ fi
 # now atomically switch the symlink to point to the other directory
 ln -s $newcache ./shared/cache.tmp
 mv --no-target-directory ./shared/cache.tmp ./shared/cache
-# be very careful with removing the old directory
-for dist in stable testing unstable; do
-	for variant in minbase buildd -; do
-		if [ -e "$oldcachedir/debian-$dist-$variant.tar" ]; then
-			rm "$oldcachedir/debian-$dist-$variant.tar"
-		fi
-	done
-	if [ -e "$oldcachedir/debian/dists/$dist" ]; then
-		rm --one-file-system --recursive "$oldcachedir/debian/dists/$dist"
-	fi
-	if [ "$dist" = "stable" ]; then
-		if [ -e "$oldcachedir/debian/dists/stable-updates" ]; then
-			rm --one-file-system --recursive "$oldcachedir/debian/dists/stable-updates"
-		fi
-		if [ -e "$oldcachedir/debian-security/dists/stable/updates" ]; then
-			rm --one-file-system --recursive "$oldcachedir/debian-security/dists/stable/updates"
-		fi
-	fi
-done
-if [ -e $oldcachedir/debian-*.qcow ]; then
-	rm --one-file-system "$oldcachedir"/debian-*.qcow
-fi
-if [ -e "$oldcachedir/debian/pool/main" ]; then
-	rm --one-file-system --recursive "$oldcachedir/debian/pool/main"
-fi
-if [ -e "$oldcachedir/debian-security/pool/updates/main" ]; then
-	rm --one-file-system --recursive "$oldcachedir/debian-security/pool/updates/main"
-fi
-# now the rest should only be empty directories
-if [ -e "$oldcachedir" ]; then
-	find "$oldcachedir" -depth -print0 | xargs -0 --no-run-if-empty rmdir
-fi
+
+deletecache "$oldcachedir"
+
+trap - EXIT INT TERM
