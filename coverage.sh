@@ -53,8 +53,8 @@ total=122
 i=1
 
 print_header() {
-	echo ------------------------------------------------------------------------------
-	echo "($i/$total) $1"
+	echo ------------------------------------------------------------------------------ >&2
+	echo "($i/$total) $1" >&2
 	if [ -z "$starttime" ]; then
 		starttime=$(date +%s)
 	else
@@ -62,7 +62,7 @@ print_header() {
 		timeleft=$(((total-i+1)*(currenttime-starttime)/(i-1)))
 		printf "time left: %02d:%02d:%02d\n" $((timeleft/3600)) $(((timeleft%3600)/60)) $((timeleft%60))
 	fi
-	echo ------------------------------------------------------------------------------
+	echo ------------------------------------------------------------------------------ >&2
 	i=$((i+1))
 }
 
@@ -191,13 +191,13 @@ if [ "$variant" = "-" ]; then
 	cap=\$(chroot /tmp/debian-$dist-debootstrap /sbin/getcap /bin/ping)
 	if [ "\$cap" != "/bin/ping = cap_net_raw+ep" ]; then
 		echo "expected bin/ping to have capabilities cap_net_raw+ep" >&2
-		echo "but debootstrap produced: \$cap"
+		echo "but debootstrap produced: \$cap" >&2
 		exit 1
 	fi
 	cap=\$(chroot /tmp/debian-$dist-mm /sbin/getcap /bin/ping)
 	if [ "\$cap" != "/bin/ping = cap_net_raw+ep" ]; then
 		echo "expected bin/ping to have capabilities cap_net_raw+ep" >&2
-		echo "but mmdebstrap produced: \$cap"
+		echo "but mmdebstrap produced: \$cap" >&2
 		exit 1
 	fi
 fi
@@ -212,24 +212,22 @@ done
 
 # workaround for https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=917773
 if ! cmp /tmp/debian-$dist-debootstrap/etc/shadow /tmp/debian-$dist-mm/etc/shadow; then
-	echo patching /etc/shadow on $dist $variant
+	echo patching /etc/shadow on $dist $variant >&2
 	head /tmp/debian-$dist-debootstrap/etc/shadow /tmp/debian-$dist-mm/etc/shadow
-	echo \$SOURCE_DATE_EPOCH
 	awk -v SDE=\$SOURCE_DATE_EPOCH 'BEGIN { print int(SDE/60/60/24) }'
 	awk -v FS=: -v OFS=: -v SDE=\$SOURCE_DATE_EPOCH '{ print \$1,\$2,int(SDE/60/60/24),\$4,\$5,\$6,\$7,\$8,\$9 }' < /tmp/debian-$dist-mm/etc/shadow > /tmp/debian-$dist-mm/etc/shadow.bak
 	mv /tmp/debian-$dist-mm/etc/shadow.bak /tmp/debian-$dist-mm/etc/shadow
 else
-	echo no difference for /etc/shadow on $dist $variant
+	echo no difference for /etc/shadow on $dist $variant >&2
 fi
 if ! cmp /tmp/debian-$dist-debootstrap/etc/shadow- /tmp/debian-$dist-mm/etc/shadow-; then
-	echo patching /etc/shadow- on $dist $variant
-	echo \$SOURCE_DATE_EPOCH
+	echo patching /etc/shadow- on $dist $variant >&2
 	awk -v SDE=\$SOURCE_DATE_EPOCH 'BEGIN { print int(SDE/60/60/24) }'
 	head /tmp/debian-$dist-debootstrap/etc/shadow- /tmp/debian-$dist-mm/etc/shadow-
 	awk -v FS=: -v OFS=: -v SDE=\$SOURCE_DATE_EPOCH '{ print \$1,\$2,int(SDE/60/60/24),\$4,\$5,\$6,\$7,\$8,\$9 }' < /tmp/debian-$dist-mm/etc/shadow- > /tmp/debian-$dist-mm/etc/shadow-.bak
 	mv /tmp/debian-$dist-mm/etc/shadow-.bak /tmp/debian-$dist-mm/etc/shadow-
 else
-	echo no difference for /etc/shadow- on $dist $variant
+	echo no difference for /etc/shadow- on $dist $variant >&2
 fi
 
 # check if the file content differs
@@ -324,14 +322,14 @@ sysctl -w kernel.unprivileged_userns_clone=1
 ret=0
 $CMD --mode=unshare --variant=apt $DEFAULT_DIST /tmp/debian-chroot $mirror || ret=\$?
 if [ "\$ret" = 0 ]; then
-	echo expected failure but got exit \$ret
+	echo expected failure but got exit \$ret >&2
 	exit 1
 fi
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 else
-	echo "HAVE_QEMU != yes -- Skipping test..."
+	echo "HAVE_QEMU != yes -- Skipping test..." >&2
 fi
 
 print_header "mode=$defaultmode,variant=apt: test progress bars on fake tty"
@@ -416,7 +414,7 @@ rm /tmp/debian-chroot/lost+found/exists
 rmdir /tmp/debian-chroot/lost+found
 rmdir /tmp/debian-chroot
 if [ "\$ret" = 0 ]; then
-	echo expected failure but got exit \$ret
+	echo expected failure but got exit \$ret >&2
 	exit 1
 fi
 END
@@ -442,7 +440,7 @@ rmdir /tmp/debian-chroot/lost+found
 rm /tmp/debian-chroot/exists
 rmdir /tmp/debian-chroot
 if [ "\$ret" = 0 ]; then
-	echo expected failure but got exit \$ret
+	echo expected failure but got exit \$ret >&2
 	exit 1
 fi
 END
@@ -490,7 +488,7 @@ END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 else
-	echo "HAVE_QEMU != yes -- Skipping test..."
+	echo "HAVE_QEMU != yes -- Skipping test..." >&2
 fi
 
 print_header "mode=$defaultmode,variant=apt: test xz compressed tarball"
@@ -531,7 +529,7 @@ END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 else
-	echo "HAVE_QEMU != yes -- Skipping test..."
+	echo "HAVE_QEMU != yes -- Skipping test..." >&2
 fi
 
 print_header "mode=$defaultmode,variant=apt: fail with missing lz4"
@@ -542,7 +540,7 @@ export LC_ALL=C.UTF-8
 ret=0
 $CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar.lz4 $mirror || ret=\$?
 if [ "\$ret" = 0 ]; then
-	echo expected failure but got exit \$ret
+	echo expected failure but got exit \$ret >&2
 	exit 1
 fi
 END
@@ -562,7 +560,7 @@ export LC_ALL=C.UTF-8
 ret=0
 $CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST /tmp/quoted\"path $mirror || ret=\$?
 if [ "\$ret" = 0 ]; then
-	echo expected failure but got exit \$ret
+	echo expected failure but got exit \$ret >&2
 	exit 1
 fi
 END
@@ -592,7 +590,7 @@ END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 else
-	echo "HAVE_QEMU != yes -- Skipping test..."
+	echo "HAVE_QEMU != yes -- Skipping test..." >&2
 fi
 
 print_header "mode=$defaultmode,variant=apt: read from stdin, write to stdout"
@@ -656,7 +654,7 @@ END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 else
-	echo "HAVE_QEMU != yes -- Skipping test..."
+	echo "HAVE_QEMU != yes -- Skipping test..." >&2
 fi
 
 print_header "mode=$defaultmode,variant=apt: pass distribution but implicitly write to stdout"
@@ -676,7 +674,7 @@ END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 else
-	echo "HAVE_QEMU != yes -- Skipping test..."
+	echo "HAVE_QEMU != yes -- Skipping test..." >&2
 fi
 
 print_header "mode=$defaultmode,variant=apt: test aspcud apt solver"
@@ -734,7 +732,7 @@ END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 else
-	echo "HAVE_QEMU != yes -- Skipping test..."
+	echo "HAVE_QEMU != yes -- Skipping test..." >&2
 fi
 
 print_header "mode=$defaultmode,variant=apt: fail with file:// mirror"
@@ -750,14 +748,14 @@ ret=0
 $CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar "deb file:///mnt/cache/debian unstable main" || ret=\$?
 rm /tmp/debian-chroot.tar
 if [ "\$ret" = 0 ]; then
-	echo expected failure but got exit \$ret
+	echo expected failure but got exit \$ret >&2
 	exit 1
 fi
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 else
-	echo "HAVE_QEMU != yes -- Skipping test..."
+	echo "HAVE_QEMU != yes -- Skipping test..." >&2
 fi
 
 print_header "mode=$defaultmode,variant=apt: mirror is deb..."
@@ -822,7 +820,7 @@ ret=0
 $CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar $mirror/invalid || ret=\$?
 rm /tmp/debian-chroot.tar
 if [ "\$ret" = 0 ]; then
-	echo expected failure but got exit \$ret
+	echo expected failure but got exit \$ret >&2
 	exit 1
 fi
 END
@@ -842,7 +840,7 @@ export LC_ALL=C.UTF-8
 ret=0
 $CMD --mode=root --variant=apt $DEFAULT_DIST / $mirror || ret=\$?
 if [ "\$ret" = 0 ]; then
-	echo expected failure but got exit \$ret
+	echo expected failure but got exit \$ret >&2
 	exit 1
 fi
 END
@@ -861,7 +859,7 @@ touch /tmp/exists
 ret=0
 $CMD --mode=root --variant=apt $DEFAULT_DIST /tmp/exists $mirror || ret=\$?
 if [ "\$ret" = 0 ]; then
-	echo expected failure but got exit \$ret
+	echo expected failure but got exit \$ret >&2
 	exit 1
 fi
 END
@@ -884,16 +882,16 @@ apt-get remove --yes qemu-user-static binfmt-support qemu-user
 ret=0
 $CMD --mode=$defaultmode --variant=apt --architectures=armhf $DEFAULT_DIST /tmp/debian-chroot.tar $mirror || ret=\$?
 if [ "\$ret" = 0 ]; then
-	echo expected failure but got exit \$ret
+	echo expected failure but got exit \$ret >&2
 	exit 1
 fi
 END
 if [ "$HOSTARCH" != amd64 ]; then
-	echo "HOSTARCH != amd64 -- Skipping test..."
+	echo "HOSTARCH != amd64 -- Skipping test..." >&2
 elif [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 else
-	echo "HAVE_QEMU != yes -- Skipping test..."
+	echo "HAVE_QEMU != yes -- Skipping test..." >&2
 fi
 
 print_header "mode=$defaultmode,variant=apt: test i386 (which can be executed without qemu)"
@@ -938,11 +936,11 @@ $CMD --mode=$defaultmode --variant=apt --architectures=i386 $DEFAULT_DIST /tmp/d
 rm /tmp/debian-chroot.tar
 END
 if [ "$HOSTARCH" != amd64 ]; then
-	echo "HOSTARCH != amd64 -- Skipping test..."
+	echo "HOSTARCH != amd64 -- Skipping test..." >&2
 elif [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 else
-	echo "HAVE_QEMU != yes -- Skipping test..."
+	echo "HAVE_QEMU != yes -- Skipping test..." >&2
 fi
 
 # to test foreign architecture package installation we choose a package which
@@ -977,14 +975,14 @@ rm -r /tmp/debian-chroot
 END
 if [ "$RUN_MA_SAME_TESTS" = "yes" ]; then
 	if [ "$HOSTARCH" != amd64 ]; then
-		echo "HOSTARCH != amd64 -- Skipping test..."
+		echo "HOSTARCH != amd64 -- Skipping test..." >&2
 	elif [ "$HAVE_QEMU" = "yes" ]; then
 		./run_qemu.sh
 	else
 		./run_null.sh SUDO
 	fi
 else
-	echo "RUN_MA_SAME_TESTS != yes -- Skipping test..."
+	echo "RUN_MA_SAME_TESTS != yes -- Skipping test..." >&2
 fi
 
 print_header "mode=root,variant=apt: test --include=libmagic-mgc:armhf with multiple --arch options"
@@ -1014,14 +1012,14 @@ rm -r /tmp/debian-chroot
 END
 if [ "$RUN_MA_SAME_TESTS" = "yes" ]; then
 	if [ "$HOSTARCH" != amd64 ]; then
-		echo "HOSTARCH != amd64 -- Skipping test..."
+		echo "HOSTARCH != amd64 -- Skipping test..." >&2
 	elif [ "$HAVE_QEMU" = "yes" ]; then
 		./run_qemu.sh
 	else
 		./run_null.sh SUDO
 	fi
 else
-	echo "RUN_MA_SAME_TESTS != yes -- Skipping test..."
+	echo "RUN_MA_SAME_TESTS != yes -- Skipping test..." >&2
 fi
 
 print_header "mode=root,variant=apt: test --aptopt"
@@ -1059,7 +1057,7 @@ END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 else
-	echo "HAVE_QEMU != yes -- Skipping test..."
+	echo "HAVE_QEMU != yes -- Skipping test..." >&2
 fi
 
 print_header "mode=root,variant=apt: test --keyring overwrites"
@@ -1076,7 +1074,7 @@ rm -r /tmp/debian-chroot
 rmdir emptydir
 rm emptyfile
 if [ "\$ret" = 0 ]; then
-	echo expected failure but got exit \$ret
+	echo expected failure but got exit \$ret >&2
 	exit 1
 fi
 END
@@ -1107,7 +1105,7 @@ END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 else
-	echo "HAVE_QEMU != yes -- Skipping test..."
+	echo "HAVE_QEMU != yes -- Skipping test..." >&2
 fi
 
 print_header "mode=root,variant=apt: test signed-by with host keys"
@@ -1130,7 +1128,7 @@ END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 else
-	echo "HAVE_QEMU != yes -- Skipping test..."
+	echo "HAVE_QEMU != yes -- Skipping test..." >&2
 fi
 
 print_header "mode=root,variant=apt: test --dpkgopt"
@@ -1292,7 +1290,7 @@ ret=0
 $CMD --mode=root --variant=apt --customize-hook='chroot "\$1" sh -c "exit 1"' $DEFAULT_DIST /tmp/debian-chroot $mirror || ret=\$?
 rm -r /tmp/debian-chroot
 if [ "\$ret" = 0 ]; then
-	echo expected failure but got exit \$ret
+	echo expected failure but got exit \$ret >&2
 	exit 1
 fi
 END
@@ -1317,12 +1315,12 @@ ret=0
 wait \$pid || ret=\$?
 rm -r /tmp/debian-chroot
 if [ -e fail ]; then
-	echo customize hook was not interrupted
+	echo customize hook was not interrupted >&2
 	rm fail
 	exit 1
 fi
 if [ "\$ret" = 0 ]; then
-	echo expected failure but got exit \$ret
+	echo expected failure but got exit \$ret >&2
 	exit 1
 fi
 END
@@ -1336,11 +1334,11 @@ fi
 for mode in root unshare fakechroot proot; do
 	print_header "mode=$mode,variant=apt: test special hooks with $mode mode"
 	if [ "$mode" = "unshare" ] && [ "$HAVE_UNSHARE" != "yes" ]; then
-		echo "HAVE_UNSHARE != yes -- Skipping test..."
+		echo "HAVE_UNSHARE != yes -- Skipping test..." >&2
 		continue
 	fi
 	if [ "$mode" = "proot" ] && [ "$HAVE_PROOT" != "yes" ]; then
-		echo "HAVE_PROOT != yes -- Skipping test..."
+		echo "HAVE_PROOT != yes -- Skipping test..." >&2
 		continue
 	fi
 	cat << END > shared/test.sh
@@ -1574,7 +1572,7 @@ END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 else
-	echo "HAVE_QEMU != yes -- Skipping test..."
+	echo "HAVE_QEMU != yes -- Skipping test..." >&2
 fi
 
 print_header "mode=$defaultmode,variant=essential: test not having to installing apt with --include"
@@ -1652,11 +1650,11 @@ END
 		esac
 		print_header "mode=$mode,variant=$variant: create tarball"
 		if [ "$mode" = "unshare" ] && [ "$HAVE_UNSHARE" != "yes" ]; then
-			echo "HAVE_UNSHARE != yes -- Skipping test..."
+			echo "HAVE_UNSHARE != yes -- Skipping test..." >&2
 			continue
 		fi
 		if [ "$mode" = "proot" ] && [ "$HAVE_PROOT" != "yes" ]; then
-			echo "HAVE_PROOT != yes -- Skipping test..."
+			echo "HAVE_PROOT != yes -- Skipping test..." >&2
 			continue
 		fi
 		cat << END > shared/test.sh
@@ -1756,11 +1754,11 @@ done
 for mode in root unshare fakechroot proot chrootless; do
 	print_header "mode=$mode,variant=extract: unpack doc-debian"
 	if [ "$mode" = "unshare" ] && [ "$HAVE_UNSHARE" != "yes" ]; then
-		echo "HAVE_UNSHARE != yes -- Skipping test..."
+		echo "HAVE_UNSHARE != yes -- Skipping test..." >&2
 		continue
 	fi
 	if [ "$mode" = "proot" ] && [ "$HAVE_PROOT" != "yes" ]; then
-		echo "HAVE_PROOT != yes -- Skipping test..."
+		echo "HAVE_PROOT != yes -- Skipping test..." >&2
 		continue
 	fi
 	cat << END > shared/test.sh
@@ -1999,7 +1997,7 @@ rm /tmp/debian-chroot/var/lib/dpkg/info/libmagic-mgc.list
 find /tmp/debian-chroot -depth -print0 | xargs -0 rmdir
 END
 if [ "$HOSTARCH" != amd64 ]; then
-	echo "HOSTARCH != amd64 -- Skipping test..."
+	echo "HOSTARCH != amd64 -- Skipping test..." >&2
 elif [ "$HAVE_BINFMT" = "yes" ]; then
 	if [ "$HAVE_QEMU" = "yes" ]; then
 		./run_qemu.sh
@@ -2007,7 +2005,7 @@ elif [ "$HAVE_BINFMT" = "yes" ]; then
 		./run_null.sh
 	fi
 else
-	echo "HAVE_BINFMT != yes -- Skipping test..."
+	echo "HAVE_BINFMT != yes -- Skipping test..." >&2
 fi
 
 print_header "mode=root,variant=custom: install busybox-based sub-essential system"
@@ -2051,19 +2049,19 @@ fi
 for mode in root unshare fakechroot proot; do
 	print_header "mode=$mode,variant=apt: create armhf tarball"
 	if [ "$HOSTARCH" != amd64 ]; then
-		echo "HOSTARCH != amd64 -- Skipping test..."
+		echo "HOSTARCH != amd64 -- Skipping test..." >&2
 		continue
 	fi
 	if [ "$HAVE_BINFMT" != "yes" ]; then
-		echo "HAVE_BINFMT != yes -- Skipping test..."
+		echo "HAVE_BINFMT != yes -- Skipping test..." >&2
 		continue
 	fi
 	if [ "$mode" = "unshare" ] && [ "$HAVE_UNSHARE" != "yes" ]; then
-		echo "HAVE_UNSHARE != yes -- Skipping test..."
+		echo "HAVE_UNSHARE != yes -- Skipping test..." >&2
 		continue
 	fi
 	if [ "$mode" = "proot" ] && [ "$HAVE_PROOT" != "yes" ]; then
-		echo "HAVE_PROOT != yes -- Skipping test..."
+		echo "HAVE_PROOT != yes -- Skipping test..." >&2
 		continue
 	fi
 	cat << END > shared/test.sh
@@ -2115,7 +2113,7 @@ END
 done
 
 if [ "$((i-1))" -ne "$total" ]; then
-	echo unexpected number of tests: got $((i-1)) but expected $total
+	echo "unexpected number of tests: got $((i-1)) but expected $total" >&2
 	exit 1
 fi
 
