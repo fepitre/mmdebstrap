@@ -1877,6 +1877,26 @@ sub setup {
 	}
 	unlink $path or error "cannot unlink $path: $!";
     }
+
+    # remove any possible leftovers in /tmp but warn about it
+    if (-d "$options->{root}/tmp") {
+	opendir(my $dh, "$options->{root}/tmp") or error "Can't opendir($options->{root}/tmp): $!";
+	while (my $entry = readdir $dh) {
+	    # skip the "." and ".." entries
+	    next if $entry eq ".";
+	    next if $entry eq "..";
+	    warning "deleting files in /tmp: $entry";
+	    remove_tree("$options->{root}/tmp/$entry", {error => \my $err});
+	    if (@$err) {
+		for my $diag (@$err) {
+		    my ($file, $message) = %$diag;
+		    if ($file eq '') { warning "general error: $message"; }
+		    else { warning "problem unlinking $file: $message"; }
+		}
+	    }
+	}
+	closedir($dh);
+    }
 }
 
 # messages from process inside unshared namespace to the outside
