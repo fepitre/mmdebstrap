@@ -50,6 +50,8 @@ fi
 
 starttime=
 total=122
+skipped=0
+runtests=0
 i=1
 
 print_header() {
@@ -243,10 +245,13 @@ rm -r /tmp/debian-$dist-debootstrap /tmp/debian-$dist-mm
 END
 		if [ "$HAVE_QEMU" = "yes" ]; then
 			./run_qemu.sh
+			runtests=$((runtests+1))
 		elif [ "$defaultmode" = "root" ]; then
 			./run_null.sh SUDO
+			runtests=$((runtests+1))
 		else
 			./run_null.sh
+			runtests=$((runtests+1))
 		fi
 	done
 done
@@ -260,8 +265,10 @@ $CMD --help | grep --quiet --fixed-strings 'mmdebstrap [OPTION...] [SUITE [TARGE
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 fi
 
 print_header "test --man"
@@ -276,8 +283,10 @@ $CMD --man | grep --fixed-strings 'mmdebstrap [OPTION...] [*SUITE* [*TARGET* [*M
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 fi
 
 print_header "test --version"
@@ -289,8 +298,10 @@ $CMD --version | egrep --quiet '^mmdebstrap [0-9](\.[0-9])+$'
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=root,variant=apt: create directory"
@@ -305,8 +316,10 @@ rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=unshare,variant=apt: fail with unshare as root user"
@@ -328,8 +341,10 @@ fi
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	echo "HAVE_QEMU != yes -- Skipping test..." >&2
+	skipped=$((skipped+1))
 fi
 
 print_header "mode=$defaultmode,variant=apt: test progress bars on fake tty"
@@ -343,10 +358,13 @@ rm /tmp/debian-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 elif [ "$defaultmode" = "root" ]; then
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 else
 	./run_null.sh
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=$defaultmode,variant=apt: test --debug output on fake tty"
@@ -360,10 +378,13 @@ rm /tmp/debian-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 elif [ "$defaultmode" = "root" ]; then
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 else
 	./run_null.sh
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=root,variant=apt: existing empty directory"
@@ -378,8 +399,10 @@ rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=root,variant=apt: existing directory with lost+found"
@@ -396,8 +419,10 @@ rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=$defaultmode,variant=apt: fail installing to non-empty lost+found"
@@ -420,10 +445,13 @@ fi
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 elif [ "$defaultmode" = "root" ]; then
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 else
 	./run_null.sh
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=$defaultmode,variant=apt: fail installing to non-empty target directory"
@@ -446,10 +474,13 @@ fi
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 elif [ "$defaultmode" = "root" ]; then
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 else
 	./run_null.sh
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=root,variant=apt: chroot directory not accessible by _apt user"
@@ -465,8 +496,10 @@ rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=unshare,variant=apt: create gzip compressed tarball"
@@ -487,8 +520,10 @@ rm /tmp/debian-chroot.tar.gz
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	echo "HAVE_QEMU != yes -- Skipping test..." >&2
+	skipped=$((skipped+1))
 fi
 
 print_header "mode=$defaultmode,variant=apt: test xz compressed tarball"
@@ -503,10 +538,13 @@ rm /tmp/debian-chroot.tar.xz
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 elif [ "$defaultmode" = "root" ]; then
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 else
 	./run_null.sh
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=auto,variant=apt: test auto-mode without unshare capabilities"
@@ -528,8 +566,10 @@ rm /tmp/debian-chroot.tar.gz
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	echo "HAVE_QEMU != yes -- Skipping test..." >&2
+	skipped=$((skipped+1))
 fi
 
 print_header "mode=$defaultmode,variant=apt: fail with missing lz4"
@@ -546,10 +586,13 @@ fi
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 elif [ "$defaultmode" = "root" ]; then
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 else
 	./run_null.sh
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=$defaultmode,variant=apt: fail with path with quotes"
@@ -566,10 +609,13 @@ fi
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 elif [ "$defaultmode" = "root" ]; then
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 else
 	./run_null.sh
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=root,variant=apt: create tarball with /tmp mounted nodev"
@@ -589,8 +635,10 @@ rm /tmp/debian-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	echo "HAVE_QEMU != yes -- Skipping test..." >&2
+	skipped=$((skipped+1))
 fi
 
 print_header "mode=$defaultmode,variant=apt: read from stdin, write to stdout"
@@ -604,10 +652,13 @@ rm /tmp/debian-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 elif [ "$defaultmode" = "root" ]; then
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 else
 	./run_null.sh
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=$defaultmode,variant=apt: supply components manually"
@@ -622,10 +673,13 @@ rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 elif [ "$defaultmode" = "root" ]; then
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 else
 	./run_null.sh
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=root,variant=apt: stable default mirror"
@@ -653,8 +707,10 @@ rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	echo "HAVE_QEMU != yes -- Skipping test..." >&2
+	skipped=$((skipped+1))
 fi
 
 print_header "mode=$defaultmode,variant=apt: pass distribution but implicitly write to stdout"
@@ -673,8 +729,10 @@ rm /tmp/debian-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	echo "HAVE_QEMU != yes -- Skipping test..." >&2
+	skipped=$((skipped+1))
 fi
 
 print_header "mode=$defaultmode,variant=apt: test aspcud apt solver"
@@ -693,10 +751,13 @@ rm /tmp/debian-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 elif [ "$defaultmode" = "root" ]; then
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 else
 	./run_null.sh
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=$defaultmode,variant=apt: mirror is -"
@@ -710,10 +771,13 @@ rm /tmp/debian-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 elif [ "$defaultmode" = "root" ]; then
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 else
 	./run_null.sh
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=$defaultmode,variant=apt: copy:// mirror"
@@ -731,8 +795,10 @@ rm /tmp/debian-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	echo "HAVE_QEMU != yes -- Skipping test..." >&2
+	skipped=$((skipped+1))
 fi
 
 print_header "mode=$defaultmode,variant=apt: fail with file:// mirror"
@@ -754,8 +820,10 @@ fi
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	echo "HAVE_QEMU != yes -- Skipping test..." >&2
+	skipped=$((skipped+1))
 fi
 
 print_header "mode=$defaultmode,variant=apt: mirror is deb..."
@@ -769,10 +837,13 @@ rm /tmp/debian-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 elif [ "$defaultmode" = "root" ]; then
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 else
 	./run_null.sh
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=$defaultmode,variant=apt: mirror is real file"
@@ -787,10 +858,13 @@ rm /tmp/debian-chroot.tar /tmp/sources.list
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 elif [ "$defaultmode" = "root" ]; then
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 else
 	./run_null.sh
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=$defaultmode,variant=apt: automatic mirror from suite"
@@ -805,10 +879,13 @@ rm /tmp/debian-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 elif [ "$defaultmode" = "root" ]; then
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 else
 	./run_null.sh
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=$defaultmode,variant=apt: invalid mirror"
@@ -826,10 +903,13 @@ fi
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 elif [ "$defaultmode" = "root" ]; then
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 else
 	./run_null.sh
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=root,variant=apt: fail installing to /"
@@ -846,8 +926,10 @@ fi
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=root,variant=apt: fail installing to existing file"
@@ -865,8 +947,10 @@ fi
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=$defaultmode,variant=apt: test armhf without qemu support"
@@ -888,10 +972,13 @@ fi
 END
 if [ "$HOSTARCH" != amd64 ]; then
 	echo "HOSTARCH != amd64 -- Skipping test..." >&2
+	skipped=$((skipped+1))
 elif [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	echo "HAVE_QEMU != yes -- Skipping test..." >&2
+	skipped=$((skipped+1))
 fi
 
 print_header "mode=$defaultmode,variant=apt: test i386 (which can be executed without qemu)"
@@ -937,10 +1024,13 @@ rm /tmp/debian-chroot.tar
 END
 if [ "$HOSTARCH" != amd64 ]; then
 	echo "HOSTARCH != amd64 -- Skipping test..." >&2
+	skipped=$((skipped+1))
 elif [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	echo "HAVE_QEMU != yes -- Skipping test..." >&2
+	skipped=$((skipped+1))
 fi
 
 # to test foreign architecture package installation we choose a package which
@@ -976,13 +1066,17 @@ END
 if [ "$RUN_MA_SAME_TESTS" = "yes" ]; then
 	if [ "$HOSTARCH" != amd64 ]; then
 		echo "HOSTARCH != amd64 -- Skipping test..." >&2
+		skipped=$((skipped+1))
 	elif [ "$HAVE_QEMU" = "yes" ]; then
 		./run_qemu.sh
+		runtests=$((runtests+1))
 	else
 		./run_null.sh SUDO
+		runtests=$((runtests+1))
 	fi
 else
 	echo "RUN_MA_SAME_TESTS != yes -- Skipping test..." >&2
+	skipped=$((skipped+1))
 fi
 
 print_header "mode=root,variant=apt: test --include=libmagic-mgc:armhf with multiple --arch options"
@@ -1013,13 +1107,17 @@ END
 if [ "$RUN_MA_SAME_TESTS" = "yes" ]; then
 	if [ "$HOSTARCH" != amd64 ]; then
 		echo "HOSTARCH != amd64 -- Skipping test..." >&2
+		skipped=$((skipped+1))
 	elif [ "$HAVE_QEMU" = "yes" ]; then
 		./run_qemu.sh
+		runtests=$((runtests+1))
 	else
 		./run_null.sh SUDO
+		runtests=$((runtests+1))
 	fi
 else
 	echo "RUN_MA_SAME_TESTS != yes -- Skipping test..." >&2
+	skipped=$((skipped+1))
 fi
 
 print_header "mode=root,variant=apt: test --aptopt"
@@ -1036,8 +1134,10 @@ rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=root,variant=apt: test --keyring"
@@ -1056,8 +1156,10 @@ rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	echo "HAVE_QEMU != yes -- Skipping test..." >&2
+	skipped=$((skipped+1))
 fi
 
 print_header "mode=root,variant=apt: test --keyring overwrites"
@@ -1080,8 +1182,10 @@ fi
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=root,variant=apt: test signed-by without host keys"
@@ -1104,8 +1208,10 @@ rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	echo "HAVE_QEMU != yes -- Skipping test..." >&2
+	skipped=$((skipped+1))
 fi
 
 print_header "mode=root,variant=apt: test signed-by with host keys"
@@ -1127,8 +1233,10 @@ rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	echo "HAVE_QEMU != yes -- Skipping test..." >&2
+	skipped=$((skipped+1))
 fi
 
 print_header "mode=root,variant=apt: test --dpkgopt"
@@ -1146,8 +1254,10 @@ rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=root,variant=apt: test --include"
@@ -1167,8 +1277,10 @@ rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=root,variant=apt: test multiple --include"
@@ -1199,8 +1311,10 @@ rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=root,variant=apt: test --setup-hook"
@@ -1221,8 +1335,10 @@ rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=root,variant=apt: test --essential-hook"
@@ -1251,8 +1367,10 @@ rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=root,variant=apt: test --customize-hook"
@@ -1277,8 +1395,10 @@ rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=root,variant=apt: test failing --customize-hook"
@@ -1296,8 +1416,10 @@ fi
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=root,variant=apt: test sigint during --customize-hook"
@@ -1326,8 +1448,10 @@ fi
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 fi
 
 # test special hooks
@@ -1335,10 +1459,12 @@ for mode in root unshare fakechroot proot; do
 	print_header "mode=$mode,variant=apt: test special hooks with $mode mode"
 	if [ "$mode" = "unshare" ] && [ "$HAVE_UNSHARE" != "yes" ]; then
 		echo "HAVE_UNSHARE != yes -- Skipping test..." >&2
+		skipped=$((skipped+1))
 		continue
 	fi
 	if [ "$mode" = "proot" ] && [ "$HAVE_PROOT" != "yes" ]; then
 		echo "HAVE_PROOT != yes -- Skipping test..." >&2
+		skipped=$((skipped+1))
 		continue
 	fi
 	cat << END > shared/test.sh
@@ -1464,10 +1590,13 @@ rm /tmp/debian-chroot.tar \
 END
 	if [ "$HAVE_QEMU" = "yes" ]; then
 		./run_qemu.sh
+		runtests=$((runtests+1))
 	elif [ "$mode" = "root" ]; then
 		./run_null.sh SUDO
+		runtests=$((runtests+1))
 	else
 		./run_null.sh
+		runtests=$((runtests+1))
 	fi
 done
 
@@ -1482,8 +1611,10 @@ rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=root,variant=apt: --verbose"
@@ -1497,8 +1628,10 @@ rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=root,variant=apt: --debug"
@@ -1512,8 +1645,10 @@ rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=root,variant=apt: --quiet"
@@ -1527,8 +1662,10 @@ rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=root,variant=apt: --logfile"
@@ -1548,8 +1685,10 @@ rm log
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=$defaultmode,variant=apt: without /etc/resolv.conf and /etc/hostname"
@@ -1571,8 +1710,10 @@ rm /tmp/debian-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	echo "HAVE_QEMU != yes -- Skipping test..." >&2
+	skipped=$((skipped+1))
 fi
 
 print_header "mode=$defaultmode,variant=essential: test not having to installing apt with --include"
@@ -1586,10 +1727,13 @@ rm /tmp/debian-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 elif [ "$defaultmode" = "root" ]; then
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 else
 	./run_null.sh
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=$defaultmode,variant=apt: remove start-stop-daemon and policy-rc.d in hook"
@@ -1603,10 +1747,13 @@ rm /tmp/debian-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 elif [ "$defaultmode" = "root" ]; then
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 else
 	./run_null.sh
+	runtests=$((runtests+1))
 fi
 
 # test all variants
@@ -1623,8 +1770,10 @@ rm /tmp/debian-chroot.tar
 END
 	if [ "$HAVE_QEMU" = "yes" ]; then
 		./run_qemu.sh
+		runtests=$((runtests+1))
 	else
 		./run_null.sh SUDO
+		runtests=$((runtests+1))
 	fi
 	# check if the other modes produce the same result in each variant
 	for mode in unshare fakechroot proot; do
@@ -1651,10 +1800,12 @@ END
 		print_header "mode=$mode,variant=$variant: create tarball"
 		if [ "$mode" = "unshare" ] && [ "$HAVE_UNSHARE" != "yes" ]; then
 			echo "HAVE_UNSHARE != yes -- Skipping test..." >&2
+			skipped=$((skipped+1))
 			continue
 		fi
 		if [ "$mode" = "proot" ] && [ "$HAVE_PROOT" != "yes" ]; then
 			echo "HAVE_PROOT != yes -- Skipping test..." >&2
+			skipped=$((skipped+1))
 			continue
 		fi
 		cat << END > shared/test.sh
@@ -1676,8 +1827,10 @@ rm /tmp/debian-chroot.tar
 END
 		if [ "$HAVE_QEMU" = "yes" ]; then
 			./run_qemu.sh
+			runtests=$((runtests+1))
 		else
 			./run_null.sh
+			runtests=$((runtests+1))
 		fi
 		# Devel::Cover doesn't survive mmdebstrap re-exec-ing itself
 		# with fakechroot, thus, we do an additional run where we
@@ -1700,8 +1853,10 @@ rm /tmp/debian-chroot.tar
 END
 			if [ "$HAVE_QEMU" = "yes" ]; then
 				./run_qemu.sh
+				runtests=$((runtests+1))
 			else
 				./run_null.sh
+				runtests=$((runtests+1))
 			fi
 		fi
 	done
@@ -1755,10 +1910,12 @@ for mode in root unshare fakechroot proot chrootless; do
 	print_header "mode=$mode,variant=extract: unpack doc-debian"
 	if [ "$mode" = "unshare" ] && [ "$HAVE_UNSHARE" != "yes" ]; then
 		echo "HAVE_UNSHARE != yes -- Skipping test..." >&2
+		skipped=$((skipped+1))
 		continue
 	fi
 	if [ "$mode" = "proot" ] && [ "$HAVE_PROOT" != "yes" ]; then
 		echo "HAVE_PROOT != yes -- Skipping test..." >&2
+		skipped=$((skipped+1))
 		continue
 	fi
 	cat << END > shared/test.sh
@@ -1812,10 +1969,13 @@ find /tmp/debian-chroot -depth -print0 | xargs -0 rmdir
 END
 	if [ "$HAVE_QEMU" = "yes" ]; then
 		./run_qemu.sh
+		runtests=$((runtests+1))
 	elif [ "$mode" = "root" ]; then
 		./run_null.sh SUDO
+		runtests=$((runtests+1))
 	else
 		./run_null.sh
+		runtests=$((runtests+1))
 	fi
 done
 
@@ -1869,8 +2029,10 @@ find /tmp/debian-chroot -depth -print0 | xargs -0 rmdir
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	./run_null.sh
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=chrootless,variant=custom: install doc-debian and output tarball"
@@ -1888,8 +2050,10 @@ rm /tmp/debian-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	./run_null.sh
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=chrootless,variant=custom: install doc-debian and test hooks"
@@ -1944,8 +2108,10 @@ find /tmp/debian-chroot -depth -print0 | xargs -0 rmdir
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	./run_null.sh
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=chrootless,variant=custom: install libmagic-mgc on armhf"
@@ -1998,14 +2164,18 @@ find /tmp/debian-chroot -depth -print0 | xargs -0 rmdir
 END
 if [ "$HOSTARCH" != amd64 ]; then
 	echo "HOSTARCH != amd64 -- Skipping test..." >&2
+	skipped=$((skipped+1))
 elif [ "$HAVE_BINFMT" = "yes" ]; then
 	if [ "$HAVE_QEMU" = "yes" ]; then
 		./run_qemu.sh
+		runtests=$((runtests+1))
 	else
 		./run_null.sh
+		runtests=$((runtests+1))
 	fi
 else
 	echo "HAVE_BINFMT != yes -- Skipping test..." >&2
+	skipped=$((skipped+1))
 fi
 
 print_header "mode=root,variant=custom: install busybox-based sub-essential system"
@@ -2039,8 +2209,10 @@ rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
+	runtests=$((runtests+1))
 else
 	./run_null.sh SUDO
+	runtests=$((runtests+1))
 fi
 
 # test foreign architecture with all modes
@@ -2050,18 +2222,22 @@ for mode in root unshare fakechroot proot; do
 	print_header "mode=$mode,variant=apt: create armhf tarball"
 	if [ "$HOSTARCH" != amd64 ]; then
 		echo "HOSTARCH != amd64 -- Skipping test..." >&2
+		skipped=$((skipped+1))
 		continue
 	fi
 	if [ "$HAVE_BINFMT" != "yes" ]; then
 		echo "HAVE_BINFMT != yes -- Skipping test..." >&2
+		skipped=$((skipped+1))
 		continue
 	fi
 	if [ "$mode" = "unshare" ] && [ "$HAVE_UNSHARE" != "yes" ]; then
 		echo "HAVE_UNSHARE != yes -- Skipping test..." >&2
+		skipped=$((skipped+1))
 		continue
 	fi
 	if [ "$mode" = "proot" ] && [ "$HAVE_PROOT" != "yes" ]; then
 		echo "HAVE_PROOT != yes -- Skipping test..." >&2
+		skipped=$((skipped+1))
 		continue
 	fi
 	cat << END > shared/test.sh
@@ -2105,15 +2281,31 @@ rm /tmp/debian-chroot.tar
 END
 	if [ "$HAVE_QEMU" = "yes" ]; then
 		./run_qemu.sh
+		runtests=$((runtests+1))
 	elif [ "$mode" = "root" ]; then
 		./run_null.sh SUDO
+		runtests=$((runtests+1))
 	else
 		./run_null.sh
+		runtests=$((runtests+1))
 	fi
 done
 
 if [ "$((i-1))" -ne "$total" ]; then
 	echo "unexpected number of tests: got $((i-1)) but expected $total" >&2
+	exit 1
+fi
+
+if [ "$skipped" -gt 0 ]; then
+	echo "number of skipped tests: $skipped" >&2
+fi
+
+if [ "$runtests" -gt 0 ]; then
+	echo "number of executed tests: $runtests" >&2
+fi
+
+if [ "$((skipped+runtests))" -ne "$total" ]; then
+	echo "sum of skipped and executed tests is not equal to $total" >&2
 	exit 1
 fi
 
