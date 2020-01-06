@@ -1125,12 +1125,12 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-echo 'Acquire::Languages "none";' > config
-$CMD --mode=root --variant=apt --aptopt='Acquire::Check-Valid-Until "false"' --aptopt=config $DEFAULT_DIST /tmp/debian-chroot $mirror
+echo 'Acquire::Languages "none";' > /tmp/config
+$CMD --mode=root --variant=apt --aptopt='Acquire::Check-Valid-Until "false"' --aptopt=/tmp/config $DEFAULT_DIST /tmp/debian-chroot $mirror
 printf 'Acquire::Check-Valid-Until "false";\nAcquire::Languages "none";\n' | cmp /tmp/debian-chroot/etc/apt/apt.conf.d/99mmdebstrap -
 rm /tmp/debian-chroot/etc/apt/apt.conf.d/99mmdebstrap
 tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
-rm -r /tmp/debian-chroot
+rm -r /tmp/debian-chroot /tmp/config
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -1244,13 +1244,13 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-echo no-pager > config
-$CMD --mode=root --variant=apt --dpkgopt="path-exclude=/usr/share/doc/*" --dpkgopt=config $DEFAULT_DIST /tmp/debian-chroot $mirror
+echo no-pager > /tmp/config
+$CMD --mode=root --variant=apt --dpkgopt="path-exclude=/usr/share/doc/*" --dpkgopt=/tmp/config $DEFAULT_DIST /tmp/debian-chroot $mirror
 printf 'path-exclude=/usr/share/doc/*\nno-pager\n' | cmp /tmp/debian-chroot/etc/dpkg/dpkg.cfg.d/99mmdebstrap -
 rm /tmp/debian-chroot/etc/dpkg/dpkg.cfg.d/99mmdebstrap
 tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort > tar2.txt
 grep -v '^./usr/share/doc/.' tar1.txt | diff -u - tar2.txt
-rm -r /tmp/debian-chroot
+rm -r /tmp/debian-chroot /tmp/config
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
