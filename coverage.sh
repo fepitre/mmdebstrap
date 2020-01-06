@@ -16,6 +16,8 @@ rm -f shared/cover_db.img
 : "${HAVE_QEMU:=yes}"
 : "${RUN_MA_SAME_TESTS:=yes}"
 
+HOSTARCH=$(dpkg --print-architecture)
+
 if [ "$HAVE_QEMU" = "yes" ]; then
 	# prepare image for cover_db
 	guestfish -N shared/cover_db.img=disk:256M -- mkfs vfat /dev/sda
@@ -176,7 +178,7 @@ if [ -e "/tmp/debian-$dist-debootstrap/run/mount" ]; then
 	rmdir "/tmp/debian-$dist-debootstrap/run/mount"
 fi
 # debootstrap doesn't clean apt
-rm /tmp/debian-$dist-debootstrap/var/lib/apt/lists/127.0.0.1_debian_dists_${dist}_main_binary-amd64_Packages \
+rm /tmp/debian-$dist-debootstrap/var/lib/apt/lists/127.0.0.1_debian_dists_${dist}_main_binary-${HOSTARCH}_Packages \
 	/tmp/debian-$dist-debootstrap/var/lib/apt/lists/127.0.0.1_debian_dists_${dist}_Release \
 	/tmp/debian-$dist-debootstrap/var/lib/apt/lists/127.0.0.1_debian_dists_${dist}_Release.gpg
 
@@ -886,7 +888,9 @@ if [ "\$ret" = 0 ]; then
 	exit 1
 fi
 END
-if [ "$HAVE_QEMU" = "yes" ]; then
+if [ "$HOSTARCH" != amd64 ]; then
+	echo "HOSTARCH != amd64 -- Skipping test..."
+elif [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 else
 	echo "HAVE_QEMU != yes -- Skipping test..."
@@ -933,7 +937,9 @@ $CMD --mode=$defaultmode --variant=apt --architectures=i386 $DEFAULT_DIST /tmp/d
 } | sort | diff -u - tar2.txt
 rm /tmp/debian-chroot.tar
 END
-if [ "$HAVE_QEMU" = "yes" ]; then
+if [ "$HOSTARCH" != amd64 ]; then
+	echo "HOSTARCH != amd64 -- Skipping test..."
+elif [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 else
 	echo "HAVE_QEMU != yes -- Skipping test..."
@@ -970,7 +976,9 @@ tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.
 rm -r /tmp/debian-chroot
 END
 if [ "$RUN_MA_SAME_TESTS" = "yes" ]; then
-	if [ "$HAVE_QEMU" = "yes" ]; then
+	if [ "$HOSTARCH" != amd64 ]; then
+		echo "HOSTARCH != amd64 -- Skipping test..."
+	elif [ "$HAVE_QEMU" = "yes" ]; then
 		./run_qemu.sh
 	else
 		./run_null.sh SUDO
@@ -1005,7 +1013,9 @@ tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.
 rm -r /tmp/debian-chroot
 END
 if [ "$RUN_MA_SAME_TESTS" = "yes" ]; then
-	if [ "$HAVE_QEMU" = "yes" ]; then
+	if [ "$HOSTARCH" != amd64 ]; then
+		echo "HOSTARCH != amd64 -- Skipping test..."
+	elif [ "$HAVE_QEMU" = "yes" ]; then
 		./run_qemu.sh
 	else
 		./run_null.sh SUDO
@@ -1988,7 +1998,9 @@ rm /tmp/debian-chroot/var/lib/dpkg/info/libmagic-mgc.list
 # the rest should be empty directories that we can rmdir recursively
 find /tmp/debian-chroot -depth -print0 | xargs -0 rmdir
 END
-if [ "$HAVE_BINFMT" = "yes" ]; then
+if [ "$HOSTARCH" != amd64 ]; then
+	echo "HOSTARCH != amd64 -- Skipping test..."
+elif [ "$HAVE_BINFMT" = "yes" ]; then
 	if [ "$HAVE_QEMU" = "yes" ]; then
 		./run_qemu.sh
 	else
@@ -2038,6 +2050,10 @@ fi
 
 for mode in root unshare fakechroot proot; do
 	print_header "mode=$mode,variant=apt: create armhf tarball"
+	if [ "$HOSTARCH" != amd64 ]; then
+		echo "HOSTARCH != amd64 -- Skipping test..."
+		continue
+	fi
 	if [ "$HAVE_BINFMT" != "yes" ]; then
 		echo "HAVE_BINFMT != yes -- Skipping test..."
 		continue

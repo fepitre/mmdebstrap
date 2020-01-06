@@ -326,14 +326,11 @@ newmirrordir="$newcachedir/debian"
 
 mirror="http://deb.debian.org/debian"
 security_mirror="http://security.debian.org/debian-security"
-if [ "$(dpkg --print-architecture)" != amd64 ]; then
-	echo "script only supports being run on amd64" >&2
-	exit 1
-fi
 components=main
 
 : "${DEFAULT_DIST:=unstable}"
 : "${HAVE_QEMU:=yes}"
+: "${RUN_MA_SAME_TESTS:=yes}"
 
 if [ -e "$oldmirrordir/dists/$DEFAULT_DIST/Release" ]; then
 	http_code=$(curl --output /dev/null --silent --location --head --time-cond "$oldmirrordir/dists/$DEFAULT_DIST/Release" --write-out '%{http_code}' "$mirror/dists/$DEFAULT_DIST/Release")
@@ -349,10 +346,17 @@ trap "cleanup_newcachedir" EXIT INT TERM
 mkdir -p "$newcachedir"
 touch "$newcachedir/mmdebstrapcache"
 
-for nativearch in amd64 armhf i386; do
+HOSTARCH=$(dpkg --print-architecture)
+if [ "$HOSTARCH" = amd64 ]; then
+	arches="amd64 armhf i386"
+else
+	arches="$HOSTARCH"
+fi
+
+for nativearch in $arches; do
 	for dist in stable testing unstable; do
-		# only store non-amd64 architectures for $DEFAULT_DIST
-		if [ $nativearch != amd64 ] && [ $DEFAULT_DIST != $dist ]; then
+		# non-host architectures are only downloaded for $DEFAULT_DIST
+		if [ $nativearch != $HOSTARCH ] && [ $DEFAULT_DIST != $dist ]; then
 			continue
 		fi
 		cat << END | update_cache "$dist" "$nativearch"
@@ -403,8 +407,14 @@ if [ "$HAVE_QEMU" = "yes" ]; then
 	tmpdir="$(mktemp -d)"
 	trap "cleanuptmpdir; cleanup_newcachedir" EXIT INT TERM
 
-	./mmdebstrap --variant=apt --architectures=amd64,armhf \
-		--include=perl-doc,linux-image-amd64,systemd-sysv,perl,arch-test,fakechroot,fakeroot,mount,uidmap,proot,qemu-user-static,binfmt-support,qemu-user,dpkg-dev,mini-httpd,libdevel-cover-perl,debootstrap,libfakechroot:armhf,libfakeroot:armhf,procps,apt-cudf,aspcud \
+	pkgs=perl-doc,linux-image-amd64,systemd-sysv,perl,arch-test,fakechroot,fakeroot,mount,uidmap,proot,qemu-user-static,binfmt-support,qemu-user,dpkg-dev,mini-httpd,libdevel-cover-perl,debootstrap,procps,apt-cudf,aspcud
+	if [ "$HOSTARCH" = amd64 ] && [ "$RUN_MA_SAME_TESTS" = "yes" ]; then
+		arches=amd64,armhf
+		pkgs="$pkgs,libfakechroot:armhf,libfakeroot:armhf"
+	else
+		arches=$HOSTARCH
+	fi
+	./mmdebstrap --variant=apt --architectures=$arches --include="$pkgs" \
 		$DEFAULT_DIST - "$mirror" > "$tmpdir/debian-chroot.tar"
 
 	cat << END > "$tmpdir/extlinux.conf"
