@@ -1851,7 +1851,10 @@ sub setup {
     unlink "$options->{root}/etc/apt/apt.conf.d/00mmdebstrap" or error "failed to unlink /etc/apt/apt.conf.d/00mmdebstrap: $!";
     info "cleaning package lists and apt cache...";
     run_apt_progress({
-	    ARGV => ['apt-get', '--option', 'Dir::Etc::SourceList=/dev/null', 'update'],
+	    ARGV => ['apt-get',
+		'--option', 'Dir::Etc::SourceList=/dev/null',
+		'--option', 'Dir::Etc::SourceParts=/dev/null',
+		'update'],
 	    CHDIR => $options->{root},
 	});
     run_apt_progress({ ARGV => ['apt-get', 'clean'], CHDIR => $options->{root} });
