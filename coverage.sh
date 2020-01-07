@@ -117,21 +117,21 @@ cmp dev1.tar dev2.tar || ret=\$?
 if [ "\$ret" -ne 0 ]; then
 	if type diffoscope >/dev/null; then
 		diffoscope dev1.tar dev2.tar
-		continue
+		exit 1
 	else
 		echo "no diffoscope installed" >&2
 	fi
 	if type base64 >/dev/null; then
 		base64 dev1.tar
 		base64 dev2.tar
-		continue
+		exit 1
 	else
 		echo "no base64 installed" >&2
 	fi
 	if type xxd >/dev/null; then
 		xxd dev1.tar
 		xxd dev2.tar
-		continue
+		exit 1
 	else
 		echo "no xxd installed" >&2
 	fi
@@ -1570,21 +1570,21 @@ for n in setup essential customize; do
 	if [ "\$ret" -ne 0 ]; then
 		if type diffoscope >/dev/null; then
 			diffoscope /tmp/tar-in-\$n.tar /tmp/tar-out-\$n.tar
-			continue
+			exit 1
 		else
 			echo "no diffoscope installed" >&2
 		fi
 		if type base64 >/dev/null; then
 			base64 /tmp/tar-in-\$n.tar
 			base64 /tmp/tar-out-\$n.tar
-			continue
+			exit 1
 		else
 			echo "no base64 installed" >&2
 		fi
 		if type xxd >/dev/null; then
 			xxd /tmp/tar-in-\$n.tar
 			xxd /tmp/tar-out-\$n.tar
-			continue
+			exit 1
 		else
 			echo "no xxd installed" >&2
 		fi
