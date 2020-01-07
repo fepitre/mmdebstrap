@@ -215,8 +215,6 @@ done
 # workaround for https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=917773
 if ! cmp /tmp/debian-$dist-debootstrap/etc/shadow /tmp/debian-$dist-mm/etc/shadow; then
 	echo patching /etc/shadow on $dist $variant >&2
-	head /tmp/debian-$dist-debootstrap/etc/shadow /tmp/debian-$dist-mm/etc/shadow
-	awk -v SDE=\$SOURCE_DATE_EPOCH 'BEGIN { print int(SDE/60/60/24) }'
 	awk -v FS=: -v OFS=: -v SDE=\$SOURCE_DATE_EPOCH '{ print \$1,\$2,int(SDE/60/60/24),\$4,\$5,\$6,\$7,\$8,\$9 }' < /tmp/debian-$dist-mm/etc/shadow > /tmp/debian-$dist-mm/etc/shadow.bak
 	mv /tmp/debian-$dist-mm/etc/shadow.bak /tmp/debian-$dist-mm/etc/shadow
 else
@@ -224,8 +222,6 @@ else
 fi
 if ! cmp /tmp/debian-$dist-debootstrap/etc/shadow- /tmp/debian-$dist-mm/etc/shadow-; then
 	echo patching /etc/shadow- on $dist $variant >&2
-	awk -v SDE=\$SOURCE_DATE_EPOCH 'BEGIN { print int(SDE/60/60/24) }'
-	head /tmp/debian-$dist-debootstrap/etc/shadow- /tmp/debian-$dist-mm/etc/shadow-
 	awk -v FS=: -v OFS=: -v SDE=\$SOURCE_DATE_EPOCH '{ print \$1,\$2,int(SDE/60/60/24),\$4,\$5,\$6,\$7,\$8,\$9 }' < /tmp/debian-$dist-mm/etc/shadow- > /tmp/debian-$dist-mm/etc/shadow-.bak
 	mv /tmp/debian-$dist-mm/etc/shadow-.bak /tmp/debian-$dist-mm/etc/shadow-
 else
