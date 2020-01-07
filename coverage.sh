@@ -20,7 +20,7 @@ HOSTARCH=$(dpkg --print-architecture)
 
 if [ "$HAVE_QEMU" = "yes" ]; then
 	# prepare image for cover_db
-	guestfish -N shared/cover_db.img=disk:256M -- mkfs vfat /dev/sda
+	guestfish -N shared/cover_db.img=disk:384M -- mkfs vfat /dev/sda
 
 	if [ ! -e "./shared/cache/debian-$DEFAULT_DIST.qcow" ]; then
 		echo "./shared/cache/debian-$DEFAULT_DIST.qcow does not exist" >&2
