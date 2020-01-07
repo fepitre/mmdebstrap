@@ -49,7 +49,7 @@ if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
 fi
 
 starttime=
-total=122
+total=123
 skipped=0
 runtests=0
 i=1
@@ -535,6 +535,29 @@ $CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar.xz $
 printf '\3757zXZ\0' | cmp --bytes=6 /tmp/debian-chroot.tar.xz -
 tar -tf /tmp/debian-chroot.tar.xz | sort | diff -u tar1.txt -
 rm /tmp/debian-chroot.tar.xz
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+	runtests=$((runtests+1))
+elif [ "$defaultmode" = "root" ]; then
+	./run_null.sh SUDO
+	runtests=$((runtests+1))
+else
+	./run_null.sh
+	runtests=$((runtests+1))
+fi
+
+print_header "mode=$defaultmode,variant=apt: test squashfs image"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+$CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST /tmp/debian-chroot.squashfs $mirror
+printf 'hsqs' | cmp --bytes=4 /tmp/debian-chroot.squashfs -
+# workaround for https://github.com/AgentD/squashfs-tools-ng/issues/37
+sed 's#\\([^.]\\)/\$#\\1#' tar1.txt | sort > /tmp/tar1noslash.txt
+sqfs2tar --no-skip --root-becomes . /tmp/debian-chroot.squashfs | tar -t | sort | diff -u /tmp/tar1noslash.txt -
+rm /tmp/debian-chroot.squashfs /tmp/tar1noslash.txt
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh

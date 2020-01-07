@@ -407,7 +407,7 @@ if [ "$HAVE_QEMU" = "yes" ]; then
 	tmpdir="$(mktemp -d)"
 	trap "cleanuptmpdir; cleanup_newcachedir" EXIT INT TERM
 
-	pkgs=perl-doc,linux-image-amd64,systemd-sysv,perl,arch-test,fakechroot,fakeroot,mount,uidmap,proot,qemu-user-static,binfmt-support,qemu-user,dpkg-dev,mini-httpd,libdevel-cover-perl,debootstrap,procps,apt-cudf,aspcud
+	pkgs=perl-doc,linux-image-amd64,systemd-sysv,perl,arch-test,fakechroot,fakeroot,mount,uidmap,proot,qemu-user-static,binfmt-support,qemu-user,dpkg-dev,mini-httpd,libdevel-cover-perl,debootstrap,procps,apt-cudf,aspcud,squashfs-tools-ng
 	if [ "$HOSTARCH" = amd64 ] && [ "$RUN_MA_SAME_TESTS" = "yes" ]; then
 		arches=amd64,armhf
 		pkgs="$pkgs,libfakechroot:armhf,libfakeroot:armhf"
