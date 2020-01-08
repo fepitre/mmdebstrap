@@ -2,6 +2,16 @@
 
 set -eu
 
+perltidy < mmdebstrap > mmdebstrap.tdy
+ret=0
+diff -u mmdebstrap mmdebstrap.tdy || ret=$?
+if [ "$ret" -ne 0 ]; then
+	echo "perltidy failed" >&2
+	rm mmdebstrap.tdy
+	exit 1
+fi
+rm mmdebstrap.tdy
+
 mirrordir="./shared/cache/debian"
 
 if [ ! -e "$mirrordir" ]; then
