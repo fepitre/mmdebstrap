@@ -84,6 +84,8 @@ my @devfiles = (
 #   3 -> debug output
 my $verbosity_level = 1;
 
+my $is_covering = !!(eval 'Devel::Cover::get_coverage()');
+
 sub debug {
     if ($verbosity_level < 3) {
 	return;
@@ -977,7 +979,11 @@ sub run_hooks($$) {
 		    # we execute ourselves under sh to avoid having to
 		    # implement a clever parser of the quoting used in $script
 		    # for the filenames
-		    exec 'sh', '-c', "$PROGRAM_NAME --hook-helper \"\$1\" \"\$2\" \"\$3\" \"\$4\" \"\$5\" $script",
+		    my $prefix = "";
+		    if($is_covering) {
+			$prefix = "$EXECUTABLE_NAME -MDevel::Cover=-silent,-nogcov ";
+		    }
+		    exec 'sh', '-c', "$prefix$PROGRAM_NAME --hook-helper \"\$1\" \"\$2\" \"\$3\" \"\$4\" \"\$5\" $script",
 			'exec', $options->{root}, $options->{mode}, $name, (defined $options->{qemu} ? "qemu-$options->{qemu}" : 'env', $verbosity_level);
 		}
 		waitpid($pid, 0);
@@ -2299,7 +2305,11 @@ sub main() {
 	} elsif (system('fakechroot --version>/dev/null') == 0) {
 	    # the next fallback is fakechroot
 	    # exec ourselves again but within fakechroot
-	    exec 'fakechroot', 'fakeroot', $PROGRAM_NAME, @ARGVORIG;
+	    my @prefix = ();
+	    if($is_covering) {
+		@prefix = ($EXECUTABLE_NAME, '-MDevel::Cover=-silent,-nogcov');
+	    }
+	    exec 'fakechroot', 'fakeroot', @prefix, $PROGRAM_NAME, @ARGVORIG;
 	} elsif (system('proot --version>/dev/null') == 0) {
 	    # and lastly, proot
 	    $options->{mode} = 'proot';
@@ -2322,7 +2332,11 @@ sub main() {
 	    error "need working fakechroot binary";
 	} else {
 	    # exec ourselves again but within fakechroot
-	    exec 'fakechroot', 'fakeroot', $PROGRAM_NAME, @ARGVORIG;
+	    my @prefix = ();
+	    if($is_covering) {
+		@prefix = ($EXECUTABLE_NAME, '-MDevel::Cover=-silent,-nogcov');
+	    }
+	    exec 'fakechroot', 'fakeroot', @prefix, $PROGRAM_NAME, @ARGVORIG;
 	}
     } elsif ($options->{mode} eq 'unshare') {
 	if (!test_unshare(1)) {

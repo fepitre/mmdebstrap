@@ -49,7 +49,7 @@ if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
 fi
 
 starttime=
-total=123
+total=115
 skipped=0
 runtests=0
 i=1
@@ -1850,33 +1850,6 @@ END
 		else
 			./run_null.sh
 			runtests=$((runtests+1))
-		fi
-		# Devel::Cover doesn't survive mmdebstrap re-exec-ing itself
-		# with fakechroot, thus, we do an additional run where we
-		# explicitly run mmdebstrap with fakechroot from the start
-		if [ "$mode" = "fakechroot" ]; then
-			print_header "mode=$mode,variant=$variant: create tarball (ver 2)"
-			cat << END > shared/test.sh
-#!/bin/sh
-set -eu
-export LC_ALL=C.UTF-8
-[ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1 && adduser --gecos user --disabled-password user
-prefix=
-[ "\$(id -u)" -eq 0 ] && prefix="runuser -u user --"
-\$prefix fakechroot fakeroot $CMD --mode=$mode --variant=$variant $DEFAULT_DIST /tmp/debian-chroot.tar $mirror
-{ tar -tf /tmp/debian-chroot.tar;
-  printf "./etc/ld.so.cache\n./var/cache/ldconfig/\n";
-  [ "$variant" != "essential" ] && printf "./etc/.pwd.lock\n";
-} | sort | diff -u "./$variant.txt" -
-rm /tmp/debian-chroot.tar
-END
-			if [ "$HAVE_QEMU" = "yes" ]; then
-				./run_qemu.sh
-				runtests=$((runtests+1))
-			else
-				./run_null.sh
-				runtests=$((runtests+1))
-			fi
 		fi
 	done
 	# some variants are equal and some are strict superset of the last
