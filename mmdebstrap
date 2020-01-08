@@ -612,6 +612,7 @@ sub run_progress {
 	if (defined $chdir) {
 	    chdir $chdir or error "failed chdir() to $chdir: $!";
 	}
+	eval 'Devel::Cover::set_coverage("none")' if $is_covering;
 	exec { $execargs[0] } @execargs or error 'cannot exec() ' . (join ' ', @execargs);
     }
     close $wfh;
@@ -1494,12 +1495,14 @@ sub setup {
 	    if ($pid1 == 0) {
 		open(STDOUT, '>&', $wfh) or error "cannot open STDOUT: $!";
 		debug("running dpkg-deb --fsys-tarfile $options->{root}/$deb");
+		eval 'Devel::Cover::set_coverage("none")' if $is_covering;
 		exec 'dpkg-deb', '--fsys-tarfile', "$options->{root}/$deb";
 	    }
 	    my $pid2 = fork() // error "fork() failed: $!";
 	    if ($pid2 == 0) {
 		open(STDIN, '<&', $rfh) or error "cannot open STDIN: $!";
 		debug("running tar -C $options->{root} --keep-directory-symlink --extract --file -");
+		eval 'Devel::Cover::set_coverage("none")' if $is_covering;
 		exec 'tar', '-C', $options->{root}, '--keep-directory-symlink', '--extract', '--file', '-';
 	    }
 	    waitpid($pid1, 0);
@@ -3373,6 +3376,7 @@ sub main() {
 			    open(STDOUT, '>', $options->{target}) or error "cannot open $options->{target} for writing: $!";
 			}
 			open(STDIN, '<&', $rfh) or error "cannot open file handle for reading: $!";
+			eval 'Devel::Cover::set_coverage("none")' if $is_covering;
 			exec { $argv[0] } @argv or error ("cannot exec " . (join " ", @argv) . ": $!");
 		    }
 		    POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or error "Can't unblock signals: $!";
