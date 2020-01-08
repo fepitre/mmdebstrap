@@ -383,26 +383,27 @@ sub get_unshare_cmd(&$) {
     # we don't want to unshare the parent process
     my $gcpid = fork() // error "fork() failed: $!";
     if ($gcpid == 0) {
-        # Create a pipe for the parent process to signal the child process that it is
-        # done with calling unshare() so that the child can go ahead setting up
-        # uid_map and gid_map.
+        # Create a pipe for the parent process to signal the child process that
+        # it is done with calling unshare() so that the child can go ahead
+        # setting up uid_map and gid_map.
         pipe my $rfh, my $wfh;
-
-        # We have to do this dance with forking a process and then modifying the
-        # parent from the child because:
-        #  - new[ug]idmap can only be called on a process id after that process has
-        #    unshared the user namespace
-        #  - a process looses its capabilities if it performs an execve() with nonzero
-        #    user ids see the capabilities(7) man page for details.
-        #  - a process that unshared the user namespace by default does not have the
-        #    privileges to call new[ug]idmap on itself
+        # We have to do this dance with forking a process and then modifying
+        # the parent from the child because:
+        #  - new[ug]idmap can only be called on a process id after that process
+        #    has unshared the user namespace
+        #  - a process looses its capabilities if it performs an execve() with
+        #    nonzero user ids see the capabilities(7) man page for details.
+        #  - a process that unshared the user namespace by default does not
+        #    have the privileges to call new[ug]idmap on itself
         #
-        # this also works the other way around (the child setting up a user namespace
-        # and being modified from the parent) but that way, the parent would have to
-        # stay around until the child exited (so a pid would be wasted). Additionally,
-        # that variant would require an additional pipe to let the parent signal the
-        # child that it is done with calling new[ug]idmap. The way it is done here,
-        # this signaling can instead be done by wait()-ing for the exit of the child.
+        # this also works the other way around (the child setting up a user
+        # namespace and being modified from the parent) but that way, the
+        # parent would have to stay around until the child exited (so a pid
+        # would be wasted). Additionally, that variant would require an
+        # additional pipe to let the parent signal the child that it is done
+        # with calling new[ug]idmap. The way it is done here, this signaling
+        # can instead be done by wait()-ing for the exit of the child.
+
         my $ppid = $$;
         my $cpid = fork() // error "fork() failed: $!";
         if ($cpid == 0) {
@@ -764,7 +765,8 @@ sub run_chroot(&$) {
     eval {
         if (any { $_ eq $options->{mode} } ('root', 'unshare')) {
             # if more than essential should be installed, make the system look
-            # more like a real one by creating or bind-mounting the device nodes
+            # more like a real one by creating or bind-mounting the device
+            # nodes
             foreach my $file (@devfiles) {
                 my ($fname, $mode, $type, $linkname, $devmajor, $devminor) = @{$file};
                 next if $fname eq './dev/';
@@ -785,7 +787,8 @@ sub run_chroot(&$) {
                         }
                         symlink $linkname, "$options->{root}/$fname" or error "cannot create symlink $fname";
                     }
-                } elsif ($type == 3 or $type == 4) { # character/block special
+                } elsif ($type == 3 or $type == 4) {
+                    # character/block special
                     if (!$options->{havemknod}) {
                         open my $fh, '>', "$options->{root}/$fname" or error "cannot open $options->{root}/$fname: $!";
                         close $fh;
@@ -843,7 +846,8 @@ sub run_chroot(&$) {
             }
         } elsif (any { $_ eq $options->{mode} } ('proot', 'fakechroot', 'chrootless')) {
             # we cannot mount in fakechroot and proot mode
-            # in proot mode we have /dev bind-mounted already through --bind=/dev
+            # in proot mode we have /dev bind-mounted already through
+            # --bind=/dev
         } else {
             error "unknown mode: $options->{mode}";
         }
@@ -856,11 +860,11 @@ sub run_chroot(&$) {
             };
             0 == system('mount', '-t', 'sysfs', '-o', 'nosuid,nodev,noexec', 'sys', "$options->{root}/sys") or error "mount /sys failed: $?";
         } elsif ($options->{mode} eq 'unshare') {
-            # naturally we have to clean up after ourselves in sudo mode where we
-            # do a real mount. But we also need to unmount in unshare mode because
-            # otherwise, even with the --one-file-system tar option, the
-            # permissions of the mount source will be stored and not the mount
-            # target (the directory)
+            # naturally we have to clean up after ourselves in sudo mode where
+            # we do a real mount. But we also need to unmount in unshare mode
+            # because otherwise, even with the --one-file-system tar option,
+            # the permissions of the mount source will be stored and not the
+            # mount target (the directory)
             push @cleanup_tasks, sub {
                 # since we cannot write to /etc/mtab we need --no-mtab
                 # unmounting /sys only seems to be successful with --lazy
@@ -874,7 +878,8 @@ sub run_chroot(&$) {
             0 == system('mount', '-o', 'rbind', '/sys', "$options->{root}/sys") or error "mount /sys failed: $?";
         } elsif (any { $_ eq $options->{mode} } ('proot', 'fakechroot', 'chrootless')) {
             # we cannot mount in fakechroot and proot mode
-            # in proot mode we have /proc bind-mounted already through --bind=/proc
+            # in proot mode we have /proc bind-mounted already through
+            # --bind=/proc
         } else {
             error "unknown mode: $options->{mode}";
         }
@@ -889,11 +894,11 @@ sub run_chroot(&$) {
             };
             0 == system('mount', '-t', 'proc', 'proc', "$options->{root}/proc") or error "mount /proc failed: $?";
         } elsif ($options->{mode} eq 'unshare') {
-            # naturally we have to clean up after ourselves in sudo mode where we
-            # do a real mount. But we also need to unmount in unshare mode because
-            # otherwise, even with the --one-file-system tar option, the
-            # permissions of the mount source will be stored and not the mount
-            # target (the directory)
+            # naturally we have to clean up after ourselves in sudo mode where
+            # we do a real mount. But we also need to unmount in unshare mode
+            # because otherwise, even with the --one-file-system tar option,
+            # the permissions of the mount source will be stored and not the
+            # mount target (the directory)
             push @cleanup_tasks, sub {
                 # since we cannot write to /etc/mtab we need --no-mtab
                 0 == system('umount', '--no-mtab', "$options->{root}/proc") or error "umount /proc failed: $?";
@@ -901,7 +906,8 @@ sub run_chroot(&$) {
             0 == system('mount', '-t', 'proc', 'proc', "$options->{root}/proc") or error "mount /proc failed: $?";
         } elsif (any { $_ eq $options->{mode} } ('proot', 'fakechroot', 'chrootless')) {
             # we cannot mount in fakechroot and proot mode
-            # in proot mode we have /sys bind-mounted already through --bind=/sys
+            # in proot mode we have /sys bind-mounted already through
+            # --bind=/sys
         } else {
             error "unknown mode: $options->{mode}";
         }
@@ -1184,10 +1190,12 @@ sub setup {
     }
 
     ## setup merged usr
-    #my @amd64_dirs = ('lib32', 'lib64', 'libx32'); # only amd64 for now
+    #my @amd64_dirs = ('lib32', 'lib64', 'libx32');    # only amd64 for now
     #foreach my $dir ("bin", "sbin", "lib", @amd64_dirs) {
-    #    symlink "usr/$dir", "$options->{root}/$dir" or die "cannot create symlink: $!";
-    #    make_path("$options->{root}/usr/$dir") or die "cannot create /usr/$dir: $!";
+    #    symlink "usr/$dir", "$options->{root}/$dir"
+    #      or die "cannot create symlink: $!";
+    #    make_path("$options->{root}/usr/$dir")
+    #      or die "cannot create /usr/$dir: $!";
     #}
 
     {
@@ -1397,7 +1405,8 @@ sub setup {
                         # essential packages
                     } elsif (any { $_ eq $options->{variant} } ('standard', 'important', 'required', 'buildd', 'minbase')) {
                         if ($prio eq 'optional' or $prio eq 'extra') {
-                            # always ignore packages of priority optional and extra
+                            # always ignore packages of priority optional and
+                            # extra
                         } elsif ($prio eq 'standard') {
                             if (none { $_ eq $options->{variant} } ('important', 'required', 'buildd', 'minbase')) {
                                 push @pkgs_to_install, $pkgname;
@@ -1569,7 +1578,8 @@ sub setup {
         } elsif (any { $_ eq $options->{variant} } ('custom', 'essential', 'apt', 'standard', 'important', 'required', 'buildd', 'minbase')) {
             if ($options->{mode} eq 'fakechroot') {
                 # this borrows from and extends
-                # /etc/fakechroot/debootstrap.env and /etc/fakechroot/chroot.env
+                # /etc/fakechroot/debootstrap.env and
+                # /etc/fakechroot/chroot.env
                 {
                     my @fakechrootsubst = ();
                     foreach my $dir ('/usr/sbin', '/usr/bin', '/sbin', '/bin') {
@@ -1625,8 +1635,8 @@ sub setup {
                 }
             }
 
-            # make sure that APT_CONFIG is not set when executing anything inside the
-            # chroot
+            # make sure that APT_CONFIG is not set when executing anything
+            # inside the chroot
             my @chrootcmd = ();
             if ($options->{mode} eq 'proot') {
                 push @chrootcmd, (
@@ -1643,21 +1653,22 @@ sub setup {
                 error "unknown mode: $options->{mode}";
             }
 
-            # copy qemu-user-static binary into chroot or setup proot with --qemu
+            # copy qemu-user-static binary into chroot or setup proot with
+            # --qemu
             if (defined $options->{qemu}) {
                 if ($options->{mode} eq 'proot') {
                     push @chrootcmd, "--qemu=qemu-$options->{qemu}";
                 } elsif ($options->{mode} eq 'fakechroot') {
-                    # The binfmt support on the outside is used, so qemu needs to know
-                    # where it has to look for shared libraries
+                    # The binfmt support on the outside is used, so qemu needs
+                    # to know where it has to look for shared libraries
                     if (defined $ENV{QEMU_LD_PREFIX}
                         && $ENV{QEMU_LD_PREFIX} ne "") {
                         $ENV{QEMU_LD_PREFIX} = "$ENV{QEMU_LD_PREFIX}:$options->{root}";
                     } else {
                         $ENV{QEMU_LD_PREFIX} = $options->{root};
                     }
-                    # Make sure that the fakeroot and fakechroot shared libraries
-                    # exist for the right architecture
+                    # Make sure that the fakeroot and fakechroot shared
+                    # libraries exist for the right architecture
                     open my $fh, '-|', 'dpkg-architecture', '-a', $options->{nativearch}, '-qDEB_HOST_MULTIARCH' // error "failed to fork(): $!";
                     chomp (my $deb_host_multiarch = do { local $/; <$fh> });
                     close $fh;
@@ -1672,9 +1683,9 @@ sub setup {
                     if (! -e "$fakerootdir/libfakeroot-sysv.so") {
                         error "$fakerootdir/libfakeroot-sysv.so doesn't exist. Install libfakeroot:$options->{nativearch} outside the chroot";
                     }
-                    # fakechroot only fills LD_LIBRARY_PATH with the directories of
-                    # the host's architecture. We append the directories of the chroot
-                    # architecture.
+                    # fakechroot only fills LD_LIBRARY_PATH with the
+                    # directories of the host's architecture. We append the
+                    # directories of the chroot architecture.
                     $ENV{LD_LIBRARY_PATH} .= ":$fakechrootdir:$fakerootdir";
                 } elsif (any { $_ eq $options->{mode} } ('root', 'unshare')) {
                     # other modes require a static qemu-user binary
@@ -1717,8 +1728,8 @@ sub setup {
             }
 
             # install the extracted packages properly
-            # we need --force-depends because dpkg does not take Pre-Depends into
-            # account and thus doesn't install them in the right order
+            # we need --force-depends because dpkg does not take Pre-Depends
+            # into account and thus doesn't install them in the right order
             # And the --predep-package option is broken: #539133
             info "installing packages...";
             run_chroot {
@@ -1729,8 +1740,8 @@ sub setup {
                     });
             } $options;
 
-            # if the path-excluded option was added to the dpkg config, reinstall all
-            # packages
+            # if the path-excluded option was added to the dpkg config,
+            # reinstall all packages
             if (-e "$options->{root}/etc/dpkg/dpkg.cfg.d/99mmdebstrap") {
                 open(my $fh, '<', "$options->{root}/etc/dpkg/dpkg.cfg.d/99mmdebstrap") or error "cannot open /etc/dpkg/dpkg.cfg.d/99mmdebstrap: $!";
                 my $num_matches = grep /^path-exclude=/, <$fh>;
@@ -1757,18 +1768,18 @@ sub setup {
             }
 
             if ($options->{variant} ne 'custom' and scalar @pkgs_to_install > 0) {
-                # some packages have to be installed from the outside before anything
-                # can be installed from the inside.
+                # some packages have to be installed from the outside before
+                # anything can be installed from the inside.
                 #
-                # we do not need to install any *-archive-keyring packages inside the
-                # chroot prior to installing the packages, because the keyring is only
-                # used when doing "apt-get update" and that was already done at the
-                # beginning using key material from the outside. Since the apt cache
-                # is already filled and we are not calling "apt-get update" again, the
-                # keyring can be installed later during installation. But: if it's not
-                # installed during installation, then we might end up with a fully
-                # installed system without keyrings that are valid for its
-                # sources.list.
+                # we do not need to install any *-archive-keyring packages
+                # inside the chroot prior to installing the packages, because
+                # the keyring is only used when doing "apt-get update" and that
+                # was already done at the beginning using key material from the
+                # outside. Since the apt cache is already filled and we are not
+                # calling "apt-get update" again, the keyring can be installed
+                # later during installation. But: if it's not installed during
+                # installation, then we might end up with a fully installed
+                # system without keyrings that are valid for its sources.list.
                 my @pkgs_to_install_from_outside;
 
                 # install apt if necessary
@@ -1777,8 +1788,8 @@ sub setup {
                 }
 
                 # since apt will be run inside the chroot, make sure that
-                # apt-transport-https and ca-certificates gets installed first if any
-                # mirror is a https URI
+                # apt-transport-https and ca-certificates gets installed first
+                # if any mirror is a https URI
                 open(my $pipe_apt, '-|', 'apt-get', 'indextargets', '--format', '$(URI)', 'Created-By: Packages') or error "cannot start apt-get indextargets: $!";
                 while (my $uri = <$pipe_apt>) {
                     if ($uri =~ /^https:\/\//) {
@@ -1821,8 +1832,9 @@ sub setup {
                     if (scalar @debs_to_install == 0) {
                         warning "nothing got downloaded -- maybe the packages were already installed?";
                     } else {
-                        # we need --force-depends because dpkg does not take Pre-Depends
-                        # into account and thus doesn't install them in the right order
+                        # we need --force-depends because dpkg does not take
+                        # Pre-Depends into account and thus doesn't install
+                        # them in the right order
                         info 'installing ' . (join ', ', @pkgs_to_install_from_outside) . "...";
                         run_dpkg_progress({
                                 ARGV => [@chrootcmd, 'env', '--unset=TMPDIR',
@@ -2005,8 +2017,9 @@ sub main() {
                     # open the requested file for writing
                     open $fh, '|-', @cmdprefix, 'sh', '-c', 'cat > "$1"', 'exec', $directory // error "failed to fork(): $!";
                 } else {
-                    # open a tar process that extracts the tarfile that we supply
-                    # it with on stdin to the output directory inside the chroot
+                    # open a tar process that extracts the tarfile that we
+                    # supply it with on stdin to the output directory inside
+                    # the chroot
                     open $fh, '|-', @cmdprefix, @tarcmd, '--directory', $directory, '--extract', '--file', '-' // error "failed to fork(): $!";
                 }
 
@@ -2099,10 +2112,10 @@ sub main() {
                     # open the requested file for reading
                     open $fh, '-|', @cmdprefix, 'sh', '-c', 'cat "$1"', 'exec', $directory // error "failed to fork(): $!";
                 } else {
-                    # Open a tar process that creates a tarfile of everything in
-                    # the requested directory inside the chroot and writes it to
-                    # stdout. To emulate the behaviour of cp, change to the
-                    # dirname of the requested path first.
+                    # Open a tar process that creates a tarfile of everything
+                    # in the requested directory inside the chroot and writes
+                    # it to stdout. To emulate the behaviour of cp, change to
+                    # the dirname of the requested path first.
                     open $fh, '-|', @cmdprefix, @tarcmd, '--directory', dirname($directory), '--create', '--file', '-', basename($directory) // error "failed to fork(): $!";
                 }
 
@@ -2428,9 +2441,9 @@ sub main() {
                         no warnings; # don't print a warning if the following fails
                         exec 'arch-test', $options->{nativearch};
                     }
-                    # if exec didn't work (for example because the arch-test program is
-                    # missing) prepare for the worst and assume that the architecture
-                    # cannot be executed
+                    # if exec didn't work (for example because the arch-test
+                    # program is missing) prepare for the worst and assume that
+                    # the architecture cannot be executed
                     print "$options->{nativearch}: not supported on this machine/kernel\n";
                     exit 1;
                 }
@@ -2447,10 +2460,10 @@ sub main() {
                         no warnings; # don't print a warning if the following fails
                         exec 'arch-test', '-n', $options->{nativearch};
                     }
-                    # if exec didn't work (for example because the arch-test program is
-                    # missing) prepare for the worst and assume that the architecture
-                    # cannot be executed
                     print "$options->{nativearch}: not supported on this machine/kernel\n";
+                    # if exec didn't work (for example because the arch-test
+                    # program is missing) prepare for the worst and assume that
+                    # the architecture cannot be executed
                     exit 1;
                 }
                 chomp (my $content = do { local $/; <$fh> });
@@ -2585,7 +2598,8 @@ sub main() {
                         local $SIG{__WARN__} = sub { $message = shift; };
                         $ret = open $fh, '-|', @gpgcmd, '--version';
                     }
-                    close $fh; # we only want to check if the gpg command exists
+                    # we only want to check if the gpg command exists
+                    close $fh;
                     if ($? == 0 && defined $ret && !defined $message) {
                         # find all the fingerprints of the keys apt currently
                         # knows about
@@ -2789,7 +2803,8 @@ sub main() {
             # check if the directory is empty or contains nothing more than an
             # empty lost+found directory. The latter exists on freshly created
             # ext3 and ext4 partitions.
-            # rationale for requiring an empty directory: https://bugs.debian.org/833525
+            # rationale for requiring an empty directory:
+            # https://bugs.debian.org/833525
             opendir(my $dh, $options->{root}) or error "Can't opendir($options->{root}): $!";
             while (my $entry = readdir $dh) {
                 # skip the "." and ".." entries
@@ -2936,13 +2951,13 @@ sub main() {
             if ($options->{maketar} or $options->{makesqfs}) {
                 info "creating tarball...";
 
-                # redirect tar output to the writing end of the pipe so that the
-                # parent process can capture the output
+                # redirect tar output to the writing end of the pipe so that
+                # the parent process can capture the output
                 open(STDOUT, '>&', $wfh) or error "cannot open STDOUT: $!";
 
                 # Add ./dev as the first entries of the tar file.
-                # We cannot add them after calling tar, because there is no way to
-                # prevent tar from writing NULL entries at the end.
+                # We cannot add them after calling tar, because there is no way
+                # to prevent tar from writing NULL entries at the end.
                 print $devtar;
 
                 # pack everything except ./dev
@@ -2978,13 +2993,13 @@ sub main() {
             if ($options->{maketar} or $options->{makesqfs}) {
                 info "creating tarball...";
 
-                # redirect tar output to the writing end of the pipe so that the
-                # parent process can capture the output
+                # redirect tar output to the writing end of the pipe so that
+                # the parent process can capture the output
                 open(STDOUT, '>&', $wfh) or error "cannot open STDOUT: $!";
 
                 # Add ./dev as the first entries of the tar file.
-                # We cannot add them after calling tar, because there is no way to
-                # prevent tar from writing NULL entries at the end.
+                # We cannot add them after calling tar, because there is no way
+                # to prevent tar from writing NULL entries at the end.
                 print $devtar;
 
                 if ($options->{mode} eq 'fakechroot') {
@@ -3367,7 +3382,8 @@ sub main() {
                         $SIG{'PIPE'} = 'DEFAULT';
                         $SIG{'TERM'} = 'DEFAULT';
 
-                        # unblock all delayed signals (and possibly handle them)
+                        # unblock all delayed signals (and possibly handle
+                        # them)
                         POSIX::sigprocmask(SIG_UNBLOCK, $sigset) or error "Can't unblock signals: $!";
 
                         if ($options->{makesqfs}) {
