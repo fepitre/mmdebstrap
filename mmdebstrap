@@ -3581,18 +3581,18 @@ B<required>. See the section B<VARIANTS> for more information.
 =item B<--mode>=I<name>
 
 Choose how to perform the chroot operation and create a filesystem with
-ownership information different from the current user. Valid mode I<name>s are B<auto>,
-B<sudo>, B<root>, B<unshare>, B<fakeroot>, B<fakechroot> and B<proot>. The
-default mode is B<auto>. See the section B<MODES> for more information.
+ownership information different from the current user. Valid mode I<name>s are
+B<auto>, B<sudo>, B<root>, B<unshare>, B<fakeroot>, B<fakechroot> and B<proot>.
+The default mode is B<auto>. See the section B<MODES> for more information.
 
 =item B<--aptopt>=I<option>|I<file>
 
 Pass arbitrary I<option>s to apt. Will be added to
 F</etc/apt/apt.conf.d/99mmdebstrap> inside the chroot.  Can be specified
-multiple times. Each I<option> will be appended to 99mmdebstrap. A semicolon will
-be added at the end of the option if necessary. If the command line argument
-is an existing I<file>, the content of the file will be appended to 99mmdebstrap
-verbatim.
+multiple times. Each I<option> will be appended to 99mmdebstrap. A semicolon
+will be added at the end of the option if necessary. If the command line
+argument is an existing I<file>, the content of the file will be appended to
+99mmdebstrap verbatim.
 
 Example: This is necessary for allowing old timestamps from snapshot.debian.org
 
@@ -3618,7 +3618,8 @@ Example: For situations in which the apt sandbox user cannot access the chroot
 Example: Minimizing the number of packages installed from experimental
 
     --aptopt='APT::Solver "aspcud"'
-    --aptopt='APT::Solver::aspcud::Preferences "-count(solution,APT-Release:=/a=experimental/),-removed,-changed,-new"'
+    --aptopt='APT::Solver::aspcud::Preferences
+       "-count(solution,APT-Release:=/a=experimental/),-removed,-changed,-new"'
 
 =item B<--keyring>=I<file>|I<directory>
 
@@ -3653,8 +3654,8 @@ pointing to F</usr/share/keyrings/ubuntu-archive-keyring.gpg>.
 Pass arbitrary I<option>s to dpkg. Will be added to
 F</etc/dpkg/dpkg.cfg.d/99mmdebstrap> inside the chroot. Can be specified
 multiple times. Each I<option> will be appended to 99mmdebstrap. If the command
-line argument is an existing I<file>, the content of the file will be appended to
-99mmdebstrap verbatim.
+line argument is an existing I<file>, the content of the file will be appended
+to 99mmdebstrap verbatim.
 
 Example: Exclude paths to reduce chroot size
 
@@ -3729,13 +3730,17 @@ information.
 
 Example: Setup merged-/usr via symlinks
 
-    --setup-hook='for d in bin sbin lib; do ln -s usr/$d "$1/$d"; mkdir -p "$1/usr/$d"; done'
+    --setup-hook='for d in bin sbin lib; do ln -s usr/$d "$1/$d";
+        mkdir -p "$1/usr/$d"; done'
 
 Example: Setup chroot for installing a sub-essential busybox-based chroot with
---variant=custom --include=dpkg,busybox,libc-bin,base-files,base-passwd,debianutils
+--variant=custom
+--include=dpkg,busybox,libc-bin,base-files,base-passwd,debianutils
 
     --setup-hook='mkdir -p "$1/bin"'
-    --setup-hook='for p in awk cat chmod chown cp diff echo env grep less ln mkdir mount rm rmdir sed sh sleep sort touch uname; do ln -s busybox "$1/bin/$p"; done'
+    --setup-hook='for p in awk cat chmod chown cp diff echo env grep less ln
+        mkdir mount rm rmdir sed sh sleep sort touch uname; do
+        ln -s busybox "$1/bin/$p"; done'
     --setup-hook='echo root:x:0:0:root:/root:/bin/sh > "$1/etc/passwd"'
     --setup-hook='printf "root:x:0:\nmail:x:8:\nutmp:x:43:\n" > "$1/etc/group"'
 
@@ -3748,12 +3753,16 @@ more information.
 
 Example: Enable unattended upgrades
 
-    --essential-hook='echo unattended-upgrades unattended-upgrades/enable_auto_updates boolean true | chroot "$1" debconf-set-selections'
+    --essential-hook='echo unattended-upgrades
+        unattended-upgrades/enable_auto_updates boolean true
+        | chroot "$1" debconf-set-selections'
 
 Example: Select Europe/Berlin as the timezone
 
-    --essential-hook='echo tzdata tzdata/Areas select Europe | chroot "$1" debconf-set-selections'
-    --essential-hook='echo tzdata tzdata/Zones/Europe select Berlin | chroot "$1" debconf-set-selections'
+    --essential-hook='echo tzdata tzdata/Areas select Europe
+        | chroot "$1" debconf-set-selections'
+    --essential-hook='echo tzdata tzdata/Zones/Europe select Berlin
+        | chroot "$1" debconf-set-selections'
 
 =item B<--customize-hook>=I<command>
 
@@ -3764,7 +3773,8 @@ B<HOOKS> for more information.
 Example: Preparing a chroot for use with autopkgtest
 
     --customize-hook='chroot "$1" passwd --delete root'
-    --customize-hook='chroot "$1" useradd --home-dir /home/user --create-home user'
+    --customize-hook='chroot "$1" useradd --home-dir /home/user
+        --create-home user'
     --customize-hook='chroot "$1" passwd --delete user'
     --customize-hook='echo host > "$1/etc/hostname"'
     --customize-hook='echo "127.0.0.1 localhost host" > "$1/etc/hosts"'
@@ -3898,7 +3908,8 @@ The B<minbase> set plus build-essential.
 
 =item B<important>, B<debootstrap>, B<->
 
-The B<required> set plus all packages with Priority:important. This is the default of debootstrap.
+The B<required> set plus all packages with Priority:important. This is the
+default of debootstrap.
 
 =item B<standard>
 
@@ -4019,7 +4030,8 @@ If you don't want this behaviour, you can override it by manually specifying a
 mirror in various different ways:
 
     $ mmdebstrap stable stable-chroot.tar http://deb.debian.org/debian
-    $ mmdebstrap stable stable-chroot.tar "deb http://deb.debian.org/debian stable main"
+    $ mmdebstrap stable stable-chroot.tar \
+        "deb http://deb.debian.org/debian stable main"
     $ mmdebstrap stable stable-chroot.tar /path/to/sources.list
     $ mmdebstrap stable stable-chroot.tar - < /path/to/sources.list
 
@@ -4049,7 +4061,8 @@ Use as replacement for autopkgtest-build-qemu and vmdb2:
 
     $ mmdebstrap --variant=important --include=linux-image-amd64 \
         --customize-hook='chroot "$1" passwd --delete root' \
-        --customize-hook='chroot "$1" useradd --home-dir /home/user --create-home user' \
+        --customize-hook='chroot "$1" useradd --home-dir /home/user
+            --create-home user' \
         --customize-hook='chroot "$1" passwd --delete user' \
         --customize-hook='echo host > "$1/etc/hostname"' \
         --customize-hook='echo "127.0.0.1 localhost host" > "$1/etc/hosts"' \
@@ -4076,7 +4089,8 @@ Use as replacement for autopkgtest-build-qemu and vmdb2:
 
 Build a non-Debian chroot like Ubuntu bionic:
 
-    $ mmdebstrap --aptopt='Dir::Etc::Trusted "/usr/share/keyrings/ubuntu-keyring-2012-archive.gpg"' bionic bionic.tar
+    $ mmdebstrap --aptopt='Dir::Etc::Trusted
+       "/usr/share/keyrings/ubuntu-keyring-2012-archive.gpg"' bionic bionic.tar
 
 =head1 ENVIRONMENT VARIABLES
 
@@ -4097,7 +4111,7 @@ This section lists some differences to debootstrap.
 
 =item * 3-6 times faster
 
-=item * Can create a chroot with only C<Essential:yes> packages and their dependencies
+=item * Can create a chroot with only C<Essential:yes> packages and their deps
 
 =item * Reproducible output by default if $SOURCE_DATE_EPOCH is set
 
@@ -4119,7 +4133,9 @@ Limitations in comparison to debootstrap:
 
 =item * No I<--second-stage> and I<--exclude> option.
 
-=item * No-op options I<--resolve-deps>, I<--force-check-gpg>, I<--merged-usr> and I<--no-merged-usr>
+=item * Some debootstrap options don't exist, namely:
+
+I<--resolve-deps>, I<--force-check-gpg>, I<--merged-usr> and I<--no-merged-usr>
 
 =back
 
