@@ -780,7 +780,10 @@ sub run_chroot(&$) {
                             # there is no /proc in fakechroot mode
                             next;
                         }
-                        if (any { $_ eq $options->{mode} } ('root', 'unshare')) {
+                        if (
+                            any { $_ eq $options->{mode} }
+                            ('root', 'unshare')
+                        ) {
                             push @cleanup_tasks, sub {
                                 unlink "$options->{root}/$fname" or warn "cannot unlink $fname: $!";
                             }
@@ -809,14 +812,18 @@ sub run_chroot(&$) {
                     }
                 } elsif ($type == 5) { # directory
                     if (!$options->{havemknod}) {
-                        if (any { $_ eq $options->{mode} } ('root', 'unshare')) {
+                        if (
+                            any { $_ eq $options->{mode} }
+                            ('root', 'unshare')
+                        ) {
                             push @cleanup_tasks, sub {
                                 rmdir "$options->{root}/$fname" or warn "cannot rmdir $fname: $!";
                             }
                         }
                         if (-e "$options->{root}/$fname") {
                             if (! -d "$options->{root}/$fname") {
-                                error "$fname already exists but is not a directory";
+                                error "$fname already exists but is not a"
+                                  . " directory";
                             }
                         } else {
                             my $num_created = make_path "$options->{root}/$fname", {error => \my $err};
@@ -925,12 +932,14 @@ sub run_chroot(&$) {
         # the file might not exist if it was removed in a hook
         if (-e "$options->{root}/sbin/start-stop-daemon") {
             if (-e "$options->{root}/sbin/start-stop-daemon.REAL") {
-                error "$options->{root}/sbin/start-stop-daemon.REAL already exists";
+                error "$options->{root}/sbin/start-stop-daemon.REAL already"
+                  . " exists";
             }
             move("$options->{root}/sbin/start-stop-daemon", "$options->{root}/sbin/start-stop-daemon.REAL") or error "cannot move start-stop-daemon: $!";
             open my $fh, '>', "$options->{root}/sbin/start-stop-daemon" or error "cannot open start-stop-daemon: $!";
             print $fh "#!/bin/sh\n";
-            print $fh "echo \"Warning: Fake start-stop-daemon called, doing nothing\">&2\n";
+            print $fh "echo \"Warning: Fake start-stop-daemon called, doing"
+              . " nothing\">&2\n";
             close $fh;
             chmod 0755, "$options->{root}/sbin/start-stop-daemon" or error "cannot chmod start-stop-daemon: $!";
         }
@@ -972,7 +981,10 @@ sub run_hooks($$) {
                 if (any { $_ eq $options->{variant} } ('extract', 'custom')
                         and any { $_ eq $options->{mode} } ('fakechroot', 'proot')
                         and $name ne 'setup') {
-                    info "the copy-in, copy-out, tar-in and tar-out commands in fakechroot mode or proot mode might fail in extract and custom variants because there might be no tar inside the chroot";
+                    info "the copy-in, copy-out, tar-in and tar-out commands"
+                      . " in fakechroot mode or proot mode might fail in"
+                      . " extract and custom variants because there might be"
+                      . " no tar inside the chroot";
                 }
 
                 my $pid = fork() // error "fork() failed: $!";
@@ -990,7 +1002,9 @@ sub run_hooks($$) {
                     if($is_covering) {
                         $prefix = "$EXECUTABLE_NAME -MDevel::Cover=-silent,-nogcov ";
                     }
-                    exec 'sh', '-c', "$prefix$PROGRAM_NAME --hook-helper \"\$1\" \"\$2\" \"\$3\" \"\$4\" \"\$5\" $script",
+                    exec 'sh', '-c',
+                      "$prefix$PROGRAM_NAME --hook-helper"
+                      . " \"\$1\" \"\$2\" \"\$3\" \"\$4\" \"\$5\" $script",
                         'exec', $options->{root}, $options->{mode}, $name, (defined $options->{qemu} ? "qemu-$options->{qemu}" : 'env', $verbosity_level);
                 }
                 waitpid($pid, 0);
@@ -1002,7 +1016,8 @@ sub run_hooks($$) {
                 # (the /a regex modifier makes \w match only ASCII)
                 0 == system($script, $options->{root}) or error "command failed: $script";
             } else {
-                info "running --$name-hook in shell: sh -c '$script' exec $options->{root}";
+                info "running --$name-hook in shell: sh -c '$script' exec"
+                  . " $options->{root}";
                 # otherwise, wrap everything in sh -c
                 0 == system('sh', '-c', $script, 'exec', $options->{root}) or error "command failed: $script";
             }
@@ -1216,12 +1231,14 @@ sub setup {
     if (-e "/etc/resolv.conf") {
         copy("/etc/resolv.conf", "$options->{root}/etc/resolv.conf") or error "cannot copy /etc/resolv.conf: $!";
     } else {
-        warning("Host system does not have a /etc/resolv.conf to copy into the rootfs.")
+        warning("Host system does not have a /etc/resolv.conf to copy into the"
+              . " rootfs.")
     }
     if (-e "/etc/hostname") {
         copy("/etc/hostname", "$options->{root}/etc/hostname") or error "cannot copy /etc/hostname: $!";
     } else {
-        warning("Host system does not have a /etc/hostname to copy into the rootfs.")
+        warning("Host system does not have a /etc/hostname to copy into the"
+              . " rootfs.")
     }
 
     if ($options->{havemknod}) {
@@ -1276,7 +1293,8 @@ sub setup {
     if ($options->{mode} eq 'root') {
         my $partial = '/var/lib/apt/lists/partial';
         if (system('/usr/lib/apt/apt-helper', 'drop-privs', '--', 'test', '-r', "$options->{root}$partial") != 0) {
-            warning "Download is performed unsandboxed as root as file $options->{root}$partial couldn't be accessed by user _apt";
+            warning "Download is performed unsandboxed as root as file"
+              . " $options->{root}$partial couldn't be accessed by user _apt";
             open my $fh, '>>', $tmpfile or error "cannot open $tmpfile for appending: $!";
             print $fh "APT::Sandbox::User \"root\";\n";
             close $fh;
@@ -1510,7 +1528,8 @@ sub setup {
             my $pid2 = fork() // error "fork() failed: $!";
             if ($pid2 == 0) {
                 open(STDIN, '<&', $rfh) or error "cannot open STDIN: $!";
-                debug("running tar -C $options->{root} --keep-directory-symlink --extract --file -");
+                debug(  "running tar -C $options->{root}"
+                      . " --keep-directory-symlink --extract --file -");
                 eval 'Devel::Cover::set_coverage("none")' if $is_covering;
                 exec 'tar', '-C', $options->{root}, '--keep-directory-symlink', '--extract', '--file', '-';
             }
@@ -1677,11 +1696,15 @@ sub setup {
                     }
                     my $fakechrootdir = "/usr/lib/$deb_host_multiarch/fakechroot";
                     if (! -e "$fakechrootdir/libfakechroot.so") {
-                        error "$fakechrootdir/libfakechroot.so doesn't exist. Install libfakechroot:$options->{nativearch} outside the chroot";
+                        error "$fakechrootdir/libfakechroot.so doesn't exist."
+                          . " Install libfakechroot:$options->{nativearch}"
+                          . " outside the chroot";
                     }
                     my $fakerootdir = "/usr/lib/$deb_host_multiarch/libfakeroot";
                     if (! -e "$fakerootdir/libfakeroot-sysv.so") {
-                        error "$fakerootdir/libfakeroot-sysv.so doesn't exist. Install libfakeroot:$options->{nativearch} outside the chroot";
+                        error "$fakerootdir/libfakeroot-sysv.so doesn't exist."
+                          . " Install libfakeroot:$options->{nativearch}"
+                          . " outside the chroot";
                     }
                     # fakechroot only fills LD_LIBRARY_PATH with the
                     # directories of the host's architecture. We append the
@@ -1712,12 +1735,17 @@ sub setup {
                 my $ret = system @chrootcmd, '/bin/mv', '/000-move-me', '/001-delete-me';
                 if ($ret != 0) {
                     if ($options->{mode} eq 'proot') {
-                        info "the /bin/mv binary inside the chroot doesn't work under proot";
-                        info "this is likely due to missing support for renameat2 in proot";
+                        info "the /bin/mv binary inside the chroot doesn't"
+                          . " work under proot";
+                        info "this is likely due to missing support for"
+                          . " renameat2 in proot";
                         info "see https://github.com/proot-me/PRoot/issues/147";
                     } else {
-                        info "the /bin/mv binary inside the chroot doesn't work under fakechroot";
-                        info "with certain versions of coreutils and glibc, this is due to missing support for renameat2 in fakechroot";
+                        info "the /bin/mv binary inside the chroot doesn't"
+                          . " work under fakechroot";
+                        info "with certain versions of coreutils and glibc,"
+                          . " this is due to missing support for renameat2 in"
+                          . " fakechroot";
                         info "see https://github.com/dex4er/fakechroot/issues/60";
                     }
                     info "expect package post installation scripts not to work";
@@ -1830,7 +1858,8 @@ sub setup {
                     }
                     close $dh;
                     if (scalar @debs_to_install == 0) {
-                        warning "nothing got downloaded -- maybe the packages were already installed?";
+                        warning "nothing got downloaded -- maybe the packages"
+                          . " were already installed?";
                     } else {
                         # we need --force-depends because dpkg does not take
                         # Pre-Depends into account and thus doesn't install
@@ -1990,7 +2019,8 @@ sub main() {
 
         if (any { $_ eq $command} ('copy-in', 'tar-in', 'upload')) {
             if (scalar @ARGV < 9) {
-                error "copy-in and tar-in need at least one path on the outside and the output path inside the chroot"
+                error "copy-in and tar-in need at least one path on the"
+                  . " outside and the output path inside the chroot";
             }
             my $outpath = $ARGV[-1];
             for (my $i = 7; $i < $#ARGV; $i++) {
@@ -2085,7 +2115,8 @@ sub main() {
             }
         } elsif (any { $_ eq $command} ('copy-out', 'tar-out', 'download')) {
             if (scalar @ARGV < 9) {
-                error "copy-out needs at least one path inside the chroot and the output path on the outside"
+                error "copy-out needs at least one path inside the chroot and"
+                  . " the output path on the outside";
             }
             my $outpath = $ARGV[-1];
             for (my $i = 7; $i < $#ARGV; $i++) {
@@ -2214,7 +2245,8 @@ sub main() {
         'keyring=s' => sub {
             my ($opt_name, $opt_value) = @_;
             if ($opt_value =~ /"/) {
-                error "--keyring: apt cannot handle paths with double quotes: $opt_value";
+                error "--keyring: apt cannot handle paths with double quotes:"
+                  . " $opt_value";
             }
             if (! -e $opt_value) {
                 error "keyring \"$opt_value\" does not exist";
@@ -2253,7 +2285,8 @@ sub main() {
     }
 
     foreach my $arg (@{$options->{noop}}) {
-        info "The option --$arg is a no-op. It only exists for compatibility with some debootstrap wrappers.";
+        info "The option --$arg is a no-op. It only exists for compatibility"
+          . " with some debootstrap wrappers.";
     }
 
     my @valid_variants = ('extract', 'custom', 'essential', 'apt', 'required',
@@ -2267,7 +2300,8 @@ sub main() {
     }
 
     if ($options->{variant} eq 'essential' and scalar @{$options->{include}} > 0) {
-        warning "cannot install extra packages with variant essential because apt is missing";
+        warning "cannot install extra packages with variant essential because"
+          . " apt is missing";
     }
 
     # fakeroot is an alias for fakechroot
@@ -2361,10 +2395,14 @@ sub main() {
             chomp(my $content = do { local $/; <$fh> });
             close($fh);
             if ($content ne "1") {
-                info "/proc/sys/kernel/unprivileged_userns_clone is set to $content";
-                info "try running: sudo sysctl -w kernel.unprivileged_userns_clone=1";
-                info "or permanently enable unprivileged usernamespaces by putting the setting into /etc/sysctl.d/";
-                info "see https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=898446";
+                info "/proc/sys/kernel/unprivileged_userns_clone is set to"
+                  . " $content";
+                info "Try running:";
+                info "  sudo sysctl -w kernel.unprivileged_userns_clone=1";
+                info "or permanently enable unprivileged usernamespaces by"
+                  . " putting the setting into /etc/sysctl.d/";
+                info "see https://bugs.debian.org/cgi-bin/"
+                  . "bugreport.cgi?bug=898446";
             }
             exit 1;
         }
@@ -2394,7 +2432,8 @@ sub main() {
     $options->{nativearch} = $hostarch;
     $options->{foreignarchs} = [];
     if (scalar @architectures == 0) {
-        warning "empty architecture list: falling back to native architecture $hostarch";
+        warning "empty architecture list: falling back to native architecture"
+          . " $hostarch";
     } elsif (scalar @architectures == 1) {
         $options->{nativearch} = $architectures[0];
     } else {
@@ -2444,7 +2483,8 @@ sub main() {
                     # if exec didn't work (for example because the arch-test
                     # program is missing) prepare for the worst and assume that
                     # the architecture cannot be executed
-                    print "$options->{nativearch}: not supported on this machine/kernel\n";
+                    print "$options->{nativearch}: not supported on this"
+                      . " machine/kernel\n";
                     exit 1;
                 }
                 chomp (my $content = do { local $/; <$fh> });
@@ -2460,10 +2500,11 @@ sub main() {
                         no warnings; # don't print a warning if the following fails
                         exec 'arch-test', '-n', $options->{nativearch};
                     }
-                    print "$options->{nativearch}: not supported on this machine/kernel\n";
                     # if exec didn't work (for example because the arch-test
                     # program is missing) prepare for the worst and assume that
                     # the architecture cannot be executed
+                    print "$options->{nativearch}: not supported on this"
+                      . " machine/kernel\n";
                     exit 1;
                 }
                 chomp (my $content = do { local $/; <$fh> });
@@ -2485,46 +2526,55 @@ sub main() {
                 {
                     open my $fh, '<', '/proc/filesystems' or error "failed to open /proc/filesystems: $!";
                     unless (grep /^nodev\tbinfmt_misc$/, (<$fh>)) {
-                        warning "binfmt_misc not found in /proc/filesystems -- is the module loaded?";
+                        warning "binfmt_misc not found in /proc/filesystems --"
+                          . " is the module loaded?";
                     }
                     close $fh;
                 }
                 {
                     open my $fh, '<', '/proc/mounts' or error "failed to open /proc/mounts: $!";
                     unless (grep /^binfmt_misc \/proc\/sys\/fs\/binfmt_misc binfmt_misc/, (<$fh>)) {
-                        warning "binfmt_misc not found in /proc/mounts -- not mounted?";
+                        warning "binfmt_misc not found in /proc/mounts -- not"
+                          . " mounted?";
                     }
                     close $fh;
                 }
                 {
                     if (!exists $deb2qemu->{$options->{nativearch}}) {
-                        warning "no mapping from $options->{nativearch} to qemu-user binary";
+                        warning "no mapping from $options->{nativearch} to"
+                          . " qemu-user binary";
                     } else {
                         my $binfmt_identifier = 'qemu-' . $deb2qemu->{$options->{nativearch}};
                         open my $fh, '-|', '/usr/sbin/update-binfmts', '--display', $binfmt_identifier // error "failed to fork(): $!";
                         chomp (my $binfmts = do { local $/; <$fh> });
                         close $fh;
                         if ($binfmts eq '') {
-                            warning "$binfmt_identifier is not a supported binfmt name";
+                            warning "$binfmt_identifier is not a supported"
+                              . " binfmt name";
                         }
                     }
                 }
-                error "$options->{nativearch} can neither be executed natively nor via qemu user emulation with binfmt_misc";
+                error "$options->{nativearch} can neither be executed natively"
+                  . " nor via qemu user emulation with binfmt_misc";
             } elsif ($withemu == 0 and $noemu == 1) {
                 error "arch-test succeeded without emu but not with emu";
             } elsif ($withemu == 1 and $noemu == 0) {
-                info "$options->{nativearch} cannot be executed, falling back to qemu-user";
+                info "$options->{nativearch} cannot be executed, falling back"
+                  . " to qemu-user";
                 if (!exists $deb2qemu->{$options->{nativearch}}) {
-                    error "no mapping from $options->{nativearch} to qemu-user binary";
+                    error "no mapping from $options->{nativearch} to qemu-user"
+                      . " binary";
                 }
                 $options->{qemu} = $deb2qemu->{$options->{nativearch}};
             } elsif ($withemu == 1 and $noemu == 1) {
-                info "$options->{nativearch} is different from $hostarch but can be executed natively";
+                info "$options->{nativearch} is different from $hostarch but"
+                  . " can be executed natively";
             } else {
                 error "logic error";
             }
         } else {
-            info "chroot architecture $options->{nativearch} is equal to the host's architecture";
+            info "chroot architecture $options->{nativearch} is equal to the"
+              . " host's architecture";
         }
     }
 
@@ -2646,7 +2696,8 @@ sub main() {
                             error "gpg failed";
                         }
                     } else {
-                        info "gpg --version failed: cannot determine the right signed-by value"
+                        info "gpg --version failed: cannot determine the right"
+                          . " signed-by value"
                     }
                     remove_tree($gpghome, {error => \my $err});
                     if (@$err) {
@@ -2707,11 +2758,15 @@ sub main() {
                 } elsif (any {$_ eq $suite} @debstable) {
                     $sourceslist .= "deb$signedby $mirror $suite-updates $compstr\n";
                     if (any {$_ eq $suite} ('oldoldstable', 'oldstable', 'stable', 'jessie', 'stretch', 'buster')) {
-                        $sourceslist .= "deb$signedby $secmirror $suite/updates $compstr\n";
+                        $sourceslist
+                          .= "deb$signedby $secmirror $suite/updates"
+                          . " $compstr\n";
                     } else {
                         # starting from bullseye use
                         # https://lists.debian.org/87r26wqr2a.fsf@43-1.org
-                        $sourceslist .= "deb$signedby $secmirror $suite-security $compstr\n";
+                        $sourceslist
+                          .= "deb$signedby $secmirror $suite-security"
+                          . " $compstr\n";
                     }
                 }
             }
@@ -2725,7 +2780,8 @@ sub main() {
     if ($options->{target} ne '-') {
         my $abs_path = abs_path($options->{target});
         if (!defined $abs_path) {
-            error "unable to get absolute path of target directory $options->{target}";
+            error "unable to get absolute path of target directory"
+              . " $options->{target}";
         }
         $options->{target} = $abs_path;
     }
@@ -2771,7 +2827,9 @@ sub main() {
 
     if ($options->{maketar} or $options->{makesqfs}) {
         if (any { $_ eq $options->{variant} } ('extract', 'custom') and any { $_ eq $options->{mode} } ('fakechroot', 'proot')) {
-            info "creating a tarball or squashfs image in fakechroot mode or proot mode might fail in extract and custom variants because there might be no tar inside the chroot";
+            info "creating a tarball or squashfs image in fakechroot mode or"
+              . " proot mode might fail in extract and custom variants because"
+              . " there might be no tar inside the chroot";
         }
         # try to fail early if target tarball or squashfs image cannot be
         # opened for writing
@@ -2822,7 +2880,8 @@ sub main() {
                     # rationale for requiring an empty directory:
                     # https://bugs.debian.org/833525
                     if (readdir $dh2) {
-                        error "$options->{root} contains a non-empty lost+found directory";
+                        error "$options->{root} contains a non-empty"
+                          . " lost+found directory";
                     }
                     closedir($dh2);
                 } else {
@@ -3435,7 +3494,9 @@ sub main() {
                 # working directory" if the working directory cannot be
                 # accessed by the unprivileged unshared user. Thus, we first
                 # navigate to the parent of the root directory.
-                chdir "$options->{root}/.." or error "unable to chdir() to parent directory of $options->{root}: $!";
+                chdir "$options->{root}/.."
+                  or error "unable to chdir() to parent directory of"
+                  . " $options->{root}: $!";
                 remove_tree($options->{root}, {error => \my $err});
                 if (@$err) {
                     for my $diag (@$err) {
