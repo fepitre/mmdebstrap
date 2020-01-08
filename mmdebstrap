@@ -4170,3 +4170,5 @@ modes.
     debootstrap(8)
 
 =cut
+
+# vim: expandtab tabstop=4 softtabstop=4 shiftwidth=4 ft=perl tw=79
