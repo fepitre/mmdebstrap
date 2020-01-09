@@ -33,7 +33,7 @@ use File::Path qw(make_path remove_tree);
 use File::Temp qw(tempfile tempdir);
 use File::Basename;
 use Cwd qw(abs_path);
-require "syscall.ph";
+require "syscall.ph";    ## no critic (Modules::RequireBarewordIncludes)
 use Fcntl qw(S_IFCHR S_IFBLK FD_CLOEXEC F_GETFD F_SETFD);
 use List::Util qw(any none);
 use POSIX qw(SIGINT SIGHUP SIGPIPE SIGTERM SIG_BLOCK SIG_UNBLOCK);
@@ -41,15 +41,21 @@ use Carp;
 use Term::ANSIColor;
 use Socket;
 
+## no critic (InputOutput::RequireBriefOpen)
+
 # from sched.h
-use constant {
-    CLONE_NEWNS   => 0x20000,
-    CLONE_NEWUTS  => 0x4000000,
-    CLONE_NEWIPC  => 0x8000000,
-    CLONE_NEWUSER => 0x10000000,
-    CLONE_NEWPID  => 0x20000000,
-    CLONE_NEWNET  => 0x40000000,
-};
+# use typeglob constants because "use constant" has several drawback as
+# explained in the documentation for the Readonly CPAN module
+*CLONE_NEWNS   = \0x20000;
+*CLONE_NEWUTS  = \0x4000000;
+*CLONE_NEWIPC  = \0x8000000;
+*CLONE_NEWUSER = \0x10000000;
+*CLONE_NEWPID  = \0x20000000;
+*CLONE_NEWNET  = \0x40000000;
+our (
+    $CLONE_NEWNS,   $CLONE_NEWUTS, $CLONE_NEWIPC,
+    $CLONE_NEWUSER, $CLONE_NEWPID, $CLONE_NEWNET
+);
 
 # type codes:
 #   0 -> normal file
@@ -60,21 +66,21 @@ use constant {
 #   5 -> directory
 my @devfiles = (
     # filename         mode  type link target        major  minor
-    ["./dev/",        0755, 5, '',                undef, undef],
-    ["./dev/console", 0666, 3, '',                5,     1],
-    ["./dev/fd",      0777, 2, '/proc/self/fd',   undef, undef],
-    ["./dev/full",    0666, 3, '',                1,     7],
-    ["./dev/null",    0666, 3, '',                1,     3],
-    ["./dev/ptmx",    0666, 3, '',                5,     2],
-    ["./dev/pts/",    0755, 5, '',                undef, undef],
-    ["./dev/random",  0666, 3, '',                1,     8],
-    ["./dev/shm/",    0755, 5, '',                undef, undef],
-    ["./dev/stderr",  0777, 2, '/proc/self/fd/2', undef, undef],
-    ["./dev/stdin",   0777, 2, '/proc/self/fd/0', undef, undef],
-    ["./dev/stdout",  0777, 2, '/proc/self/fd/1', undef, undef],
-    ["./dev/tty",     0666, 3, '',                5,     0],
-    ["./dev/urandom", 0666, 3, '',                1,     9],
-    ["./dev/zero",    0666, 3, '',                1,     5],
+    ["./dev/",        oct(755), 5, '',                undef, undef],
+    ["./dev/console", oct(666), 3, '',                5,     1],
+    ["./dev/fd",      oct(777), 2, '/proc/self/fd',   undef, undef],
+    ["./dev/full",    oct(666), 3, '',                1,     7],
+    ["./dev/null",    oct(666), 3, '',                1,     3],
+    ["./dev/ptmx",    oct(666), 3, '',                5,     2],
+    ["./dev/pts/",    oct(755), 5, '',                undef, undef],
+    ["./dev/random",  oct(666), 3, '',                1,     8],
+    ["./dev/shm/",    oct(755), 5, '',                undef, undef],
+    ["./dev/stderr",  oct(777), 2, '/proc/self/fd/2', undef, undef],
+    ["./dev/stdin",   oct(777), 2, '/proc/self/fd/0', undef, undef],
+    ["./dev/stdout",  oct(777), 2, '/proc/self/fd/1', undef, undef],
+    ["./dev/tty",     oct(666), 3, '',                5,     0],
+    ["./dev/urandom", oct(666), 3, '',                1,     9],
+    ["./dev/zero",    oct(666), 3, '',                1,     5],
 );
 
 # verbosity levels:
@@ -84,7 +90,7 @@ my @devfiles = (
 #   3 -> debug output
 my $verbosity_level = 1;
 
-my $is_covering = !!(eval 'Devel::Cover::get_coverage()');
+my $is_covering = !!(eval { Devel::Cover::get_coverage() });
 
 sub debug {
     if ($verbosity_level < 3) {
@@ -93,10 +99,11 @@ sub debug {
     my $msg = shift;
     my ($package, $filename, $line) = caller;
     $msg = "D: $PID $line $msg";
-    if (-t STDERR) {
+    if (-t STDERR) {    ## no critic (InputOutput::ProhibitInteractiveTest)
         $msg = colored($msg, 'clear');
     }
     print STDERR "$msg\n";
+    return;
 }
 
 sub info {
@@ -109,10 +116,11 @@ sub info {
         $msg = "$PID $line $msg";
     }
     $msg = "I: $msg";
-    if (-t STDERR) {
+    if (-t STDERR) {    ## no critic (InputOutput::ProhibitInteractiveTest)
         $msg = colored($msg, 'green');
     }
     print STDERR "$msg\n";
+    return;
 }
 
 sub warning {
@@ -121,10 +129,11 @@ sub warning {
     }
     my $msg = shift;
     $msg = "W: $msg";
-    if (-t STDERR) {
+    if (-t STDERR) {    ## no critic (InputOutput::ProhibitInteractiveTest)
         $msg = colored($msg, 'bold yellow');
     }
     print STDERR "$msg\n";
+    return;
 }
 
 sub error {
@@ -136,11 +145,11 @@ sub error {
     # are stripping here
     chomp(my $msg = shift);
     $msg = "E: $msg";
-    if (-t STDERR) {
+    if (-t STDERR) {    ## no critic (InputOutput::ProhibitInteractiveTest)
         $msg = colored($msg, 'bold red');
     }
     if ($verbosity_level == 3) {
-        croak $msg;    # produces a backtrace
+        croak $msg;     # produces a backtrace
     } else {
         die "$msg\n";
     }
@@ -148,7 +157,7 @@ sub error {
 
 # check whether a directory is mounted by comparing the device number of the
 # directory itself with its parent
-sub is_mountpoint($) {
+sub is_mountpoint {
     my $dir = shift;
     if (!-e $dir) {
         return 0;
@@ -169,12 +178,12 @@ sub is_mountpoint($) {
 # tar cannot figure out the decompression program when receiving data on
 # standard input, thus we do it ourselves. This is copied from tar's
 # src/suffix.c
-sub get_tar_compressor($) {
+sub get_tar_compressor {
     my $filename = shift;
     if ($filename eq '-') {
-        return undef;
+        return;
     } elsif ($filename =~ /\.tar$/) {
-        return undef;
+        return;
     } elsif ($filename =~ /\.(gz|tgz|taz)$/) {
         return ['gzip'];
     } elsif ($filename =~ /\.(Z|taZ)$/) {
@@ -194,10 +203,10 @@ sub get_tar_compressor($) {
     } elsif ($filename =~ /\.zst$/) {
         return ['zstd'];
     }
-    return undef;
+    return;
 }
 
-sub test_unshare($) {
+sub test_unshare {
     my $verbose = shift;
     if ($EFFECTIVE_USER_ID == 0) {
         my $msg = "cannot use unshare mode when executing as root";
@@ -210,12 +219,12 @@ sub test_unshare($) {
     }
     # arguments to syscalls have to be stored in their own variable or
     # otherwise we will get "Modification of a read-only value attempted"
-    my $unshare_flags = CLONE_NEWUSER;
+    my $unshare_flags = $CLONE_NEWUSER;
     # we spawn a new per process because if unshare succeeds, we would
     # otherwise have unshared the mmdebstrap process itself which we don't want
     my $pid = fork() // error "fork() failed: $!";
     if ($pid == 0) {
-        my $ret = syscall &SYS_unshare, $unshare_flags;
+        my $ret = syscall(&SYS_unshare, $unshare_flags);
         if ($ret == 0) {
             exit 0;
         } else {
@@ -371,16 +380,16 @@ sub read_subuid_subgid() {
 # This is because when unsharing the PID namespace, we need a PID 1 to be kept
 # alive or otherwise any child processes cannot fork() anymore themselves. So
 # we keep F as PID 1 and finally call exec() in G.
-sub get_unshare_cmd(&$) {
+sub get_unshare_cmd {
     my $cmd   = shift;
     my $idmap = shift;
 
     my $unshare_flags
-      = CLONE_NEWUSER | CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWUTS
-      | CLONE_NEWIPC;
+      = $CLONE_NEWUSER | $CLONE_NEWNS | $CLONE_NEWPID | $CLONE_NEWUTS
+      | $CLONE_NEWIPC;
 
     if (0) {
-        $unshare_flags |= CLONE_NEWNET;
+        $unshare_flags |= $CLONE_NEWNET;
     }
 
     # fork a new process and let the child get unshare()ed
@@ -522,7 +531,7 @@ sub get_unshare_cmd(&$) {
     return $gcpid;
 }
 
-sub havemknod($) {
+sub havemknod {
     my $root      = shift;
     my $havemknod = 0;
     if (-e "$root/test-dev-null") {
@@ -561,7 +570,7 @@ sub print_progress {
         return;
     }
     my $perc = shift;
-    if (!-t STDERR) {
+    if (!-t STDERR) {    ## no critic (InputOutput::ProhibitInteractiveTest)
         return;
     }
     if ($perc eq "done") {
@@ -580,6 +589,7 @@ sub print_progress {
         $bar .= ' ' x ($width - $num_x - 1);
     }
     printf STDERR "%6.2f [%s]\r", $perc, $bar;
+    return;
 }
 
 sub run_progress {
@@ -599,10 +609,10 @@ sub run_progress {
 
     if ($pid1 == 0) {
         # child: default signal handlers
-        $SIG{'INT'}  = 'DEFAULT';
-        $SIG{'HUP'}  = 'DEFAULT';
-        $SIG{'PIPE'} = 'DEFAULT';
-        $SIG{'TERM'} = 'DEFAULT';
+        local $SIG{'INT'}  = 'DEFAULT';
+        local $SIG{'HUP'}  = 'DEFAULT';
+        local $SIG{'PIPE'} = 'DEFAULT';
+        local $SIG{'TERM'} = 'DEFAULT';
 
         # unblock all delayed signals (and possibly handle them)
         POSIX::sigprocmask(SIG_UNBLOCK, $sigset)
@@ -625,7 +635,7 @@ sub run_progress {
         if (defined $chdir) {
             chdir $chdir or error "failed chdir() to $chdir: $!";
         }
-        eval 'Devel::Cover::set_coverage("none")' if $is_covering;
+        eval { Devel::Cover::set_coverage("none") } if $is_covering;
         exec { $execargs[0] } @execargs
           or error 'cannot exec() ' . (join ' ', @execargs);
     }
@@ -637,22 +647,22 @@ sub run_progress {
     my $pid2 = fork() // error "failed to fork(): $!";
     if ($pid2 == 0) {
         # child: default signal handlers
-        $SIG{'INT'}  = 'IGNORE';
-        $SIG{'HUP'}  = 'IGNORE';
-        $SIG{'PIPE'} = 'IGNORE';
-        $SIG{'TERM'} = 'IGNORE';
+        local $SIG{'INT'}  = 'IGNORE';
+        local $SIG{'HUP'}  = 'IGNORE';
+        local $SIG{'PIPE'} = 'IGNORE';
+        local $SIG{'TERM'} = 'IGNORE';
 
         # unblock all delayed signals (and possibly handle them)
         POSIX::sigprocmask(SIG_UNBLOCK, $sigset)
           or error "Can't unblock signals: $!";
 
-        print_progress 0.0;
+        print_progress(0.0);
         while (my $line = <$rfh>) {
             my $output = $line_handler->($line);
             next unless $output;
-            print_progress $output;
+            print_progress($output);
         }
-        print_progress "done";
+        print_progress("done");
 
         exit 0;
     }
@@ -702,6 +712,7 @@ sub run_progress {
         }
         error((join ' ', $get_exec->('<$fd>')) . ' failed');
     }
+    return;
 }
 
 sub run_dpkg_progress {
@@ -721,6 +732,7 @@ sub run_dpkg_progress {
         return $num / $total * 100;
     };
     run_progress $get_exec, $line_handler, $line_has_error;
+    return;
 }
 
 sub run_apt_progress {
@@ -755,9 +767,10 @@ sub run_apt_progress {
         }
     };
     run_progress $get_exec, $line_handler, $line_has_error, $options->{CHDIR};
+    return;
 }
 
-sub run_chroot(&$) {
+sub run_chroot {
     my $cmd     = shift;
     my $options = shift;
 
@@ -1044,9 +1057,10 @@ sub run_chroot(&$) {
     if ($error) {
         error "run_chroot failed: $error";
     }
+    return;
 }
 
-sub run_hooks($$) {
+sub run_hooks {
     my $name    = shift;
     my $options = shift;
 
@@ -1123,9 +1137,9 @@ sub run_hooks($$) {
         # exist yet)
         &{$runner}();
     } else {
-        run_chroot \&$runner, $options;
+        run_chroot(\&$runner, $options);
     }
-
+    return;
 }
 
 sub setup {
@@ -1417,7 +1431,10 @@ sub setup {
     # line arguments because configuration settings like Dir::Etc have already
     # been evaluated at the time that apt takes its command line arguments
     # into account.
-    $ENV{"APT_CONFIG"} = "$tmpfile";
+    {
+        ## no critic (Variables::RequireLocalizedPunctuationVars)
+        $ENV{"APT_CONFIG"} = "$tmpfile";
+    }
 
     # when apt-get update is run by the root user, then apt will attempt to
     # drop privileges to the _apt user. This will fail if the _apt user does
@@ -1440,8 +1457,10 @@ sub setup {
 
     # setting PATH for chroot, ldconfig, start-stop-daemon...
     if (defined $ENV{PATH} && $ENV{PATH} ne "") {
+        ## no critic (Variables::RequireLocalizedPunctuationVars)
         $ENV{PATH} = "$ENV{PATH}:/usr/sbin:/usr/bin:/sbin:/bin";
     } else {
+        ## no critic (Variables::RequireLocalizedPunctuationVars)
         $ENV{PATH} = "/usr/sbin:/usr/bin:/sbin:/bin";
     }
 
@@ -1692,7 +1711,7 @@ sub setup {
             if ($pid1 == 0) {
                 open(STDOUT, '>&', $wfh) or error "cannot open STDOUT: $!";
                 debug("running dpkg-deb --fsys-tarfile $options->{root}/$deb");
-                eval 'Devel::Cover::set_coverage("none")' if $is_covering;
+                eval { Devel::Cover::set_coverage("none") } if $is_covering;
                 exec 'dpkg-deb', '--fsys-tarfile', "$options->{root}/$deb";
             }
             my $pid2 = fork() // error "fork() failed: $!";
@@ -1700,7 +1719,7 @@ sub setup {
                 open(STDIN, '<&', $rfh) or error "cannot open STDIN: $!";
                 debug(  "running tar -C $options->{root}"
                       . " --keep-directory-symlink --extract --file -");
-                eval 'Devel::Cover::set_coverage("none")' if $is_covering;
+                eval { Devel::Cover::set_coverage("none") } if $is_covering;
                 exec 'tar', '-C', $options->{root},
                   '--keep-directory-symlink', '--extract', '--file', '-';
             }
@@ -1730,8 +1749,10 @@ sub setup {
             # where it has to look for shared libraries
             if (defined $ENV{QEMU_LD_PREFIX}
                 && $ENV{QEMU_LD_PREFIX} ne "") {
+                ## no critic (Variables::RequireLocalizedPunctuationVars)
                 $ENV{QEMU_LD_PREFIX} = "$ENV{QEMU_LD_PREFIX}:$options->{root}";
             } else {
+                ## no critic (Variables::RequireLocalizedPunctuationVars)
                 $ENV{QEMU_LD_PREFIX} = $options->{root};
             }
         }
@@ -1798,18 +1819,24 @@ sub setup {
                         push @fakechrootsubst, split /:/,
                           $ENV{FAKECHROOT_CMD_SUBST};
                     }
+                    ## no critic (Variables::RequireLocalizedPunctuationVars)
                     $ENV{FAKECHROOT_CMD_SUBST} = join ':', @fakechrootsubst;
                 }
                 if (defined $ENV{FAKECHROOT_EXCLUDE_PATH}
                     && $ENV{FAKECHROOT_EXCLUDE_PATH} ne "") {
+                    ## no critic (Variables::RequireLocalizedPunctuationVars)
                     $ENV{FAKECHROOT_EXCLUDE_PATH}
                       = "$ENV{FAKECHROOT_EXCLUDE_PATH}:/dev:/proc:/sys";
                 } else {
+                    ## no critic (Variables::RequireLocalizedPunctuationVars)
                     $ENV{FAKECHROOT_EXCLUDE_PATH} = '/dev:/proc:/sys';
                 }
                 # workaround for long unix socket path if FAKECHROOT_BASE
                 # exceeds the limit of 108 bytes
-                $ENV{FAKECHROOT_AF_UNIX_PATH} = "/tmp";
+                {
+                    ## no critic (Variables::RequireLocalizedPunctuationVars)
+                    $ENV{FAKECHROOT_AF_UNIX_PATH} = "/tmp";
+                }
                 {
                     my @ldsoconf = ('/etc/ld.so.conf');
                     opendir(my $dh, '/etc/ld.so.conf.d')
@@ -1839,6 +1866,7 @@ sub setup {
                         }
                         close $fh;
                     }
+                    ## no critic (Variables::RequireLocalizedPunctuationVars)
                     $ENV{LD_LIBRARY_PATH} = join ':', @ldlibpath;
                 }
             }
@@ -1869,15 +1897,6 @@ sub setup {
                 if ($options->{mode} eq 'proot') {
                     push @chrootcmd, "--qemu=qemu-$options->{qemu}";
                 } elsif ($options->{mode} eq 'fakechroot') {
-                    # The binfmt support on the outside is used, so qemu needs
-                    # to know where it has to look for shared libraries
-                    if (defined $ENV{QEMU_LD_PREFIX}
-                        && $ENV{QEMU_LD_PREFIX} ne "") {
-                        $ENV{QEMU_LD_PREFIX}
-                          = "$ENV{QEMU_LD_PREFIX}:$options->{root}";
-                    } else {
-                        $ENV{QEMU_LD_PREFIX} = $options->{root};
-                    }
                     # Make sure that the fakeroot and fakechroot shared
                     # libraries exist for the right architecture
                     open my $fh, '-|', 'dpkg-architecture', '-a',
@@ -1887,7 +1906,7 @@ sub setup {
                         my $deb_host_multiarch = do { local $/; <$fh> }
                     );
                     close $fh;
-                    if ($? != 0 or !$deb_host_multiarch) {
+                    if (($? != 0) or (!$deb_host_multiarch)) {
                         error "dpkg-architecture failed: $?";
                     }
                     my $fakechrootdir
@@ -1904,10 +1923,24 @@ sub setup {
                           . " Install libfakeroot:$options->{nativearch}"
                           . " outside the chroot";
                     }
+                    # The rest of this block sets environment variables, so we
+                    # have to add the "no critic" statement to stop perlcritic
+                    # from complaining about setting global variables
+                    ## no critic (Variables::RequireLocalizedPunctuationVars)
                     # fakechroot only fills LD_LIBRARY_PATH with the
                     # directories of the host's architecture. We append the
                     # directories of the chroot architecture.
-                    $ENV{LD_LIBRARY_PATH} .= ":$fakechrootdir:$fakerootdir";
+                    $ENV{LD_LIBRARY_PATH}
+                      = "$ENV{LD_LIBRARY_PATH}:$fakechrootdir:$fakerootdir";
+                    # The binfmt support on the outside is used, so qemu needs
+                    # to know where it has to look for shared libraries
+                    if (defined $ENV{QEMU_LD_PREFIX}
+                        && $ENV{QEMU_LD_PREFIX} ne "") {
+                        $ENV{QEMU_LD_PREFIX}
+                          = "$ENV{QEMU_LD_PREFIX}:$options->{root}";
+                    } else {
+                        $ENV{QEMU_LD_PREFIX} = $options->{root};
+                    }
                 } elsif (any { $_ eq $options->{mode} } ('root', 'unshare')) {
                     # other modes require a static qemu-user binary
                     my $qemubin = "/usr/bin/qemu-$options->{qemu}-static";
@@ -1968,17 +2001,19 @@ sub setup {
             # into account and thus doesn't install them in the right order
             # And the --predep-package option is broken: #539133
             info "installing packages...";
-            run_chroot {
-                run_dpkg_progress({
-                        ARGV => [
-                            @chrootcmd,       'env',
-                            '--unset=TMPDIR', 'dpkg',
-                            '--install',      '--force-depends'
-                        ],
-                        PKGS => \@essential_pkgs,
-                    });
-            }
-            $options;
+            run_chroot(
+                sub {
+                    run_dpkg_progress({
+                            ARGV => [
+                                @chrootcmd,       'env',
+                                '--unset=TMPDIR', 'dpkg',
+                                '--install',      '--force-depends'
+                            ],
+                            PKGS => \@essential_pkgs,
+                        });
+                },
+                $options
+            );
 
             # if the path-excluded option was added to the dpkg config,
             # reinstall all packages
@@ -1986,7 +2021,7 @@ sub setup {
                 open(my $fh, '<',
                     "$options->{root}/etc/dpkg/dpkg.cfg.d/99mmdebstrap")
                   or error "cannot open /etc/dpkg/dpkg.cfg.d/99mmdebstrap: $!";
-                my $num_matches = grep /^path-exclude=/, <$fh>;
+                my $num_matches = grep { /^path-exclude=/ } <$fh>;
                 close $fh;
                 if ($num_matches > 0) {
                     # without --skip-same-version, dpkg will install the given
@@ -2107,19 +2142,22 @@ sub setup {
                     }
                 }
 
-                run_chroot {
-                    info "installing remaining packages inside the chroot...";
-                    run_apt_progress({
-                            ARGV => [
-                                @chrootcmd,           'env',
-                                '--unset=APT_CONFIG', '--unset=TMPDIR',
-                                'apt-get',            '--yes',
-                                'install'
-                            ],
-                            PKGS => [@pkgs_to_install],
-                        });
-                }
-                $options;
+                run_chroot(
+                    sub {
+                        info
+                          "installing remaining packages inside the chroot...";
+                        run_apt_progress({
+                                ARGV => [
+                                    @chrootcmd,           'env',
+                                    '--unset=APT_CONFIG', '--unset=TMPDIR',
+                                    'apt-get',            '--yes',
+                                    'install'
+                                ],
+                                PKGS => [@pkgs_to_install],
+                            });
+                    },
+                    $options
+                );
 
             }
         } else {
@@ -2192,6 +2230,7 @@ sub setup {
         }
         closedir($dh);
     }
+    return;
 }
 
 # messages from process inside unshared namespace to the outside
@@ -2209,6 +2248,7 @@ sub checkokthx {
     my ($len, $msg) = unpack("nA5", $buf);
     if ($msg ne "okthx") { error "expected okthx but got: $msg"; }
     if ($len != 0)       { error "expected no payload but got $len bytes"; }
+    return;
 }
 
 sub main() {
@@ -2467,11 +2507,14 @@ sub main() {
         $mtime = $ENV{SOURCE_DATE_EPOCH} + 0;
     }
 
-    $ENV{DEBIAN_FRONTEND}             = 'noninteractive';
-    $ENV{DEBCONF_NONINTERACTIVE_SEEN} = 'true';
-    $ENV{LC_ALL}                      = 'C.UTF-8';
-    $ENV{LANGUAGE}                    = 'C.UTF-8';
-    $ENV{LANG}                        = 'C.UTF-8';
+    {
+        ## no critic (Variables::RequireLocalizedPunctuationVars)
+        $ENV{DEBIAN_FRONTEND}             = 'noninteractive';
+        $ENV{DEBCONF_NONINTERACTIVE_SEEN} = 'true';
+        $ENV{LC_ALL}                      = 'C.UTF-8';
+        $ENV{LANGUAGE}                    = 'C.UTF-8';
+        $ENV{LANG}                        = 'C.UTF-8';
+    }
 
     # copy ARGV because getopt modifies it
     my @ARGVORIG = @ARGV;
@@ -2596,7 +2639,7 @@ sub main() {
         if ($pid == 0) {
             # with the FAKECHROOT_DETECT environment variable set, any program
             # execution will be replaced with the output "fakeroot [version]"
-            $ENV{FAKECHROOT_DETECT} = 0;
+            local $ENV{FAKECHROOT_DETECT} = 0;
             exec 'echo', 'If fakechroot is running, this will not be printed';
         }
         my $content = do { local $/; <$rfh> };
@@ -2752,8 +2795,9 @@ sub main() {
                 my $pid = open my $fh, '-|' // error "failed to fork(): $!";
                 if ($pid == 0) {
                     {
-                        no warnings
-                          ;    # don't print a warning if the following fails
+                        ## no critic (TestingAndDebugging::ProhibitNoWarnings)
+                        # don't print a warning if the following fails
+                        no warnings;
                         exec 'arch-test', $options->{nativearch};
                     }
                     # if exec didn't work (for example because the arch-test
@@ -2775,8 +2819,9 @@ sub main() {
                 my $pid = open my $fh, '-|' // error "failed to fork(): $!";
                 if ($pid == 0) {
                     {
-                        no warnings
-                          ;    # don't print a warning if the following fails
+                        ## no critic (TestingAndDebugging::ProhibitNoWarnings)
+                        # don't print a warning if the following fails
+                        no warnings;
                         exec 'arch-test', '-n', $options->{nativearch};
                     }
                     # if exec didn't work (for example because the arch-test
@@ -2807,7 +2852,7 @@ sub main() {
                 {
                     open my $fh, '<', '/proc/filesystems'
                       or error "failed to open /proc/filesystems: $!";
-                    unless (grep /^nodev\tbinfmt_misc$/, (<$fh>)) {
+                    unless (grep { /^nodev\tbinfmt_misc$/ } (<$fh>)) {
                         warning "binfmt_misc not found in /proc/filesystems --"
                           . " is the module loaded?";
                     }
@@ -2817,9 +2862,11 @@ sub main() {
                     open my $fh, '<', '/proc/mounts'
                       or error "failed to open /proc/mounts: $!";
                     unless (
-                        grep
-/^binfmt_misc \/proc\/sys\/fs\/binfmt_misc binfmt_misc/,
-                        (<$fh>)
+                        grep {
+                            /^binfmt_misc
+                            \/proc\/sys\/fs\/binfmt_misc
+                            binfmt_misc/x
+                        } (<$fh>)
                     ) {
                         warning "binfmt_misc not found in /proc/mounts -- not"
                           . " mounted?";
@@ -2890,7 +2937,7 @@ sub main() {
             # If no suite was specified, then the whole sources.list has to
             # come from standard input
             info "Reading sources.list from standard input...";
-            $sourceslist = do { local $/; <STDIN> };
+            $sourceslist = do { local $/; <> };
         } else {
             my @components = ();
             foreach my $comp (@{ $options->{components} }) {
@@ -3050,7 +3097,7 @@ sub main() {
                 for my $arg (@ARGV) {
                     if ($arg eq '-') {
                         info "Reading sources.list from standard input...";
-                        $sourceslist .= do { local $/; <STDIN> };
+                        $sourceslist .= do { local $/; <> };
                     } elsif ($arg =~ /^deb(-src)? /) {
                         $sourceslist .= "$arg\n";
                     } elsif ($arg =~ /:\/\//) {
@@ -3284,12 +3331,13 @@ sub main() {
 
         my $outer_gid = $REAL_GROUP_ID + 0;
 
-        my $pid = get_unshare_cmd { chown 1, 1, $options->{root} }
-        [
-            ['u', '0', $REAL_USER_ID, '1'],
-            ['g', '0', $outer_gid,    '1'],
-            ['u', '1', $idmap[0][2],  '1'],
-            ['g', '1', $idmap[1][2],  '1']];
+        my $pid = get_unshare_cmd(
+            sub { chown 1, 1, $options->{root} },
+            [
+                ['u', '0', $REAL_USER_ID, '1'],
+                ['g', '0', $outer_gid,    '1'],
+                ['u', '1', $idmap[0][2],  '1'],
+                ['g', '1', $idmap[1][2],  '1']]);
         waitpid $pid, 0;
         $? == 0 or error "chown failed";
     }
@@ -3297,10 +3345,12 @@ sub main() {
     # figure out whether we have mknod
     $options->{havemknod} = 0;
     if ($options->{mode} eq 'unshare') {
-        my $pid = get_unshare_cmd {
-            $options->{havemknod} = havemknod($options->{root});
-        }
-        \@idmap;
+        my $pid = get_unshare_cmd(
+            sub {
+                $options->{havemknod} = havemknod($options->{root});
+            },
+            \@idmap
+        );
         waitpid $pid, 0;
         $? == 0 or error "havemknod failed";
     } elsif (
@@ -3366,60 +3416,62 @@ sub main() {
       or error "socketpair failed: $!";
     $options->{hooksock} = $childsock;
     if ($options->{mode} eq 'unshare') {
-        $pid = get_unshare_cmd {
-            # child
-            $SIG{'INT'}  = 'DEFAULT';
-            $SIG{'HUP'}  = 'DEFAULT';
-            $SIG{'PIPE'} = 'DEFAULT';
-            $SIG{'TERM'} = 'DEFAULT';
+        $pid = get_unshare_cmd(
+            sub {
+                # child
+                local $SIG{'INT'}  = 'DEFAULT';
+                local $SIG{'HUP'}  = 'DEFAULT';
+                local $SIG{'PIPE'} = 'DEFAULT';
+                local $SIG{'TERM'} = 'DEFAULT';
 
-            # unblock all delayed signals (and possibly handle them)
-            POSIX::sigprocmask(SIG_UNBLOCK, $sigset)
-              or error "Can't unblock signals: $!";
+                # unblock all delayed signals (and possibly handle them)
+                POSIX::sigprocmask(SIG_UNBLOCK, $sigset)
+                  or error "Can't unblock signals: $!";
 
-            close $rfh;
-            close $parentsock;
-            open(STDOUT, '>&', STDERR) or error "cannot open STDOUT: $!";
+                close $rfh;
+                close $parentsock;
+                open(STDOUT, '>&', STDERR) or error "cannot open STDOUT: $!";
 
-            setup($options);
+                setup($options);
 
-            print $childsock (pack('n', 0) . 'adios');
-            $childsock->flush();
+                print $childsock (pack('n', 0) . 'adios');
+                $childsock->flush();
 
-            close $childsock;
+                close $childsock;
 
-            if ($options->{maketar} or $options->{makesqfs}) {
-                info "creating tarball...";
+                if ($options->{maketar} or $options->{makesqfs}) {
+                    info "creating tarball...";
 
-                # redirect tar output to the writing end of the pipe so that
-                # the parent process can capture the output
-                open(STDOUT, '>&', $wfh) or error "cannot open STDOUT: $!";
+                    # redirect tar output to the writing end of the pipe so
+                    # that the parent process can capture the output
+                    open(STDOUT, '>&', $wfh) or error "cannot open STDOUT: $!";
 
-                # Add ./dev as the first entries of the tar file.
-                # We cannot add them after calling tar, because there is no way
-                # to prevent tar from writing NULL entries at the end.
-                print $devtar;
+                    # Add ./dev as the first entries of the tar file.
+                    # We cannot add them after calling tar, because there is no
+                    # way to prevent tar from writing NULL entries at the end.
+                    print $devtar;
 
-                # pack everything except ./dev
-                0 == system('tar', @taropts, '-C', $options->{root}, '.')
-                  or error "tar failed: $?";
+                    # pack everything except ./dev
+                    0 == system('tar', @taropts, '-C', $options->{root}, '.')
+                      or error "tar failed: $?";
 
-                info "done";
-            }
+                    info "done";
+                }
 
-            exit 0;
-        }
-        \@idmap;
+                exit 0;
+            },
+            \@idmap
+        );
     } elsif (
         any { $_ eq $options->{mode} }
         ('root', 'fakechroot', 'proot', 'chrootless')
     ) {
         $pid = fork() // error "fork() failed: $!";
         if ($pid == 0) {
-            $SIG{'INT'}  = 'DEFAULT';
-            $SIG{'HUP'}  = 'DEFAULT';
-            $SIG{'PIPE'} = 'DEFAULT';
-            $SIG{'TERM'} = 'DEFAULT';
+            local $SIG{'INT'}  = 'DEFAULT';
+            local $SIG{'HUP'}  = 'DEFAULT';
+            local $SIG{'PIPE'} = 'DEFAULT';
+            local $SIG{'TERM'} = 'DEFAULT';
 
             # unblock all delayed signals (and possibly handle them)
             POSIX::sigprocmask(SIG_UNBLOCK, $sigset)
@@ -3503,10 +3555,10 @@ sub main() {
         info "main() received signal $got_signal: waiting for $waiting_for...";
     };
 
-    $SIG{'INT'}  = $ignore;
-    $SIG{'HUP'}  = $ignore;
-    $SIG{'PIPE'} = $ignore;
-    $SIG{'TERM'} = $ignore;
+    local $SIG{'INT'}  = $ignore;
+    local $SIG{'HUP'}  = $ignore;
+    local $SIG{'PIPE'} = $ignore;
+    local $SIG{'TERM'} = $ignore;
 
     # unblock all delayed signals (and possibly handle them)
     POSIX::sigprocmask(SIG_UNBLOCK, $sigset)
@@ -3880,10 +3932,10 @@ sub main() {
                     my $cpid = fork() // error "fork() failed: $!";
                     if ($cpid == 0) {
                         # child: default signal handlers
-                        $SIG{'INT'}  = 'DEFAULT';
-                        $SIG{'HUP'}  = 'DEFAULT';
-                        $SIG{'PIPE'} = 'DEFAULT';
-                        $SIG{'TERM'} = 'DEFAULT';
+                        local $SIG{'INT'}  = 'DEFAULT';
+                        local $SIG{'HUP'}  = 'DEFAULT';
+                        local $SIG{'PIPE'} = 'DEFAULT';
+                        local $SIG{'TERM'} = 'DEFAULT';
 
                         # unblock all delayed signals (and possibly handle
                         # them)
@@ -3900,7 +3952,7 @@ sub main() {
                         }
                         open(STDIN, '<&', $rfh)
                           or error "cannot open file handle for reading: $!";
-                        eval 'Devel::Cover::set_coverage("none")'
+                        eval { Devel::Cover::set_coverage("none") }
                           if $is_covering;
                         exec { $argv[0] } @argv
                           or
@@ -3943,27 +3995,29 @@ sub main() {
             # the unshared namespace, so we remove it here.
             # Since this is still inside the unshared namespace, there is
             # no risk of removing anything important.
-            $pid = get_unshare_cmd {
-                # File::Path will produce the error "cannot stat initial
-                # working directory" if the working directory cannot be
-                # accessed by the unprivileged unshared user. Thus, we first
-                # navigate to the parent of the root directory.
-                chdir "$options->{root}/.."
-                  or error "unable to chdir() to parent directory of"
-                  . " $options->{root}: $!";
-                remove_tree($options->{root}, { error => \my $err });
-                if (@$err) {
-                    for my $diag (@$err) {
-                        my ($file, $message) = %$diag;
-                        if ($file eq '') {
-                            warning "general error: $message";
-                        } else {
-                            warning "problem unlinking $file: $message";
+            $pid = get_unshare_cmd(
+                sub {
+                    # File::Path will produce the error "cannot stat initial
+                    # working directory" if the working directory cannot be
+                    # accessed by the unprivileged unshared user. Thus, we
+                    # first navigate to the parent of the root directory.
+                    chdir "$options->{root}/.."
+                      or error "unable to chdir() to parent directory of"
+                      . " $options->{root}: $!";
+                    remove_tree($options->{root}, { error => \my $err });
+                    if (@$err) {
+                        for my $diag (@$err) {
+                            my ($file, $message) = %$diag;
+                            if ($file eq '') {
+                                warning "general error: $message";
+                            } else {
+                                warning "problem unlinking $file: $message";
+                            }
                         }
                     }
-                }
-            }
-            \@idmap;
+                },
+                \@idmap
+            );
             waitpid $pid, 0;
             $? == 0 or error "remove_tree failed";
         } elsif (

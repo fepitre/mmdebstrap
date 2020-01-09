@@ -12,6 +12,13 @@ if [ "$ret" -ne 0 ]; then
 fi
 rm mmdebstrap.tdy
 
+if [ $(wc -L < mmdebstrap) -gt 79 ]; then
+	echo "exceeded maximum line length of 79 characters" >&2
+	exit 1
+fi
+
+perlcritic --severity 4 --verbose 8 mmdebstrap
+
 mirrordir="./shared/cache/debian"
 
 if [ ! -e "$mirrordir" ]; then
