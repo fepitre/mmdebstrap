@@ -1710,11 +1710,16 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C.UTF-8
 $CMD --mode=root --variant=apt --logfile=log $DEFAULT_DIST /tmp/debian-chroot $mirror
-grep --quiet "I: running apt-get update..." log
-grep --quiet "I: downloading packages with apt..." log
-grep --quiet "I: extracting archives..." log
-grep --quiet "I: installing packages..." log
-grep --quiet "I: cleaning package lists and apt cache..." log
+# we check the full log to also prevent debug printfs to accidentally make it into a commit
+cat << LOG | diff - log
+I: chroot architecture amd64 is equal to the host's architecture
+I: gpg --version failed: cannot determine the right signed-by value
+I: running apt-get update...
+I: downloading packages with apt...
+I: extracting archives...
+I: installing packages...
+I: cleaning package lists and apt cache...
+LOG
 tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
 rm -r /tmp/debian-chroot
 rm log
