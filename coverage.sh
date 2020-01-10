@@ -66,7 +66,7 @@ if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
 fi
 
 starttime=
-total=115
+total=136
 skipped=0
 runtests=0
 i=1
@@ -1792,10 +1792,103 @@ else
 	runtests=$((runtests+1))
 fi
 
+print_header "mode=$defaultmode,variant=apt: create directory --dry-run"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+$CMD --mode=$defaultmode --dry-run --variant=apt --setup-hook="exit 1" --essential-hook="exit 1" --customize-hook="exit 1" $DEFAULT_DIST /tmp/debian-chroot $mirror
+rm /tmp/debian-chroot/dev/console
+rm /tmp/debian-chroot/dev/fd
+rm /tmp/debian-chroot/dev/full
+rm /tmp/debian-chroot/dev/null
+rm /tmp/debian-chroot/dev/ptmx
+rm /tmp/debian-chroot/dev/random
+rm /tmp/debian-chroot/dev/stderr
+rm /tmp/debian-chroot/dev/stdin
+rm /tmp/debian-chroot/dev/stdout
+rm /tmp/debian-chroot/dev/tty
+rm /tmp/debian-chroot/dev/urandom
+rm /tmp/debian-chroot/dev/zero
+rm /tmp/debian-chroot/etc/apt/sources.list
+rm /tmp/debian-chroot/etc/fstab
+rm /tmp/debian-chroot/etc/hostname
+rm /tmp/debian-chroot/etc/resolv.conf
+rm /tmp/debian-chroot/var/lib/apt/lists/lock
+rm /tmp/debian-chroot/var/lib/dpkg/available
+rm /tmp/debian-chroot/var/lib/dpkg/cmethopt
+rm /tmp/debian-chroot/var/lib/dpkg/status
+# the rest should be empty directories that we can rmdir recursively
+find /tmp/debian-chroot -depth -print0 | xargs -0 rmdir
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+	runtests=$((runtests+1))
+elif [ "$defaultmode" = "root" ]; then
+	./run_null.sh SUDO
+	runtests=$((runtests+1))
+else
+	./run_null.sh
+	runtests=$((runtests+1))
+fi
+
+# test all --dry-run variants
+
+for variant in extract custom essential apt; do
+	for mode in root unshare fakechroot proot chrootless; do
+		print_header "mode=$mode,variant=$variant: create tarball --dry-run"
+		if [ "$mode" = "unshare" ] && [ "$HAVE_UNSHARE" != "yes" ]; then
+			echo "HAVE_UNSHARE != yes -- Skipping test..." >&2
+			skipped=$((skipped+1))
+			continue
+		fi
+		if [ "$mode" = "proot" ] && [ "$HAVE_PROOT" != "yes" ]; then
+			echo "HAVE_PROOT != yes -- Skipping test..." >&2
+			skipped=$((skipped+1))
+			continue
+		fi
+		cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+prefix=
+include=
+if [ "\$(id -u)" -eq 0 ] && [ "$mode" != root ]; then
+	# this must be qemu
+	if ! id -u user >/dev/null 2>&1; then
+		adduser --gecos user --disabled-password user
+	fi
+	if [ "$mode" = unshare ]; then
+		sysctl -w kernel.unprivileged_userns_clone=1
+	fi
+	prefix="runuser -u user --"
+	if [ "$mode" = extract ] || [ "$mode" = custom ]; then
+		include="--include=\$(cat pkglist.txt | tr '\n' ',')"
+	fi
+fi
+\$prefix $CMD --mode=$mode \$include --dry-run --variant=$variant $DEFAULT_DIST /tmp/debian-chroot.tar $mirror
+if [ -e /tmp/debian-chroot.tar ]; then
+	echo "/tmp/debian-chroot.tar must not be created with --dry-run" >&2
+	exit 1
+fi
+END
+		if [ "$HAVE_QEMU" = "yes" ]; then
+			./run_qemu.sh
+			runtests=$((runtests+1))
+		elif [ "$mode" = "root" ]; then
+			./run_null.sh SUDO
+			runtests=$((runtests+1))
+		else
+			./run_null.sh
+			runtests=$((runtests+1))
+		fi
+	done
+done
+
 # test all variants
 
 for variant in essential apt required minbase buildd important debootstrap - standard; do
-	print_header "mode=root,variant=$variant: create directory"
+	print_header "mode=root,variant=$variant: create tarball"
 	cat << END > shared/test.sh
 #!/bin/sh
 set -eu

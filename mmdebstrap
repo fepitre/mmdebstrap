@@ -1071,6 +1071,11 @@ sub run_hooks {
         return;
     }
 
+    if ($options->{dryrun}) {
+        info "not running ${name}-hooks because of --dry-run";
+        return;
+    }
+
     my $runner = sub {
         foreach my $script (@{ $options->{"${name}_hook"} }) {
             if ($script
@@ -1520,11 +1525,18 @@ sub setup {
     # (essential variant) then we have to compute the package set ourselves.
     # Same if we want to install priority based variants.
     if (any { $_ eq $options->{variant} } ('extract', 'custom')) {
-        info "downloading packages with apt...";
+        if ($options->{dryrun}) {
+            info "simulate downloading packages with apt...";
+        } else {
+            info "downloading packages with apt...";
+        }
         run_apt_progress({
                 ARGV => [
-                    'apt-get',                        '--yes',
-                    '-oApt::Get::Download-Only=true', 'install'
+                    'apt-get',
+                    '--yes',
+                    '-oApt::Get::Download-Only=true',
+                    $options->{dryrun} ? '-oAPT::Get::Simulate=true' : (),
+                    'install'
                 ],
                 PKGS => [@pkgs_to_install],
             });
@@ -1542,11 +1554,18 @@ sub setup {
         #                  remind me in 5+ years that I said that after I wrote
         #                  in the bugreport: "Are you crazy?!? Nobody in his
         #                  right mind would even suggest depending on it!")
-        info "downloading packages with apt...";
+        if ($options->{dryrun}) {
+            info "simulate downloading packages with apt...";
+        } else {
+            info "downloading packages with apt...";
+        }
         run_apt_progress({
                 ARGV => [
-                    'apt-get',                        '--yes',
-                    '-oApt::Get::Download-Only=true', 'dist-upgrade'
+                    'apt-get',
+                    '--yes',
+                    '-oApt::Get::Download-Only=true',
+                    $options->{dryrun} ? '-oAPT::Get::Simulate=true' : (),
+                    'dist-upgrade'
                 ],
             });
     } elsif (
@@ -1648,11 +1667,18 @@ sub setup {
             debug "   $pkg";
         }
 
-        info "downloading packages with apt...";
+        if ($options->{dryrun}) {
+            info "simulate downloading packages with apt...";
+        } else {
+            info "downloading packages with apt...";
+        }
         run_apt_progress({
                 ARGV => [
-                    'apt-get',                        '--yes',
-                    '-oApt::Get::Download-Only=true', 'install'
+                    'apt-get',
+                    '--yes',
+                    '-oApt::Get::Download-Only=true',
+                    $options->{dryrun} ? '-oAPT::Get::Simulate=true' : (),
+                    'install'
                 ],
                 PKGS => [keys %ess_pkgs],
             });
@@ -1660,9 +1686,9 @@ sub setup {
         error "unknown variant: $options->{variant}";
     }
 
-    # extract the downloaded packages
+    # collect the .deb files that were downloaded by apt
     my @essential_pkgs;
-    {
+    if (!$options->{dryrun}) {
         my $apt_archives = "/var/cache/apt/archives/";
         opendir my $dh, "$options->{root}/$apt_archives"
           or error "cannot read $apt_archives";
@@ -1677,20 +1703,20 @@ sub setup {
             push @essential_pkgs, $deb;
         }
         close $dh;
-    }
 
-    if (scalar @essential_pkgs == 0) {
-        # check if a file:// URI was used
-        open(my $pipe_apt, '-|', 'apt-get', 'indextargets', '--format',
-            '$(URI)', 'Created-By: Packages')
-          or error "cannot start apt-get indextargets: $!";
-        while (my $uri = <$pipe_apt>) {
-            if ($uri =~ /^file:\/\//) {
-                error
-                  "nothing got downloaded -- use copy:// instead of file://";
+        if (scalar @essential_pkgs == 0) {
+            # check if a file:// URI was used
+            open(my $pipe_apt, '-|', 'apt-get', 'indextargets', '--format',
+                '$(URI)', 'Created-By: Packages')
+              or error "cannot start apt-get indextargets: $!";
+            while (my $uri = <$pipe_apt>) {
+                if ($uri =~ /^file:\/\//) {
+                    error "nothing got downloaded -- use copy:// instead of"
+                      . " file://";
+                }
             }
+            error "nothing got downloaded";
         }
-        error "nothing got downloaded";
     }
 
     # We have to extract the packages from @essential_pkgs either if we run in
@@ -1700,6 +1726,8 @@ sub setup {
     if (    $options->{mode} eq 'chrootless'
         and $options->{variant} ne 'extract') {
         # nothing to do
+    } elsif ($options->{dryrun}) {
+        info "skip extracting packages because of --dry-run";
     } else {
         info "extracting archives...";
         print_progress 0.0;
@@ -1736,7 +1764,11 @@ sub setup {
     }
 
     if ($options->{mode} eq 'chrootless') {
-        info "installing packages...";
+        if ($options->{dryrun}) {
+            info "simulate installing packages...";
+        } else {
+            info "installing packages...";
+        }
         # FIXME: the dpkg config from the host is parsed before the command
         # line arguments are parsed and might break this mode
         # Example: if the host has --path-exclude set, then this will also
@@ -1745,7 +1777,8 @@ sub setup {
             '-oDPkg::Options::=--force-not-root',
             '-oDPkg::Options::=--force-script-chrootless',
             '-oDPkg::Options::=--root=' . $options->{root},
-            '-oDPkg::Options::=--log=' . "$options->{root}/var/log/dpkg.log"
+            '-oDPkg::Options::=--log=' . "$options->{root}/var/log/dpkg.log",
+            $options->{dryrun} ? '-oAPT::Get::Simulate=true' : (),
         );
         if (defined $options->{qemu}) {
             # The binfmt support on the outside is used, so qemu needs to know
@@ -2002,24 +2035,29 @@ sub setup {
             # we need --force-depends because dpkg does not take Pre-Depends
             # into account and thus doesn't install them in the right order
             # And the --predep-package option is broken: #539133
-            info "installing packages...";
-            run_chroot(
-                sub {
-                    run_dpkg_progress({
-                            ARGV => [
-                                @chrootcmd,       'env',
-                                '--unset=TMPDIR', 'dpkg',
-                                '--install',      '--force-depends'
-                            ],
-                            PKGS => \@essential_pkgs,
-                        });
-                },
-                $options
-            );
+            if ($options->{dryrun}) {
+                info "simulate installing packages...";
+            } else {
+                info "installing packages...";
+                run_chroot(
+                    sub {
+                        run_dpkg_progress({
+                                ARGV => [
+                                    @chrootcmd,       'env',
+                                    '--unset=TMPDIR', 'dpkg',
+                                    '--install',      '--force-depends'
+                                ],
+                                PKGS => \@essential_pkgs,
+                            });
+                    },
+                    $options
+                );
+            }
 
             # if the path-excluded option was added to the dpkg config,
             # reinstall all packages
-            if (-e "$options->{root}/etc/dpkg/dpkg.cfg.d/99mmdebstrap") {
+            if ((!$options->{dryrun})
+                and -e "$options->{root}/etc/dpkg/dpkg.cfg.d/99mmdebstrap") {
                 open(my $fh, '<',
                     "$options->{root}/etc/dpkg/dpkg.cfg.d/99mmdebstrap")
                   or error "cannot open /etc/dpkg/dpkg.cfg.d/99mmdebstrap: $!";
@@ -2096,71 +2134,102 @@ sub setup {
                 $? == 0 or error "apt-get indextargets failed";
 
                 if (scalar @pkgs_to_install_from_outside > 0) {
-                    info 'downloading '
-                      . (join ', ', @pkgs_to_install_from_outside) . "...";
+                    if ($options->{dryrun}) {
+                        info 'simulate downloading '
+                          . (join ', ', @pkgs_to_install_from_outside) . "...";
+                    } else {
+                        info 'downloading '
+                          . (join ', ', @pkgs_to_install_from_outside) . "...";
+                    }
                     run_apt_progress({
                             ARGV => [
-                                'apt-get',                        '--yes',
-                                '-oApt::Get::Download-Only=true', 'install'
+                                'apt-get',
+                                '--yes',
+                                '-oApt::Get::Download-Only=true',
+                                $options->{dryrun}
+                                ? '-oAPT::Get::Simulate=true'
+                                : (),
+                                'install'
                             ],
                             PKGS => [@pkgs_to_install_from_outside],
                         });
-                    my @debs_to_install;
-                    my $apt_archives = "/var/cache/apt/archives/";
-                    opendir my $dh, "$options->{root}/$apt_archives"
-                      or error "cannot read $apt_archives";
-                    while (my $deb = readdir $dh) {
-                        if ($deb !~ /\.deb$/) {
-                            next;
-                        }
-                        $deb = "$apt_archives/$deb";
-                        if (!-f "$options->{root}/$deb") {
-                            next;
-                        }
-                        push @debs_to_install, $deb;
-                    }
-                    close $dh;
-                    if (scalar @debs_to_install == 0) {
-                        warning "nothing got downloaded -- maybe the packages"
-                          . " were already installed?";
-                    } else {
-                        # we need --force-depends because dpkg does not take
-                        # Pre-Depends into account and thus doesn't install
-                        # them in the right order
-                        info 'installing '
+                    if ($options->{dryrun}) {
+                        info 'simulate installing '
                           . (join ', ', @pkgs_to_install_from_outside) . "...";
-                        run_dpkg_progress({
-                                ARGV => [
-                                    @chrootcmd,       'env',
-                                    '--unset=TMPDIR', 'dpkg',
-                                    '--install',      '--force-depends'
-                                ],
-                                PKGS => \@debs_to_install,
-                            });
-                        foreach my $deb (@debs_to_install) {
-                            unlink "$options->{root}/$deb"
-                              or error "cannot unlink $deb: $!";
+                    } else {
+                        my @debs_to_install;
+                        my $apt_archives = "/var/cache/apt/archives/";
+                        opendir my $dh, "$options->{root}/$apt_archives"
+                          or error "cannot read $apt_archives";
+                        while (my $deb = readdir $dh) {
+                            if ($deb !~ /\.deb$/) {
+                                next;
+                            }
+                            $deb = "$apt_archives/$deb";
+                            if (!-f "$options->{root}/$deb") {
+                                next;
+                            }
+                            push @debs_to_install, $deb;
+                        }
+                        close $dh;
+                        if (scalar @debs_to_install == 0) {
+                            warning
+                              "nothing got downloaded -- maybe the packages"
+                              . " were already installed?";
+                        } else {
+                           # we need --force-depends because dpkg does not take
+                           # Pre-Depends into account and thus doesn't install
+                           # them in the right order
+                            info 'installing '
+                              . (join ', ', @pkgs_to_install_from_outside)
+                              . "...";
+                            run_dpkg_progress({
+                                    ARGV => [
+                                        @chrootcmd,       'env',
+                                        '--unset=TMPDIR', 'dpkg',
+                                        '--install',      '--force-depends'
+                                    ],
+                                    PKGS => \@debs_to_install,
+                                });
+                            foreach my $deb (@debs_to_install) {
+                                unlink "$options->{root}/$deb"
+                                  or error "cannot unlink $deb: $!";
+                            }
                         }
                     }
                 }
 
-                run_chroot(
-                    sub {
-                        info
-                          "installing remaining packages inside the chroot...";
-                        run_apt_progress({
-                                ARGV => [
-                                    @chrootcmd,           'env',
-                                    '--unset=APT_CONFIG', '--unset=TMPDIR',
-                                    'apt-get',            '--yes',
-                                    'install'
-                                ],
-                                PKGS => [@pkgs_to_install],
-                            });
-                    },
-                    $options
-                );
-
+                if (!$options->{dryrun}) {
+                    run_chroot(
+                        sub {
+                            info "installing remaining packages inside the"
+                              . " chroot...";
+                            run_apt_progress({
+                                    ARGV => [
+                                        @chrootcmd,
+                                        'env',
+                                        '--unset=APT_CONFIG',
+                                        '--unset=TMPDIR',
+                                        'apt-get',
+                                        '--yes',
+                                        'install'
+                                    ],
+                                    PKGS => [@pkgs_to_install],
+                                });
+                        },
+                        $options
+                    );
+                } else {
+                    info "simulate installing remaining packages inside the"
+                      . " chroot...";
+                    run_apt_progress({
+                            ARGV => [
+                                'apt-get',                   '--yes',
+                                '-oAPT::Get::Simulate=true', 'install'
+                            ],
+                            PKGS => [@pkgs_to_install],
+                        });
+                }
             }
         } else {
             error "unknown variant: $options->{variant}";
@@ -2536,6 +2605,7 @@ sub main() {
         setup_hook      => [],
         essential_hook  => [],
         customize_hook  => [],
+        dryrun          => 0,
     };
     my $logfile = undef;
     Getopt::Long::Configure('default', 'bundling', 'auto_abbrev',
@@ -2589,6 +2659,8 @@ sub main() {
         'setup-hook=s@'     => \$options->{setup_hook},
         'essential-hook=s@' => \$options->{essential_hook},
         'customize-hook=s@' => \$options->{customize_hook},
+        'simulate'          => \$options->{dryrun},
+        'dry-run'           => \$options->{dryrun},
     ) or pod2usage(-exitval => 2, -verbose => 1);
 
     if (defined($logfile)) {
@@ -2598,6 +2670,14 @@ sub main() {
     foreach my $arg (@{ $options->{noop} }) {
         info "The option --$arg is a no-op. It only exists for compatibility"
           . " with some debootstrap wrappers.";
+    }
+
+    if ($options->{dryrun}) {
+        foreach my $hook ('setup', 'essential', 'customize') {
+            if (scalar @{ $options->{"${hook}_hook"} } > 0) {
+                warning "In dry-run mode, --$hook-hook options have no effect";
+            }
+        }
     }
 
     my @valid_variants = (
@@ -3249,9 +3329,16 @@ sub main() {
         # try to fail early if target tarball or squashfs image cannot be
         # opened for writing
         if ($options->{target} ne '-') {
-            open my $fh, '>', $options->{target}
-              or error "cannot open $options->{target} for writing: $!";
-            close $fh;
+            if ($options->{dryrun}) {
+                if (-e $options->{target}) {
+                    info "not overwriting $options->{target} because in"
+                      . " dry-run mode";
+                }
+            } else {
+                open my $fh, '>', $options->{target}
+                  or error "cannot open $options->{target} for writing: $!";
+                close $fh;
+            }
         }
         # since the output is a tarball, we create the rootfs in a temporary
         # directory
@@ -3493,7 +3580,9 @@ sub main() {
 
             close $childsock;
 
-            if ($options->{maketar} or $options->{makesqfs}) {
+            if ($options->{dryrun}) {
+                info "simulate creating tarball...";
+            } elsif ($options->{maketar} or $options->{makesqfs}) {
                 info "creating tarball...";
 
                 # redirect tar output to the writing end of the pipe so that
@@ -3914,7 +4003,9 @@ sub main() {
 
     close $parentsock;
 
-    if ($options->{maketar} or $options->{makesqfs}) {
+    if ($options->{dryrun}) {
+        # nothing to do
+    } elsif ($options->{maketar} or $options->{makesqfs}) {
         # we use eval() so that error() doesn't take this process down and
         # thus leaves the setup() process without a parent
         eval {
@@ -3927,7 +4018,8 @@ sub main() {
                     my @argv = ();
                     if ($options->{makesqfs}) {
                         push @argv, 'tar2sqfs',
-                          '--quiet', '--no-skip', '--force', '--exportable',
+                          '--quiet', '--no-skip', '--force',
+                          '--exportable',
                           '--compressor', 'xz',
                           '--block-size', '1048576',
                           $options->{target};
@@ -4299,7 +4391,19 @@ equivalent:
     --architectures=amd64,armhf,mipsel
     --arch=amd64 --arch="armhf mipsel" --arch=armhf,mipsel
 
+=item B<--simulate>, B<--dry-run>
+
+Run apt-get with B<--simulate>. Only the package cache is initialized but no
+binary packages are downloaded or installed. Use this option to quickly check
+whether a package selection within a certain suite and variant can in principle
+be installed as far as their dependencies go. If the output is a tarball, then
+no output is produced. If the output is a directory, then the directory will be
+left populated with the skeleton files and directories necessary for apt to run
+in it.
+
 =begin comment
+
+No hooks are executed in with B<--simulate> or B<--dry-run>.
 
 =item B<--setup-hook>=I<command>
 
