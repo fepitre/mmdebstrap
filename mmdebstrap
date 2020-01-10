@@ -4255,8 +4255,9 @@ B<required>. See the section B<VARIANTS> for more information.
 
 Choose how to perform the chroot operation and create a filesystem with
 ownership information different from the current user. Valid mode I<name>s are
-B<auto>, B<sudo>, B<root>, B<unshare>, B<fakeroot>, B<fakechroot> and B<proot>.
-The default mode is B<auto>. See the section B<MODES> for more information.
+B<auto>, B<sudo>, B<root>, B<unshare>, B<fakeroot>, B<fakechroot>, B<proot> and
+B<chrootless>.  The default mode is B<auto>. See the section B<MODES> for more
+information.
 
 =item B<--aptopt>=I<option>|I<file>
 
