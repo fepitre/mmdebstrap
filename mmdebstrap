@@ -966,8 +966,11 @@ sub run_chroot {
             push @cleanup_tasks, sub {
                 # some maintainer scripts mount additional stuff into /proc
                 # which we need to unmount beforehand
-                if (is_mountpoint("$options->{root}/proc/sys/fs/binfmt_misc"))
-                {
+                if (
+                    is_mountpoint(
+                        $options->{root} . "/proc/sys/fs/binfmt_misc"
+                    )
+                ) {
                     0 == system('umount',
                         "$options->{root}/proc/sys/fs/binfmt_misc")
                       or error "umount /proc/sys/fs/binfmt_misc failed: $?";
@@ -1694,8 +1697,8 @@ sub setup {
     # chrootless mode and extract variant or in any other mode.
     # In other words, the only scenario in which the @essential_pkgs are not
     # extracted are in chrootless mode in any other than the extract variant.
-    if ($options->{mode} eq 'chrootless' and $options->{variant} ne 'extract')
-    {
+    if (    $options->{mode} eq 'chrootless'
+        and $options->{variant} ne 'extract') {
         # nothing to do
     } else {
         info "extracting archives...";
@@ -1804,15 +1807,14 @@ sub setup {
                 # /etc/fakechroot/chroot.env
                 {
                     my @fakechrootsubst = ();
-                    foreach my $dir ('/usr/sbin', '/usr/bin', '/sbin', '/bin')
-                    {
+                    foreach my $d ('/usr/sbin', '/usr/bin', '/sbin', '/bin') {
                         push @fakechrootsubst,
-                          "$dir/chroot=/usr/sbin/chroot.fakechroot";
-                        push @fakechrootsubst, "$dir/mkfifo=/bin/true";
-                        push @fakechrootsubst, "$dir/ldconfig=/bin/true";
+                          "$d/chroot=/usr/sbin/chroot.fakechroot";
+                        push @fakechrootsubst, "$d/mkfifo=/bin/true";
+                        push @fakechrootsubst, "$d/ldconfig=/bin/true";
                         push @fakechrootsubst,
-                          "$dir/ldd=/usr/bin/ldd.fakechroot";
-                        push @fakechrootsubst, "$dir/ischroot=/bin/true";
+                          "$d/ldd=/usr/bin/ldd.fakechroot";
+                        push @fakechrootsubst, "$d/ischroot=/bin/true";
                     }
                     if (defined $ENV{FAKECHROOT_CMD_SUBST}
                         && $ENV{FAKECHROOT_CMD_SUBST} ne "") {
@@ -3127,8 +3129,10 @@ sub main() {
                 my $mirror    = 'http://deb.debian.org/debian';
                 my $secmirror = 'http://security.debian.org/debian-security';
                 if (any { $_ eq $suite } @ubuntustable) {
-                    if (any { $_ eq $options->{nativearch} } ('amd64', 'i386'))
-                    {
+                    if (
+                        any { $_ eq $options->{nativearch} }
+                        ('amd64', 'i386')
+                    ) {
                         $mirror    = 'http://archive.ubuntu.com/ubuntu';
                         $secmirror = 'http://security.ubuntu.com/ubuntu';
                     } else {
@@ -3324,8 +3328,9 @@ sub main() {
     if ($options->{mode} eq 'unshare') {
         @idmap = read_subuid_subgid;
         # sanity check
-        if (scalar(@idmap) != 2 || $idmap[0][0] ne 'u' || $idmap[1][0] ne 'g')
-        {
+        if (   scalar(@idmap) != 2
+            || $idmap[0][0] ne 'u'
+            || $idmap[1][0] ne 'g') {
             error "invalid idmap";
         }
 
@@ -3519,8 +3524,10 @@ sub main() {
                         "--rootfs=$options->{root}", '--cwd=/', @qemuopt,
                         'tar', @taropts, '-C', '/', '.')
                       or error "tar failed: $?";
-                } elsif (any { $_ eq $options->{mode} } ('root', 'chrootless'))
-                {
+                } elsif (
+                    any { $_ eq $options->{mode} }
+                    ('root', 'chrootless')
+                ) {
                     # If the chroot directory is not owned by the root user,
                     # then we assume that no measure was taken to fake root
                     # permissions. Since the final tarball should contain
@@ -3987,8 +3994,8 @@ sub main() {
     # change signal handler message
     $waiting_for = "cleanup";
 
-    if (($options->{maketar} or $options->{makesqfs}) and -e $options->{root})
-    {
+    if (($options->{maketar} or $options->{makesqfs})
+        and -e $options->{root}) {
         info "removing tempdir $options->{root}...";
         if ($options->{mode} eq 'unshare') {
             # We don't have permissions to remove the directory outside
