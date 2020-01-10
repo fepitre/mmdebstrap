@@ -274,7 +274,9 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-$CMD --help | grep --quiet --fixed-strings 'mmdebstrap [OPTION...] [SUITE [TARGET [MIRROR...]]]'
+# we redirect to /dev/null instead of using --quiet to not cause a broken pipe
+# when grep exits before mmdebstrap was able to write all its output
+$CMD --help | grep --fixed-strings 'mmdebstrap [OPTION...] [SUITE [TARGET [MIRROR...]]]' >/dev/null
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -307,7 +309,9 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-$CMD --version | egrep --quiet '^mmdebstrap [0-9](\.[0-9])+$'
+# we redirect to /dev/null instead of using --quiet to not cause a broken pipe
+# when grep exits before mmdebstrap was able to write all its output
+$CMD --version | egrep '^mmdebstrap [0-9](\.[0-9])+$' >/dev/null
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -2311,7 +2315,7 @@ chroot /tmp/debian-chroot echo foobar \
 	| chroot /tmp/debian-chroot cat \
 	| chroot /tmp/debian-chroot sort \
 	| chroot /tmp/debian-chroot sed 's/foobar/blubber/' \
-	| chroot /tmp/debian-chroot grep blubber
+	| chroot /tmp/debian-chroot grep blubber >/dev/null
 rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
