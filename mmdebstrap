@@ -4550,10 +4550,14 @@ C<kernel.unprivileged_userns_clone> being set to C<1>.
 =item B<fakeroot>, B<fakechroot>
 
 This mode will exec B<mmdebstrap> again under C<fakechroot fakeroot>. A
-directory chroot created with this mode will end up with wrong permissions.
-Choose to create a tarball instead. This mode will not work if maintainer
-scripts are unable to handle C<LD_PRELOAD> correctly like the package
-B<initramfs-tools> until version 0.132.
+directory chroot created with this mode will end up with wrong permissions. If
+you need a directory then run B<mmdebstrap> under C<fakechroot fakeroot -s
+fakeroot.env> and use C<fakeroot.env> later when entering the chroot with
+C<fakechroot fakeroot -i fakeroot.env chroot ...>. This mode will not work if
+maintainer scripts are unable to handle C<LD_PRELOAD> correctly like the
+package B<initramfs-tools> until version 0.132. This mode will also not work
+with a different libc inside the chroot than on the outside. See the section
+B<LIMITATIONS> in B<fakechroot(1)>.
 
 =item B<proot>
 
@@ -4567,11 +4571,11 @@ useful if you plan to use the chroot with proot.
 =item B<chrootless>
 
 Uses the dpkg option C<--force-script-chrootless> to install packages into
-B<TARGET> without dpkg and apt inside B<target> but using apt and dpkg from
+B<TARGET> without dpkg and apt inside B<TARGET> but using apt and dpkg from
 the machine running B<mmdebstrap>. Maintainer scripts are run without chrooting
 into B<TARGET> and rely on their dependencies being installed on the machine
 running B<mmdebstrap>. Unless B<mmdebstrap> was run inside fakeroot, the
-directory created will be owned by the user running mmdebstrap.
+B<TARGET> directory will be owned by the user running mmdebstrap.
 
 =for TODO
 =item B<qemu>
@@ -4748,6 +4752,10 @@ Instead of a tarball, a squashfs image can be created:
 
     $ mmdebstrap unstable unstable-chroot.squashfs
 
+By default, B<mmdebstrap> runs B<tar2sqfs> with C<--no-skip --exportable
+--compressor xz --block-size 1048576>. To choose a different set of options,
+pipe the output of B<mmdebstrap> into B<tar2sqfs> manually.
+
 By default, debootstrapping a stable distribution will add mirrors for security
 and updates to the sources.list.
 
@@ -4889,9 +4897,13 @@ extension to compressor applies:
  .tlz      lzma
  .lzo      lzop
  .lz4      lz4
- .xz       xz
- .txz      xz
+ .xz       xz --threads=0
+ .txz      xz --threads=0
  .zst      zstd
+
+To change compression specific options, either use the respecitve environment
+variables like B<XZ_OPT> or send mmdebstrap output to your compressor of choice
+with a pipe.
 
 =head1 BUGS
 
