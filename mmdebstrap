@@ -1078,8 +1078,14 @@ sub run_hooks {
 
     my $runner = sub {
         foreach my $script (@{ $options->{"${name}_hook"} }) {
-            if ($script
-                =~ /^(copy-in|copy-out|tar-in|tar-out|upload|download) /) {
+            if (
+                $script =~ /^(
+                copy-in|copy-out
+                |tar-in|tar-out
+                |upload|download
+                |sync-in|sync-out
+                )\ /x
+            ) {
                 info "running special hook: $script";
                 if (
                     any { $_ eq $options->{variant} } ('extract', 'custom')
@@ -2374,7 +2380,10 @@ sub main() {
             error "unknown hook: $hook";
         }
 
-        if (any { $_ eq $command } ('copy-in', 'tar-in', 'upload')) {
+        if (
+            any { $_ eq $command }
+            ('copy-in', 'tar-in', 'upload', 'sync-in')
+        ) {
             if (scalar @ARGV < 9) {
                 error "copy-in and tar-in need at least one path on the"
                   . " outside and the output path inside the chroot";
@@ -2404,13 +2413,18 @@ sub main() {
                     # open the requested file for writing
                     open $fh, '|-', @cmdprefix, 'sh', '-c', 'cat > "$1"',
                       'exec', $directory // error "failed to fork(): $!";
-                } else {
+                } elsif (
+                    any { $_ eq $command }
+                    ('copy-in', 'tar-in', 'sync-in')
+                ) {
                     # open a tar process that extracts the tarfile that we
                     # supply it with on stdin to the output directory inside
                     # the chroot
                     open $fh, '|-', @cmdprefix, @tarcmd, '--directory',
                       $directory, '--extract', '--file',
                       '-' // error "failed to fork(): $!";
+                } else {
+                    error "unknown command: $command";
                 }
 
                 if ($command eq 'copy-in') {
@@ -2419,12 +2433,20 @@ sub main() {
                     debug "sending mktar";
                     print STDOUT (
                         pack("n", length $ARGV[$i]) . "mktar" . $ARGV[$i]);
-                } else {
+                } elsif ($command eq 'sync-in') {
+                    # instruct the parent process to create a tarball of the
+                    # content of the requested path outside the chroot
+                    debug "sending mktac";
+                    print STDOUT (
+                        pack("n", length $ARGV[$i]) . "mktac" . $ARGV[$i]);
+                } elsif (any { $_ eq $command } ('upload', 'tar-in')) {
                     # instruct parent process to open a tarball of the
                     # requested path outside the chroot for reading
                     debug "sending openr";
                     print STDOUT (
                         pack("n", length $ARGV[$i]) . "openr" . $ARGV[$i]);
+                } else {
+                    error "unknown command: $command";
                 }
                 STDOUT->flush();
                 debug "waiting for okthx";
@@ -2481,7 +2503,10 @@ sub main() {
                     error "tar failed";
                 }
             }
-        } elsif (any { $_ eq $command } ('copy-out', 'tar-out', 'download')) {
+        } elsif (
+            any { $_ eq $command }
+            ('copy-out', 'tar-out', 'download', 'sync-out')
+        ) {
             if (scalar @ARGV < 9) {
                 error "copy-out needs at least one path inside the chroot and"
                   . " the output path on the outside";
@@ -2511,28 +2536,39 @@ sub main() {
                     # open the requested file for reading
                     open $fh, '-|', @cmdprefix, 'sh', '-c', 'cat "$1"',
                       'exec', $directory // error "failed to fork(): $!";
-                } else {
+                } elsif ($command eq 'sync-out') {
                     # Open a tar process that creates a tarfile of everything
-                    # in the requested directory inside the chroot and writes
-                    # it to stdout. To emulate the behaviour of cp, change to
-                    # the dirname of the requested path first.
+                    # inside the requested directory inside the chroot and
+                    # writes it to stdout.
+                    open $fh, '-|', @cmdprefix, @tarcmd, '--directory',
+                      $directory, '--create', '--file', '-',
+                      '.' // error "failed to fork(): $!";
+                } elsif (any { $_ eq $command } ('copy-out', 'tar-out')) {
+                    # Open a tar process that creates a tarfile of the
+                    # requested directory inside the chroot and writes it to
+                    # stdout. To emulate the behaviour of cp, change to the
+                    # dirname of the requested path first.
                     open $fh, '-|', @cmdprefix, @tarcmd, '--directory',
                       dirname($directory), '--create', '--file', '-',
                       basename($directory) // error "failed to fork(): $!";
+                } else {
+                    error "unknown command: $command";
                 }
 
-                if ($command eq 'copy-out') {
+                if (any { $_ eq $command } ('copy-out', 'sync-out')) {
                     # instruct the parent process to extract a tarball to a
                     # certain path outside the chroot
                     debug "sending untar";
                     print STDOUT (
                         pack("n", length $outpath) . "untar" . $outpath);
-                } else {
+                } elsif (any { $_ eq $command } ('download', 'tar-out')) {
                     # instruct parent process to open a tarball of the
                     # requested path outside the chroot for writing
                     debug "sending openw";
                     print STDOUT (
                         pack("n", length $outpath) . "openw" . $outpath);
+                } else {
+                    error "unknown command: $command";
                 }
                 STDOUT->flush();
                 debug "waiting for okthx";
@@ -2562,8 +2598,8 @@ sub main() {
                 checkokthx \*STDIN;
 
                 close $fh;
-                if ($command ne 'download' and $? != 0) {
-                    error "tar failed";
+                if ($? != 0) {
+                    error "$command failed";
                 }
             }
         } else {
@@ -3833,9 +3869,9 @@ sub main() {
                     $parentsock->flush();
                 }
                 close $fh;
-            } elsif ($msg eq "mktar") {
+            } elsif (any { $_ eq $msg } ('mktar', 'mktac')) {
                 # handle the mktar message
-                debug "received message: mktar";
+                debug "received message: $msg";
                 my $indir;
                 {
                     my $ret = read($parentsock, $indir, $len)
@@ -3859,9 +3895,11 @@ sub main() {
                 # Open a tar process creating a tarfile of the instructed
                 # path. To emulate the behaviour of cp, change to the
                 # dirname of the requested path first.
-                open my $fh, '-|', 'tar', '--directory', dirname($indir),
+                open my $fh, '-|', 'tar', '--directory',
+                  $msg eq 'mktar' ? dirname($indir) : $indir,
                   '--create', '--file', '-',
-                  basename($indir) // error "failed to fork(): $!";
+                  $msg eq 'mktar' ? basename($indir) : '.'
+                  // error "failed to fork(): $!";
 
                 # read from the tar process and send as payload to the child
                 # process
@@ -4648,6 +4686,24 @@ placing them into I<pathoutside> outside of the chroot.
 
 Recursively copies one or more files and directories into the chroot into,
 placing them into I<pathinside> inside of the chroot.
+
+=item B<sync-out> I<pathinside> I<pathoutside>
+
+Recursively copy everything inside I<pathinside> inside the chroot into
+I<pathoutside>. In contrast to B<copy-out>, this command synchronizes the
+content of I<pathinside> with the content of I<pathoutside> without deleting
+anything from I<pathoutside> but overwriting content as necessary. Use this
+command over B<copy-out> if you don't want to create a new directory outside
+the chroot but only update the content of an existing directory.
+
+=item B<sync-in> I<pathoutside> I<pathinside>
+
+Recursively copy everything inside I<pathoutside> into I<pathinside> inside the
+chroot. In contrast to B<copy-in>, this command synchronizes the content of
+I<pathoutside> with the content of I<pathinside> without deleting anything from
+I<pathinside> but overwriting content as necessary. Use this command over
+B<copy-in> if you don't want to create a new directory inside the chroot but
+only update the content of an existing directory.
 
 =item B<tar-in> I<outside.tar> I<pathinside>
 

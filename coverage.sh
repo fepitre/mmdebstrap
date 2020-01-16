@@ -1533,6 +1533,12 @@ rm /tmp/tar-in-customize
 echo upload-setup > /tmp/upload-setup
 echo upload-essential > /tmp/upload-essential
 echo upload-customize > /tmp/upload-customize
+mkdir /tmp/sync-in-setup
+mkdir /tmp/sync-in-essential
+mkdir /tmp/sync-in-customize
+echo sync-in-setup > /tmp/sync-in-setup/file
+echo sync-in-essential > /tmp/sync-in-essential/file
+echo sync-in-customize > /tmp/sync-in-customize/file
 \$prefix $CMD --mode=$mode --variant=apt \
 	--setup-hook='mkdir "\$1/real"' \
 	--setup-hook='copy-in /tmp/copy-in-setup /real' \
@@ -1549,6 +1555,10 @@ echo upload-customize > /tmp/upload-customize
 	--setup-hook='echo upload-setup | cmp "\$1/real/upload" -' \
 	--setup-hook='download /real/upload /tmp/download-setup' \
 	--setup-hook='rm "\$1/real/upload"' \
+	--setup-hook='sync-in /tmp/sync-in-setup /real' \
+	--setup-hook='echo sync-in-setup | cmp "\$1/real/file" -' \
+	--setup-hook='sync-out /real /tmp/sync-out-setup' \
+	--setup-hook='rm "\$1/real/file"' \
 	--essential-hook='ln -s "'"\$symlinktarget"'" "\$1/symlink"' \
 	--essential-hook='copy-in /tmp/copy-in-essential /symlink' \
 	--essential-hook='echo copy-in-essential | cmp "\$1/real/copy-in-essential" -' \
@@ -1564,6 +1574,10 @@ echo upload-customize > /tmp/upload-customize
 	--essential-hook='echo upload-essential | cmp "\$1/real/upload" -' \
 	--essential-hook='download /symlink/upload /tmp/download-essential' \
 	--essential-hook='rm "\$1/real/upload"' \
+	--essential-hook='sync-in /tmp/sync-in-essential /symlink' \
+	--essential-hook='echo sync-in-essential | cmp "\$1/real/file" -' \
+	--essential-hook='sync-out /real /tmp/sync-out-essential' \
+	--essential-hook='rm "\$1/real/file"' \
 	--customize-hook='copy-in /tmp/copy-in-customize /symlink' \
 	--customize-hook='echo copy-in-customize | cmp "\$1/real/copy-in-customize" -' \
 	--customize-hook='rm "\$1/real/copy-in-customize"' \
@@ -1578,6 +1592,10 @@ echo upload-customize > /tmp/upload-customize
 	--customize-hook='echo upload-customize | cmp "\$1/real/upload" -' \
 	--customize-hook='download /symlink/upload /tmp/download-customize' \
 	--customize-hook='rm "\$1/real/upload"' \
+	--customize-hook='sync-in /tmp/sync-in-customize /symlink' \
+	--customize-hook='echo sync-in-customize | cmp "\$1/real/file" -' \
+	--customize-hook='sync-out /real /tmp/sync-out-customize' \
+	--customize-hook='rm "\$1/real/file"' \
 	--customize-hook='rmdir "\$1/real"' \
 	--customize-hook='rm "\$1/symlink"' \
 	$DEFAULT_DIST /tmp/debian-chroot.tar $mirror
@@ -1614,6 +1632,9 @@ echo copy-out-customize | cmp /tmp/copy-out-customize -
 echo upload-setup | cmp /tmp/download-setup -
 echo upload-essential | cmp /tmp/download-essential -
 echo upload-customize | cmp /tmp/download-customize -
+echo sync-in-setup | cmp /tmp/sync-out-setup/file -
+echo sync-in-essential | cmp /tmp/sync-out-essential/file -
+echo sync-in-customize | cmp /tmp/sync-out-customize/file -
 # in fakechroot mode, we use a fake ldconfig, so we have to
 # artificially add some files
 { tar -tf /tmp/debian-chroot.tar;
@@ -1626,7 +1647,11 @@ rm /tmp/debian-chroot.tar \
 	/tmp/tar-in-setup.tar /tmp/tar-in-essential.tar /tmp/tar-in-customize.tar \
 	/tmp/tar-out-setup.tar /tmp/tar-out-essential.tar /tmp/tar-out-customize.tar \
 	/tmp/upload-setup /tmp/upload-essential /tmp/upload-customize \
-	/tmp/download-setup /tmp/download-essential /tmp/download-customize
+	/tmp/download-setup /tmp/download-essential /tmp/download-customize \
+	/tmp/sync-in-setup/file /tmp/sync-in-essential/file /tmp/sync-in-customize/file \
+	/tmp/sync-out-setup/file /tmp/sync-out-essential/file /tmp/sync-out-customize/file
+rmdir /tmp/sync-in-setup /tmp/sync-in-essential /tmp/sync-in-customize \
+	/tmp/sync-out-setup /tmp/sync-out-essential /tmp/sync-out-customize
 END
 	if [ "$HAVE_QEMU" = "yes" ]; then
 		./run_qemu.sh
