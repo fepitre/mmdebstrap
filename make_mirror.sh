@@ -408,10 +408,22 @@ if [ "$HAVE_QEMU" = "yes" ]; then
 	tmpdir="$(mktemp -d)"
 	trap "cleanuptmpdir; cleanup_newcachedir" EXIT INT TERM
 
-	pkgs=perl-doc,linux-image-amd64,systemd-sysv,perl,arch-test,fakechroot,fakeroot,mount,uidmap,qemu-user-static,binfmt-support,qemu-user,dpkg-dev,mini-httpd,libdevel-cover-perl,debootstrap,procps,apt-cudf,aspcud,squashfs-tools-ng
+	pkgs=perl-doc,systemd-sysv,perl,arch-test,fakechroot,fakeroot,mount,uidmap,qemu-user-static,binfmt-support,qemu-user,dpkg-dev,mini-httpd,libdevel-cover-perl,debootstrap,procps,apt-cudf,aspcud,squashfs-tools-ng
 	if [ "$HAVE_PROOT" = "yes" ]; then
 		pkgs="$pkgs,proot"
 	fi
+	case "$HOSTARCH" in
+		amd64|arm64|i386)
+			pkgs="$pkgs,linux-image-$HOSTARCH"
+			;;
+		ppc64el)
+			pkgs="$pkgs,linux-image-powerpc64le"
+			;;
+		*)
+			echo "no kernel image for $HOSTARCH" >&2
+			exit 1
+			;;
+	esac
 	if [ "$HOSTARCH" = amd64 ] && [ "$RUN_MA_SAME_TESTS" = "yes" ]; then
 		arches=amd64,armhf
 		pkgs="$pkgs,libfakechroot:armhf,libfakeroot:armhf"
