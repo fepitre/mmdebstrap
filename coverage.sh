@@ -1530,9 +1530,9 @@ tar -C /tmp -cf /tmp/tar-in-customize.tar tar-in-customize
 rm /tmp/tar-in-setup
 rm /tmp/tar-in-essential
 rm /tmp/tar-in-customize
-echo upload-in-setup > /tmp/upload-in-setup
-echo upload-in-essential > /tmp/upload-in-essential
-echo upload-in-customize > /tmp/upload-in-customize
+echo upload-setup > /tmp/upload-setup
+echo upload-essential > /tmp/upload-essential
+echo upload-customize > /tmp/upload-customize
 \$prefix $CMD --mode=$mode --variant=apt \
 	--setup-hook='mkdir "\$1/real"' \
 	--setup-hook='copy-in /tmp/copy-in-setup /real' \
@@ -1545,9 +1545,9 @@ echo upload-in-customize > /tmp/upload-in-customize
 	--setup-hook='echo tar-in-setup | cmp "\$1/real/tar-in-setup" -' \
 	--setup-hook='tar-out /real/tar-in-setup /tmp/tar-out-setup.tar' \
 	--setup-hook='rm "\$1"/real/tar-in-setup' \
-	--setup-hook='upload /tmp/upload-in-setup /real/upload' \
-	--setup-hook='echo upload-in-setup | cmp "\$1/real/upload" -' \
-	--setup-hook='download /real/upload /tmp/download-in-setup' \
+	--setup-hook='upload /tmp/upload-setup /real/upload' \
+	--setup-hook='echo upload-setup | cmp "\$1/real/upload" -' \
+	--setup-hook='download /real/upload /tmp/download-setup' \
 	--setup-hook='rm "\$1/real/upload"' \
 	--essential-hook='ln -s "'"\$symlinktarget"'" "\$1/symlink"' \
 	--essential-hook='copy-in /tmp/copy-in-essential /symlink' \
@@ -1560,9 +1560,9 @@ echo upload-in-customize > /tmp/upload-in-customize
 	--essential-hook='echo tar-in-essential | cmp "\$1/real/tar-in-essential" -' \
 	--essential-hook='tar-out /symlink/tar-in-essential /tmp/tar-out-essential.tar' \
 	--essential-hook='rm "\$1"/real/tar-in-essential' \
-	--essential-hook='upload /tmp/upload-in-essential /symlink/upload' \
-	--essential-hook='echo upload-in-essential | cmp "\$1/real/upload" -' \
-	--essential-hook='download /symlink/upload /tmp/download-in-essential' \
+	--essential-hook='upload /tmp/upload-essential /symlink/upload' \
+	--essential-hook='echo upload-essential | cmp "\$1/real/upload" -' \
+	--essential-hook='download /symlink/upload /tmp/download-essential' \
 	--essential-hook='rm "\$1/real/upload"' \
 	--customize-hook='copy-in /tmp/copy-in-customize /symlink' \
 	--customize-hook='echo copy-in-customize | cmp "\$1/real/copy-in-customize" -' \
@@ -1574,9 +1574,9 @@ echo upload-in-customize > /tmp/upload-in-customize
 	--customize-hook='echo tar-in-customize | cmp "\$1/real/tar-in-customize" -' \
 	--customize-hook='tar-out /symlink/tar-in-customize /tmp/tar-out-customize.tar' \
 	--customize-hook='rm "\$1"/real/tar-in-customize' \
-	--customize-hook='upload /tmp/upload-in-customize /symlink/upload' \
-	--customize-hook='echo upload-in-customize | cmp "\$1/real/upload" -' \
-	--customize-hook='download /symlink/upload /tmp/download-in-customize' \
+	--customize-hook='upload /tmp/upload-customize /symlink/upload' \
+	--customize-hook='echo upload-customize | cmp "\$1/real/upload" -' \
+	--customize-hook='download /symlink/upload /tmp/download-customize' \
 	--customize-hook='rm "\$1/real/upload"' \
 	--customize-hook='rmdir "\$1/real"' \
 	--customize-hook='rm "\$1/symlink"' \
@@ -1611,9 +1611,9 @@ done
 echo copy-out-setup | cmp /tmp/copy-out-setup -
 echo copy-out-essential | cmp /tmp/copy-out-essential -
 echo copy-out-customize | cmp /tmp/copy-out-customize -
-echo upload-in-setup | cmp /tmp/download-in-setup -
-echo upload-in-essential | cmp /tmp/download-in-essential -
-echo upload-in-customize | cmp /tmp/download-in-customize -
+echo upload-setup | cmp /tmp/download-setup -
+echo upload-essential | cmp /tmp/download-essential -
+echo upload-customize | cmp /tmp/download-customize -
 # in fakechroot mode, we use a fake ldconfig, so we have to
 # artificially add some files
 { tar -tf /tmp/debian-chroot.tar;
@@ -1625,8 +1625,8 @@ rm /tmp/debian-chroot.tar \
 	/tmp/copy-out-setup /tmp/copy-out-essential /tmp/copy-out-customize \
 	/tmp/tar-in-setup.tar /tmp/tar-in-essential.tar /tmp/tar-in-customize.tar \
 	/tmp/tar-out-setup.tar /tmp/tar-out-essential.tar /tmp/tar-out-customize.tar \
-	/tmp/upload-in-setup /tmp/upload-in-essential /tmp/upload-in-customize \
-	/tmp/download-in-setup /tmp/download-in-essential /tmp/download-in-customize
+	/tmp/upload-setup /tmp/upload-essential /tmp/upload-customize \
+	/tmp/download-setup /tmp/download-essential /tmp/download-customize
 END
 	if [ "$HAVE_QEMU" = "yes" ]; then
 		./run_qemu.sh
