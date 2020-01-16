@@ -2328,10 +2328,11 @@ sub checkokthx {
     return;
 }
 
-sub main() {
-    umask 022;
-
-    if (scalar @ARGV >= 7 && $ARGV[0] eq "--hook-helper") {
+sub hookhelper {
+    # we put everything in an eval block because that way we can easily handle
+    # errors without goto labels or much code duplication: the error handler
+    # has to send an "error" message to the other side
+    eval {
         my $root = $ARGV[1];
         my $mode = $ARGV[2];
         my $hook = $ARGV[3];
@@ -2475,10 +2476,6 @@ sub main() {
                         STDOUT->flush();
                         last;
                     } elsif ($msg ne "write") {
-                        # we should not receive this message at this point
-                        print STDOUT (pack("n", 0) . "error")
-                          or error "cannot write to socket: $!";
-                        STDOUT->flush();
                         error "expected write but got: $msg";
                     }
                     # read the payload
@@ -2605,7 +2602,21 @@ sub main() {
         } else {
             error "unknown command: $command";
         }
+    };
+    if ($@) {
+        # inform the other side that something went wrong
+        print STDOUT (pack("n", 0) . "error");
+        STDOUT->flush();
+        error "hookhelper failed: $@";
+    }
+    return;
+}
 
+sub main() {
+    umask 022;
+
+    if (scalar @ARGV >= 7 && $ARGV[0] eq "--hook-helper") {
+        hookhelper();
         exit 0;
     }
 
@@ -3737,9 +3748,6 @@ sub main() {
                 }
                 # make sure that the requested path exists outside the chroot
                 if (!-e $infile) {
-                    print $parentsock (pack("n", 0) . "error")
-                      or error "cannot write to socket: $!";
-                    $parentsock->flush();
                     error "$infile does not exist";
                 }
                 debug "sending okthx";
@@ -3788,17 +3796,11 @@ sub main() {
                 my $outdir = dirname($outfile);
                 if (-e $outdir) {
                     if (!-d $outdir) {
-                        print $parentsock (pack("n", 0) . "error")
-                          or error "cannot write to socket: $!";
-                        $parentsock->flush();
                         error "$outdir already exists but is not a directory";
                     }
                 } else {
                     my $num_created = make_path $outdir, { error => \my $err };
                     if ($err && @$err) {
-                        print $parentsock (pack("n", 0) . "error")
-                          or error "cannot write to socket: $!";
-                        $parentsock->flush();
                         error(
                             join "; ",
                             (
@@ -3806,9 +3808,6 @@ sub main() {
                                   @$err
                             ));
                     } elsif ($num_created == 0) {
-                        print $parentsock (pack("n", 0) . "error")
-                          or error "cannot write to socket: $!";
-                        $parentsock->flush();
                         error "cannot create $outdir";
                     }
                 }
@@ -3846,9 +3845,6 @@ sub main() {
                         last;
                     } elsif ($msg ne "write") {
                         # we should not receive this message at this point
-                        print $parentsock (pack("n", 0) . "error")
-                          or error "cannot write to socket: $!";
-                        $parentsock->flush();
                         error "expected write but got: $msg";
                     }
                     # read the payload
@@ -3882,9 +3878,6 @@ sub main() {
                 }
                 # make sure that the requested path exists outside the chroot
                 if (!-e $indir) {
-                    print $parentsock (pack("n", 0) . "error")
-                      or error "cannot write to socket: $!";
-                    $parentsock->flush();
                     error "$indir does not exist";
                 }
                 debug "sending okthx";
@@ -3942,17 +3935,11 @@ sub main() {
                 # make sure that the directory exists
                 if (-e $outdir) {
                     if (!-d $outdir) {
-                        print $parentsock (pack("n", 0) . "error")
-                          or error "cannot write to socket: $!";
-                        $parentsock->flush();
                         error "$outdir already exists but is not a directory";
                     }
                 } else {
                     my $num_created = make_path $outdir, { error => \my $err };
                     if ($err && @$err) {
-                        print $parentsock (pack("n", 0) . "error")
-                          or error "cannot write to socket: $!";
-                        $parentsock->flush();
                         error(
                             join "; ",
                             (
@@ -3960,9 +3947,6 @@ sub main() {
                                   @$err
                             ));
                     } elsif ($num_created == 0) {
-                        print $parentsock (pack("n", 0) . "error")
-                          or error "cannot write to socket: $!";
-                        $parentsock->flush();
                         error "cannot create $outdir";
                     }
                 }
@@ -4000,9 +3984,6 @@ sub main() {
                         last;
                     } elsif ($msg ne "write") {
                         # we should not receive this message at this point
-                        print $parentsock (pack("n", 0) . "error")
-                          or error "cannot write to socket: $!";
-                        $parentsock->flush();
                         error "expected write but got: $msg";
                     }
                     # read the payload
@@ -4032,6 +4013,10 @@ sub main() {
         }
     };
     if ($@) {
+        # inform the other side that something went wrong
+        print $parentsock (pack("n", 0) . "error")
+          or error "cannot write to socket: $!";
+        $parentsock->flush();
         # we cannot die here because that would leave the other thread
         # running without a parent
         warning "listening on child socket failed: $@";
