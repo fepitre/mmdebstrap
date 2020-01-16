@@ -331,6 +331,7 @@ components=main
 : "${DEFAULT_DIST:=unstable}"
 : "${HAVE_QEMU:=yes}"
 : "${RUN_MA_SAME_TESTS:=yes}"
+: "${HAVE_PROOT:=yes}"
 
 if [ -e "$oldmirrordir/dists/$DEFAULT_DIST/Release" ]; then
 	http_code=$(curl --output /dev/null --silent --location --head --time-cond "$oldmirrordir/dists/$DEFAULT_DIST/Release" --write-out '%{http_code}' "$mirror/dists/$DEFAULT_DIST/Release")
@@ -407,7 +408,10 @@ if [ "$HAVE_QEMU" = "yes" ]; then
 	tmpdir="$(mktemp -d)"
 	trap "cleanuptmpdir; cleanup_newcachedir" EXIT INT TERM
 
-	pkgs=perl-doc,linux-image-amd64,systemd-sysv,perl,arch-test,fakechroot,fakeroot,mount,uidmap,proot,qemu-user-static,binfmt-support,qemu-user,dpkg-dev,mini-httpd,libdevel-cover-perl,debootstrap,procps,apt-cudf,aspcud,squashfs-tools-ng
+	pkgs=perl-doc,linux-image-amd64,systemd-sysv,perl,arch-test,fakechroot,fakeroot,mount,uidmap,qemu-user-static,binfmt-support,qemu-user,dpkg-dev,mini-httpd,libdevel-cover-perl,debootstrap,procps,apt-cudf,aspcud,squashfs-tools-ng
+	if [ "$HAVE_PROOT" = "yes" ]; then
+		pkgs="$pkgs,proot"
+	fi
 	if [ "$HOSTARCH" = amd64 ] && [ "$RUN_MA_SAME_TESTS" = "yes" ]; then
 		arches=amd64,armhf
 		pkgs="$pkgs,libfakechroot:armhf,libfakeroot:armhf"
