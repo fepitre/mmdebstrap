@@ -19,6 +19,8 @@ fi
 
 perlcritic --severity 4 --verbose 8 mmdebstrap
 
+black --check taridshift
+
 mirrordir="./shared/cache/debian"
 
 if [ ! -e "$mirrordir" ]; then
@@ -64,9 +66,12 @@ fi
 if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
 	cp -a mmdebstrap shared
 fi
+if [ ! -e shared/taridshift ] || [ taridshift -nt shared/taridshift ]; then
+	cp -a taridshift shared
+fi
 
 starttime=
-total=136
+total=137
 skipped=0
 runtests=0
 i=1
@@ -355,6 +360,67 @@ if [ "\$ret" = 0 ]; then
 	echo expected failure but got exit \$ret >&2
 	exit 1
 fi
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+	runtests=$((runtests+1))
+else
+	echo "HAVE_QEMU != yes -- Skipping test..." >&2
+	skipped=$((skipped+1))
+fi
+
+print_header "mode=unshare,variant=apt: test taridshift utility"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+if [ ! -e /mmdebstrap-testenv ]; then
+	echo "this test modifies the system and should only be run inside a container" >&2
+	exit 1
+fi
+adduser --gecos user --disabled-password user
+echo user:100000:65536 | cmp /etc/subuid -
+echo user:100000:65536 | cmp /etc/subgid -
+sysctl -w kernel.unprivileged_userns_clone=1
+# include iputils-ping so that we can verify that taridshift does not remove
+# extended attributes
+# run through tarshift no-op to create a tarball that should be bit-by-bit
+# identical to a round trip through "taridshift X" and "taridshift -X"
+runuser -u user -- $CMD --mode=unshare --variant=apt --include=iputils-ping $DEFAULT_DIST - $mirror \
+	| ./taridshift 0 > /tmp/debian-chroot.tar
+./taridshift 100000 < /tmp/debian-chroot.tar > /tmp/debian-chroot-shifted.tar
+./taridshift -100000 < /tmp/debian-chroot-shifted.tar > /tmp/debian-chroot-shiftedback.tar
+# the tarball before and after the roundtrip through taridshift should be bit
+# by bit identical
+cmp /tmp/debian-chroot.tar /tmp/debian-chroot-shiftedback.tar
+# manually adjust uid/gid and compare "tar -t" output
+tar --numeric-owner -tvf /tmp/debian-chroot.tar \
+	| sed 's# 100/0 # 100100/100000 #' \
+	| sed 's# 0/0 # 100000/100000 #' \
+	| sed 's# 0/5 # 100000/100005 #' \
+	| sed 's# 0/8 # 100000/100008 #' \
+	| sed 's# 0/42 # 100000/100042 #' \
+	| sed 's# 0/43 # 100000/100043 #' \
+	| sed 's# 0/50 # 100000/100050 #' \
+	| sed 's/ \\+/ /g' \
+	> /tmp/debian-chroot.txt
+tar --numeric-owner -tvf /tmp/debian-chroot-shifted.tar \
+	| sed 's/ \\+/ /g' \
+	| diff -u /tmp/debian-chroot.txt -
+mkdir /tmp/debian-chroot
+tar --xattrs --xattrs-include='*' --directory /tmp/debian-chroot -xf /tmp/debian-chroot-shifted.tar
+echo "100000 100000" > expected
+stat --format="%u %g" /tmp/debian-chroot/bin/ping | diff expected -
+echo "/tmp/debian-chroot/bin/ping = cap_net_raw+ep" > expected
+getcap /tmp/debian-chroot/bin/ping | diff expected -
+echo "0 0" > expected
+runuser -u user -- $CMD --unshare-helper /usr/sbin/chroot /tmp/debian-chroot stat --format="%u %g" /bin/ping \
+	| diff expected -
+echo "/bin/ping = cap_net_raw+ep" > expected
+runuser -u user -- $CMD --unshare-helper /usr/sbin/chroot /tmp/debian-chroot getcap /bin/ping \
+	| diff expected -
+rm /tmp/debian-chroot.tar /tmp/debian-chroot-shifted.tar /tmp/debian-chroot.txt /tmp/debian-chroot-shiftedback.tar expected
+rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
@@ -2463,4 +2529,4 @@ if [ -e shared/cover_db/runs ]; then
 	echo
 fi
 
-rm shared/test.sh shared/tar1.txt shared/tar2.txt shared/pkglist.txt shared/doc-debian.tar.list
+rm shared/test.sh shared/tar1.txt shared/tar2.txt shared/pkglist.txt shared/doc-debian.tar.list shared/mmdebstrap shared/taridshift

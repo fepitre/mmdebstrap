@@ -2619,6 +2619,24 @@ sub main() {
         hookhelper();
         exit 0;
     }
+    # this is like:
+    # lxc-usernsexec -- lxc-unshare -s 'MOUNT|PID|UTSNAME|IPC' ...
+    # but without needing lxc
+    if ($ARGV[0] eq "--unshare-helper") {
+        if (!test_unshare(1)) {
+            exit 1;
+        }
+        my @idmap = read_subuid_subgid;
+        my $pid   = get_unshare_cmd(
+            sub {
+                0 == system @ARGV[1 .. $#ARGV] or error "system failed: $?";
+            },
+            \@idmap
+        );
+        waitpid $pid, 0;
+        $? == 0 or error "unshared command failed";
+        exit 0;
+    }
 
     my $mtime = time;
     if (exists $ENV{SOURCE_DATE_EPOCH}) {
