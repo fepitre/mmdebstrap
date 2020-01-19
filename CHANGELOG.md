@@ -1,3 +1,17 @@
+0.6.0 (2020-01-16)
+------------------
+
+ - allow multiple --architecture options
+ - allow multiple --include options
+ - enable parallel compression with xz by default
+ - add --man option
+ - add --keyring option overwriting apt's default keyring
+ - preserve extended attributes in tarball
+ - allow running tests on non-amd64 systems
+ - generate squashfs images if output file ends in .sqfs or .squashfs
+ - add --dry-run/--simulate options
+ - add taridshift tool
+
 0.5.1 (2019-10-19)
 ------------------
 
