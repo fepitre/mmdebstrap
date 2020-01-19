@@ -19,6 +19,10 @@ With complex apt options:
 
     cat /etc/apt/sources.list | mmdebstrap > unstable-chroot.tar
 
+For the full documentation use:
+
+    pod2man ./mmdebstrap | man -l -
+
 The sales pitch in comparison to debootstrap
 --------------------------------------------
 
@@ -85,11 +89,13 @@ Limitations in comparison to debootstrap
 ----------------------------------------
 
 Debootstrap supports creating a Debian chroot on non-Debian systems but
-mmdebstrap requires apt.
+mmdebstrap requires apt and is thus limited to Debian and derivatives.
 
 There is no `SCRIPT` argument.
 
-There is no `--second-stage` option.
+The following options, don't exist: `--second-stage`, `--exclude`,
+`--resolve-deps`, `--force-check-gpg`, `--merged-usr` and `--no-merged-usr`.
+
 
 Tests
 =====
@@ -97,10 +103,30 @@ Tests
 The script `coverage.sh` runs mmdebstrap in all kind of scenarios to execute
 all code paths of the script. It verifies its output in each scenario and
 displays the results gathered with Devel::Cover. It also compares the output of
-mmdebstrap with debootstrap in several scenarios.
+mmdebstrap with debootstrap in several scenarios. To run the testsuite, run:
+
+    ./make_mirror.sh
+    CMD=./mmdebstrap ./coverage.sh
+
+To also generate perl Devel::Cover data, omit the `CMD` environment variable.
+But that will also take a lot longer.
+
+The make_mirror.sh script will be a no-op if nothing changed in Debian
+unstable. You don't need to run make_mirror.sh before every invocation of
+coverage.sh. When you make changes to make_mirror.sh and want to regenerate the
+cache, run:
+
+    touch -d yesterday shared/cache/debian/dists/unstable/Release
 
 Bugs
 ====
 
 mmdebstrap has bugs. Report them here:
 https://gitlab.mister-muffin.de/josch/mmdebstrap/issues
+
+Contributors
+============
+
+ - Johannes Schauer (main author)
+ - Helmut Grohne
+ - Benjamin Drung
