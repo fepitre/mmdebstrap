@@ -4880,15 +4880,14 @@ Limitations in comparison to debootstrap:
 
 =over 8
 
-=item * Only runs on systems with apt installed
+=item * Only runs on systems with apt installed (Debian and derivatives)
 
 =item * No I<SCRIPT> argument
 
-=item * No I<--second-stage> and I<--exclude> option.
-
 =item * Some debootstrap options don't exist, namely:
 
-I<--resolve-deps>, I<--force-check-gpg>, I<--merged-usr> and I<--no-merged-usr>
+I<--second-stage>, I<--exclude>, <--resolve-deps>, I<--force-check-gpg>,
+I<--merged-usr> and I<--no-merged-usr>
 
 =back
 
