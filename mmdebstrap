@@ -1175,6 +1175,13 @@ sub setup {
         }
     }
 
+    if (-e $options->{apttrusted} && !-r $options->{apttrusted}) {
+        warning "cannot read $options->{apttrusted}";
+    }
+    if (-e $options->{apttrustedparts} && !-r $options->{apttrustedparts}) {
+        warning "cannot read $options->{apttrustedparts}";
+    }
+
     my ($conf, $tmpfile) = tempfile(UNLINK => 1)
       or error "cannot open apt.conf: $!";
     print $conf "Apt::Architecture \"$options->{nativearch}\";\n";
