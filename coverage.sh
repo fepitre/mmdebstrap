@@ -1846,7 +1846,7 @@ else
 	skipped=$((skipped+1))
 fi
 
-print_header "mode=$defaultmode,variant=essential: test not having to installing apt with --include"
+print_header "mode=$defaultmode,variant=essential: test not having to install apt in --include because a hook did it before"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
