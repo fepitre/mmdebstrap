@@ -1585,9 +1585,9 @@ echo copy-in-customize > /tmp/copy-in-customize
 echo tar-in-setup > /tmp/tar-in-setup
 echo tar-in-essential > /tmp/tar-in-essential
 echo tar-in-customize > /tmp/tar-in-customize
-tar -C /tmp -cf /tmp/tar-in-setup.tar tar-in-setup
-tar -C /tmp -cf /tmp/tar-in-essential.tar tar-in-essential
-tar -C /tmp -cf /tmp/tar-in-customize.tar tar-in-customize
+tar --numeric-owner --format=pax --pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime -C /tmp -cf /tmp/tar-in-setup.tar tar-in-setup
+tar --numeric-owner --format=pax --pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime -C /tmp -cf /tmp/tar-in-essential.tar tar-in-essential
+tar --numeric-owner --format=pax --pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime -C /tmp -cf /tmp/tar-in-customize.tar tar-in-customize
 rm /tmp/tar-in-setup
 rm /tmp/tar-in-essential
 rm /tmp/tar-in-customize

@@ -2369,7 +2369,11 @@ sub hookhelper {
         # path that is valid on the outside -- fakechroot and proot have their
         # own reasons, see below
         my @cmdprefix = ();
-        my @tarcmd    = ('tar');
+        my @tarcmd    = (
+            'tar', '--numeric-owner', '--xattrs', '--format=pax',
+            '--pax-option=exthdr.name=%d/PaxHeaders/%f,'
+              . 'delete=atime,delete=ctime'
+        );
         if ($hook eq 'setup') {
             if ($mode eq 'proot') {
                 # since we cannot run tar inside the chroot under proot during
@@ -2378,7 +2382,7 @@ sub hookhelper {
                 # by the user running mmdebstrap. To let the ownership
                 # information not be completely off, we force all files be
                 # owned by the root user.
-                push @tarcmd, '--owner=root', '--group=root';
+                push @tarcmd, '--owner=0', '--group=0';
             }
         } elsif (any { $_ eq $hook } ('essential', 'customize')) {
             if ($mode eq 'fakechroot') {
@@ -2440,8 +2444,8 @@ sub hookhelper {
                     # open a tar process that extracts the tarfile that we
                     # supply it with on stdin to the output directory inside
                     # the chroot
-                    open $fh, '|-', @cmdprefix, @tarcmd, '--directory',
-                      $directory, '--extract', '--file',
+                    open $fh, '|-', @cmdprefix, @tarcmd, '--xattrs-include=*',
+                      '--directory', $directory, '--extract', '--file',
                       '-' // error "failed to fork(): $!";
                 } else {
                     error "unknown command: $command";
@@ -3571,10 +3575,16 @@ sub main() {
 
     my $exitstatus = 0;
     my @taropts    = (
-        '--sort=name',       "--mtime=\@$mtime",
-        '--clamp-mtime',     '--numeric-owner',
-        '--one-file-system', '--xattrs',
-        '-c',                '--exclude=./dev'
+        '--sort=name',
+        "--mtime=\@$mtime",
+        '--clamp-mtime',
+        '--numeric-owner',
+        '--one-file-system',
+        '--xattrs',
+        '--format=pax',
+        '--pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime',
+        '-c',
+        '--exclude=./dev'
     );
 
     # disable signals so that we can fork and change behaviour of the signal
@@ -3925,7 +3935,11 @@ sub main() {
                 # Open a tar process creating a tarfile of the instructed
                 # path. To emulate the behaviour of cp, change to the
                 # dirname of the requested path first.
-                open my $fh, '-|', 'tar', '--directory',
+                open my $fh, '-|', 'tar', '--numeric-owner', '--xattrs',
+                  '--format=pax',
+                  '--pax-option=exthdr.name=%d/PaxHeaders/%f,'
+                  . 'delete=atime,delete=ctime',
+                  '--directory',
                   $msg eq 'mktar' ? dirname($indir) : $indir,
                   '--create', '--file', '-',
                   $msg eq 'mktar' ? basename($indir) : '.'
@@ -3994,8 +4008,10 @@ sub main() {
 
                 # now we expect one or more "write" messages containing the
                 # tarball to unpack
-                open my $fh, '|-', 'tar', '--directory', $outdir, '--extract',
-                  '--file', '-' // error "failed to fork(): $!";
+                open my $fh, '|-', 'tar', '--numeric-owner', '--xattrs',
+                  '--xattrs-include=*', '--directory', $outdir,
+                  '--extract', '--file',
+                  '-' // error "failed to fork(): $!";
 
                 # handle "write" messages from the child process and feed
                 # their payload into the tar process until a "close" message
