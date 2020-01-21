@@ -3446,8 +3446,7 @@ sub main() {
         }
         # since the output is a tarball, we create the rootfs in a temporary
         # directory
-        $options->{root}
-          = tempdir('mmdebstrap.XXXXXXXXXX', DIR => File::Spec->tmpdir);
+        $options->{root} = tempdir('mmdebstrap.XXXXXXXXXX', TMPDIR => 1);
         info "using $options->{root} as tempdir";
         # in unshare and root mode, other users than the current user need to
         # access the rootfs, most prominently, the _apt user. Thus, make the
