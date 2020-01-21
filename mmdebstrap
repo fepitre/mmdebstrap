@@ -2724,10 +2724,10 @@ sub main() {
             }
             # since abs_path resolved all symlinks for us, we can now test
             # what the actual target actually is
-            if (-d $opt_value) {
-                $options->{apttrustedparts} = $opt_value;
+            if (-d $abs_path) {
+                $options->{apttrustedparts} = $abs_path;
             } else {
-                $options->{apttrusted} = $opt_value;
+                $options->{apttrusted} = $abs_path;
             }
         },
         's|silent'  => sub { $verbosity_level = 0; },
