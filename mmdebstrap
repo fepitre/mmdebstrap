@@ -2290,6 +2290,22 @@ sub setup {
         unlink $path or error "cannot unlink $path: $!";
     }
 
+    if (-e "$options->{root}/etc/machine-id") {
+        # from machine-id(5):
+        # For operating system images which are created once and used on
+        # multiple machines, for example for containers or in the cloud,
+        # /etc/machine-id should be an empty file in the generic file system
+        # image. An ID will be generated during boot and saved to this file if
+        # possible. Having an empty file in place is useful because it allows a
+        # temporary file to be bind-mounted over the real file, in case the
+        # image is used read-only.
+        unlink "$options->{root}/etc/machine-id"
+          or error "cannot unlink /etc/machine-id: $!";
+        open my $fh, '>', "$options->{root}/etc/machine-id"
+          or error "failed to open(): $!";
+        close $fh;
+    }
+
     # remove any possible leftovers in /tmp but warn about it
     if (-d "$options->{root}/tmp") {
         opendir(my $dh, "$options->{root}/tmp")
