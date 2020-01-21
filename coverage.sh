@@ -72,7 +72,7 @@ if [ ! -e shared/taridshift ] || [ taridshift -nt shared/taridshift ]; then
 fi
 
 starttime=
-total=137
+total=138
 skipped=0
 runtests=0
 i=1
@@ -361,6 +361,31 @@ if [ "\$ret" = 0 ]; then
 	echo expected failure but got exit \$ret >&2
 	exit 1
 fi
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+	runtests=$((runtests+1))
+else
+	echo "HAVE_QEMU != yes -- Skipping test..." >&2
+	skipped=$((skipped+1))
+fi
+
+print_header "mode=unshare/root,variant=debootstrap: check for bit-by-bit identical output"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+if [ ! -e /mmdebstrap-testenv ]; then
+	echo "this test modifies the system and should only be run inside a container" >&2
+	exit 1
+fi
+adduser --gecos user --disabled-password user
+sysctl -w kernel.unprivileged_userns_clone=1
+export SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH
+$CMD --mode=root --variant=debootstrap $DEFAULT_DIST /tmp/debian-chroot-root.tar $mirror
+runuser -u user -- $CMD --mode=unshare --variant=debootstrap $DEFAULT_DIST /tmp/debian-chroot-unshare.tar $mirror
+cmp /tmp/debian-chroot-root.tar /tmp/debian-chroot-unshare.tar
+rm /tmp/debian-chroot-root.tar /tmp/debian-chroot-unshare.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
