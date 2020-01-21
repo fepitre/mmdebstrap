@@ -2,15 +2,16 @@
 
 set -eu
 
-perltidy < mmdebstrap > mmdebstrap.tdy
+TMPFILE=$(mktemp)
+perltidy < mmdebstrap > "$TMPFILE"
 ret=0
-diff -u mmdebstrap mmdebstrap.tdy || ret=$?
+diff -u mmdebstrap "$TMPFILE" || ret=$?
 if [ "$ret" -ne 0 ]; then
 	echo "perltidy failed" >&2
-	rm mmdebstrap.tdy
+	rm "$TMPFILE"
 	exit 1
 fi
-rm mmdebstrap.tdy
+rm "$TMPFILE"
 
 if [ $(wc -L < mmdebstrap) -gt 79 ]; then
 	echo "exceeded maximum line length of 79 characters" >&2
