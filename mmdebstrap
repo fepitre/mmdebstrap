@@ -2685,6 +2685,13 @@ sub main() {
     # copy ARGV because getopt modifies it
     my @ARGVORIG = @ARGV;
 
+    # obtain the correct defaults for the keyring locations that apt knows
+    # about
+    my $apttrusted
+      = `eval \$(apt-config shell v Dir::Etc::trusted/f); printf \$v`;
+    my $apttrustedparts
+      = `eval \$(apt-config shell v Dir::Etc::trustedparts/d); printf \$v`;
+
     chomp(my $hostarch = `dpkg --print-architecture`);
     my $options = {
         components      => ["main"],
@@ -2694,8 +2701,8 @@ sub main() {
         mode            => 'auto',
         dpkgopts        => [],
         aptopts         => [],
-        apttrusted      => "/etc/apt/trusted.gpg",
-        apttrustedparts => "/etc/apt/trusted.gpg.d",
+        apttrusted      => $apttrusted,
+        apttrustedparts => $apttrustedparts,
         noop            => [],
         setup_hook      => [],
         essential_hook  => [],
