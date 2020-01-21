@@ -1449,6 +1449,9 @@ sub setup {
         ## no critic (Variables::RequireLocalizedPunctuationVars)
         $ENV{"APT_CONFIG"} = "$tmpfile";
     }
+    if ($verbosity_level >= 3) {
+        0 == system('apt-config', 'dump') or error "apt-config failed: $?";
+    }
 
     # when apt-get update is run by the root user, then apt will attempt to
     # drop privileges to the _apt user. This will fail if the _apt user does
