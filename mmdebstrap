@@ -3183,98 +3183,100 @@ sub main() {
                 ) {
                     $keyring
                       = '/usr/share/keyrings/debian-archive-keyring.gpg';
+                } else {
+                    last;
                 }
+
                 # we can only check if we need the signed-by entry if we u
                 # automatically chosen keyring exists
-                if (defined $keyring && -e $keyring) {
-                    # we can only check key material if gpg is installed
-                    my $gpghome = tempdir(
-                        "mmdebstrap.gpghome.XXXXXXXXXXXX",
-                        TMPDIR  => 1,
-                        CLEANUP => 1
-                    );
-                    my @gpgcmd = (
-                        'gpg',                    '--quiet',
-                        '--ignore-time-conflict', '--no-options',
-                        '--no-default-keyring',   '--homedir',
-                        $gpghome,                 '--no-auto-check-trustdb',
-                        '--trust-model',          'always'
-                    );
-                    my ($ret, $fh, $message);
-                    {
-                        # change warning handler to prevent message
-                        # Can't exec "gpg": No such file or directory
-                        local $SIG{__WARN__} = sub { $message = shift; };
-                        $ret = open $fh, '-|', @gpgcmd, '--version';
+                if (!defined $keyring || !-e $keyring) {
+                    last;
+                }
+
+                # we can only check key material if gpg is installed
+                my $gpghome = tempdir(
+                    "mmdebstrap.gpghome.XXXXXXXXXXXX",
+                    TMPDIR  => 1,
+                    CLEANUP => 1
+                );
+                my @gpgcmd = (
+                    'gpg',                    '--quiet',
+                    '--ignore-time-conflict', '--no-options',
+                    '--no-default-keyring',   '--homedir',
+                    $gpghome,                 '--no-auto-check-trustdb',
+                    '--trust-model',          'always'
+                );
+                my ($ret, $fh, $message);
+                {
+                    # change warning handler to prevent message
+                    # Can't exec "gpg": No such file or directory
+                    local $SIG{__WARN__} = sub { $message = shift; };
+                    $ret = open $fh, '-|', @gpgcmd, '--version';
+                }
+                # we only want to check if the gpg command exists
+                close $fh;
+                if ($? != 0 || !defined $ret || defined $message) {
+                    info "gpg --version failed: cannot determine the right"
+                      . " signed-by value";
+                    last;
+                }
+                # find all the fingerprints of the keys apt currently
+                # knows about
+                my @keyringopts = ();
+                opendir my $dh, "$options->{apttrustedparts}"
+                  or error "cannot read $options->{apttrustedparts}";
+                while (my $filename = readdir $dh) {
+                    if ($filename !~ /\.(asc|gpg)$/) {
+                        next;
                     }
-                    # we only want to check if the gpg command exists
-                    close $fh;
-                    if ($? == 0 && defined $ret && !defined $message) {
-                        # find all the fingerprints of the keys apt currently
-                        # knows about
-                        my @aptfingerprints      = ();
-                        my $collect_fingerprints = sub {
-                            my $filename = shift;
-                            open my $fh, '-|', @gpgcmd, '--keyring',
-                              $filename, '--with-colons',
-                              '--list-keys' // error "failed to fork(): $!";
-                            while (my $line = <$fh>) {
-                                if ($line !~ /^fpr:::::::::([^:]+):/) {
-                                    next;
-                                }
-                                push @aptfingerprints, $1;
-                            }
-                            close $fh;
-                        };
-                        opendir my $dh, "$options->{apttrustedparts}"
-                          or error "cannot read $options->{apttrustedparts}";
-                        while (my $filename = readdir $dh) {
-                            if ($filename !~ /\.(asc|gpg)$/) {
-                                next;
-                            }
-                            $collect_fingerprints->(
-                                "$options->{apttrustedparts}/$filename");
-                        }
-                        if (-e $options->{apttrusted}) {
-                            $collect_fingerprints->($options->{apttrusted});
-                        }
-                        # check if all fingerprints from the keyring that we
-                        # guessed are known by apt and only add signed-by
-                        # option if that's not the case
-                        my @suitefingerprints = ();
-                        open my $suitefh, '-|', @gpgcmd, '--keyring',
-                          $keyring, '--with-colons',
-                          '--list-keys' // error "failed to fork(): $!";
-                        while (my $line = <$suitefh>) {
-                            if ($line !~ /^fpr:::::::::([^:]+):/) {
-                                next;
-                            }
-                            # if this fingerprint is not known by apt, then we
-                            # need to add the signed-by option
-                            if (none { $_ eq $1 } @aptfingerprints) {
-                                $signedby = " [signed-by=\"$keyring\"]";
-                                last;
-                            }
-                        }
-                        close $suitefh;
-                        if ($? != 0) {
-                            error "gpg failed";
-                        }
-                    } else {
-                        info "gpg --version failed: cannot determine the right"
-                          . " signed-by value";
+                    push @keyringopts, '--keyring',
+                      "$options->{apttrustedparts}/$filename";
+                }
+                if (-e $options->{apttrusted}) {
+                    push @keyringopts, '--keyring', $options->{apttrusted};
+                }
+                my @aptfingerprints = ();
+                if (scalar @keyringopts == 0) {
+                    $signedby = " [signed-by=\"$keyring\"]";
+                    last;
+                }
+                open my $fh, '-|', @gpgcmd, @keyringopts, '--with-colons',
+                  '--list-keys' // error "failed to fork(): $!";
+                while (my $line = <$fh>) {
+                    if ($line !~ /^fpr:::::::::([^:]+):/) {
+                        next;
                     }
-                    remove_tree($gpghome, { error => \my $err });
-                    if (@$err) {
-                        for my $diag (@$err) {
-                            my ($file, $message) = %$diag;
-                            if ($file eq '') {
-                                warning "general error: $message";
-                            } else {
-                                warning "problem unlinking $file: $message";
-                            }
-                        }
+                    push @aptfingerprints, $1;
+                }
+                close $fh;
+                if ($? != 0) {
+                    error "gpg failed";
+                }
+                if (scalar @aptfingerprints == 0) {
+                    $signedby = " [signed-by=\"$keyring\"]";
+                    last;
+                }
+                # check if all fingerprints from the keyring that we guessed
+                # are known by apt and only add signed-by option if that's not
+                # the case
+                my @suitefingerprints = ();
+                open my $suitefh, '-|', @gpgcmd, '--keyring', $keyring,
+                  '--with-colons',
+                  '--list-keys' // error "failed to fork(): $!";
+                while (my $line = <$suitefh>) {
+                    if ($line !~ /^fpr:::::::::([^:]+):/) {
+                        next;
                     }
+                    # if this fingerprint is not known by apt, then we need to
+                    # add the signed-by option
+                    if (none { $_ eq $1 } @aptfingerprints) {
+                        $signedby = " [signed-by=\"$keyring\"]";
+                        last;
+                    }
+                }
+                close $suitefh;
+                if ($? != 0) {
+                    error "gpg failed";
                 }
             }
             if (scalar @ARGV > 0) {
