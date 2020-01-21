@@ -1257,7 +1257,9 @@ if [ ! -e /mmdebstrap-testenv ]; then
 	exit 1
 fi
 rm /etc/apt/trusted.gpg.d/*.gpg
-$CMD --mode=root --variant=apt --keyring=/usr/share/keyrings/debian-archive-keyring.gpg --keyring=/usr/share/keyrings/ $DEFAULT_DIST /tmp/debian-chroot $mirror
+$CMD --mode=root --variant=apt --keyring=/usr/share/keyrings/debian-archive-keyring.gpg --keyring=/usr/share/keyrings/ $DEFAULT_DIST /tmp/debian-chroot "deb $mirror $DEFAULT_DIST main"
+# make sure that no [signedby=...] managed to make it into the sources.list
+echo "deb $mirror $DEFAULT_DIST main" | cmp /tmp/debian-chroot/etc/apt/sources.list -
 tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
 rm -r /tmp/debian-chroot
 END
@@ -1278,7 +1280,9 @@ mkdir -p emptydir
 touch emptyfile
 # this overwrites the apt keyring options and should fail
 ret=0
-$CMD --mode=root --variant=apt --keyring=./emptydir --keyring=./emptyfile $DEFAULT_DIST /tmp/debian-chroot $mirror || ret=\$?
+$CMD --mode=root --variant=apt --keyring=./emptydir --keyring=./emptyfile $DEFAULT_DIST /tmp/debian-chroot "deb $mirror $DEFAULT_DIST main" || ret=\$?
+# make sure that no [signedby=...] managed to make it into the sources.list
+echo "deb $mirror $DEFAULT_DIST main" | cmp /tmp/debian-chroot/etc/apt/sources.list -
 rm -r /tmp/debian-chroot
 rmdir emptydir
 rm emptyfile
@@ -1304,9 +1308,6 @@ if [ ! -e /mmdebstrap-testenv ]; then
 	echo "this test modifies the system and should only be run inside a container" >&2
 	exit 1
 fi
-echo "deb $mirror $DEFAULT_DIST main" > /etc/apt/sources.list
-apt-get -o Acquire::Languages=none update
-apt-get install --yes --no-install-recommends gpg
 rm /etc/apt/trusted.gpg.d/*.gpg
 $CMD --mode=root --variant=apt $DEFAULT_DIST /tmp/debian-chroot $mirror
 printf 'deb [signed-by="/usr/share/keyrings/debian-archive-keyring.gpg"] $mirror $DEFAULT_DIST main\n' | cmp /tmp/debian-chroot/etc/apt/sources.list -
@@ -1326,13 +1327,6 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-if [ ! -e /mmdebstrap-testenv ]; then
-	echo "this test modifies the system and should only be run inside a container" >&2
-	exit 1
-fi
-echo "deb $mirror $DEFAULT_DIST main" > /etc/apt/sources.list
-apt-get -o Acquire::Languages=none update
-apt-get install --yes --no-install-recommends gpg
 $CMD --mode=root --variant=apt $DEFAULT_DIST /tmp/debian-chroot $mirror
 printf 'deb $mirror $DEFAULT_DIST main\n' | cmp /tmp/debian-chroot/etc/apt/sources.list -
 tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
@@ -1342,8 +1336,8 @@ if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 	runtests=$((runtests+1))
 else
-	echo "HAVE_QEMU != yes -- Skipping test..." >&2
-	skipped=$((skipped+1))
+	./run_null.sh SUDO
+	runtests=$((runtests+1))
 fi
 
 print_header "mode=root,variant=apt: test --dpkgopt"
@@ -1809,7 +1803,6 @@ $CMD --mode=root --variant=apt --logfile=log $DEFAULT_DIST /tmp/debian-chroot $m
 # we check the full log to also prevent debug printfs to accidentally make it into a commit
 cat << LOG | diff - log
 I: chroot architecture amd64 is equal to the host's architecture
-I: gpg --version failed: cannot determine the right signed-by value
 I: running apt-get update...
 I: downloading packages with apt...
 I: extracting archives...

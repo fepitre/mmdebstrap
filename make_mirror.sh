@@ -408,7 +408,7 @@ if [ "$HAVE_QEMU" = "yes" ]; then
 	tmpdir="$(mktemp -d)"
 	trap "cleanuptmpdir; cleanup_newcachedir" EXIT INT TERM
 
-	pkgs=perl-doc,systemd-sysv,perl,arch-test,fakechroot,fakeroot,mount,uidmap,qemu-user-static,binfmt-support,qemu-user,dpkg-dev,mini-httpd,libdevel-cover-perl,debootstrap,procps,apt-cudf,aspcud,squashfs-tools-ng,python3,libcap2-bin
+	pkgs=perl-doc,systemd-sysv,perl,arch-test,fakechroot,fakeroot,mount,uidmap,qemu-user-static,binfmt-support,qemu-user,dpkg-dev,mini-httpd,libdevel-cover-perl,debootstrap,procps,apt-cudf,aspcud,squashfs-tools-ng,python3,libcap2-bin,gpg
 	if [ "$HAVE_PROOT" = "yes" ]; then
 		pkgs="$pkgs,proot"
 	fi
