@@ -4309,7 +4309,7 @@ Print the B<mmdebstrap> version and exit.
 Choose which package set to install. Valid variant I<name>s are B<extract>,
 B<custom>, B<essential>, B<apt>, B<required>, B<minbase>, B<buildd>,
 B<important>, B<debootstrap>, B<->, and B<standard>. The default variant is
-B<required>. See the section B<VARIANTS> for more information.
+B<debootstrap>. See the section B<VARIANTS> for more information.
 
 =item B<--mode>=I<name>
 
