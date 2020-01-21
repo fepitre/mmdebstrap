@@ -1507,9 +1507,9 @@ sub setup {
         );
         close $fh;
         if ($indextargets eq '') {
-            info "content of /etc/apt/sources.list:";
             if ($verbosity_level >= 1) {
-                copy("$options->{root}/etc/apt/sources.list", *STDERR);
+                0 == system('apt-cache', 'policy')
+                  or error "apt-cache failed: $?";
             }
             error "apt-get update didn't download anything";
         }
