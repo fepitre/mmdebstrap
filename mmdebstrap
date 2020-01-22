@@ -1371,12 +1371,70 @@ sub setup {
           or error "cannot chmod fstab: $!";
     }
 
-    # write /etc/apt/sources.list
+    # write /etc/apt/sources.list and files in /etc/apt/sources.list.d/
     {
-        open my $fh, '>', "$options->{root}/etc/apt/sources.list"
-          or error "cannot open /etc/apt/sources.list: $!";
-        print $fh $options->{sourceslist};
+        my $firstentry = $options->{sourceslists}->[0];
+        # if the first sources.list entry is of one-line type and without
+        # explicit filename, then write out an actual /etc/apt/sources.list
+        # otherwise everything goes into /etc/apt/sources.list.d
+        my $fname;
+        if ($firstentry->{type} eq 'one-line'
+            && !defined $firstentry->{fname}) {
+            $fname = "$options->{root}/etc/apt/sources.list";
+        } else {
+            $fname = "$options->{root}/etc/apt/sources.list.d/0000";
+            if (defined $firstentry->{fname}) {
+                $fname .= $firstentry->{fname};
+                if (   $firstentry->{fname} !~ /\.list/
+                    && $firstentry->{fname} !~ /\.sources/) {
+                    if ($firstentry->{type} eq 'one-line') {
+                        $fname .= '.list';
+                    } elsif ($firstentry->{type} eq 'deb822') {
+                        $fname .= '.sources';
+                    } else {
+                        error "invalid type: $firstentry->{type}";
+                    }
+                }
+            } else {
+                # if no filename is given, then this must be a deb822 file
+                # because if it was a one-line type file, then it would've been
+                # written to /etc/apt/sources.list
+                $fname .= 'main.sources';
+            }
+        }
+        open my $fh, '>', "$fname" or error "cannot open $fname: $!";
+        print $fh $firstentry->{content};
         close $fh;
+        # everything else goes into /etc/apt/sources.list.d/
+        for (my $i = 1 ; $i < scalar @{ $options->{sourceslists} } ; $i++) {
+            my $entry = $options->{sourceslists}->[$i];
+            my $fname = "$options->{root}/etc/apt/sources.list.d/"
+              . sprintf("%04d", $i);
+            if (defined $entry->{fname}) {
+                $fname .= $entry->{fname};
+                if (   $entry->{fname} !~ /\.list/
+                    && $entry->{fname} !~ /\.sources/) {
+                    if ($entry->{type} eq 'one-line') {
+                        $fname .= '.list';
+                    } elsif ($entry->{type} eq 'deb822') {
+                        $fname .= '.sources';
+                    } else {
+                        error "invalid type: $entry->{type}";
+                    }
+                }
+            } else {
+                if ($entry->{type} eq 'one-line') {
+                    $fname .= 'main.list';
+                } elsif ($entry->{type} eq 'deb822') {
+                    $fname .= 'main.sources';
+                } else {
+                    error "invalid type: $entry->{type}";
+                }
+            }
+            open my $fh, '>', "$fname" or error "cannot open $fname: $!";
+            print $fh $entry->{content};
+            close $fh;
+        }
     }
 
     # allow network access from within
@@ -2642,6 +2700,29 @@ sub hookhelper {
     return;
 }
 
+sub guess_sources_format {
+    my $content    = shift;
+    my $is_deb822  = 0;
+    my $is_oneline = 0;
+    for my $line (split "\n", $content) {
+        if ($line =~ /^deb(-src)? /) {
+            $is_oneline = 1;
+            last;
+        }
+        if ($line =~ /^[^#:\s]+:/) {
+            $is_deb822 = 1;
+            last;
+        }
+    }
+    if ($is_deb822) {
+        return 'deb822';
+    }
+    if ($is_oneline) {
+        return 'one-line';
+    }
+    return;
+}
+
 sub main() {
     umask 022;
 
@@ -3116,12 +3197,27 @@ sub main() {
             $options->{target} = '-';
         }
 
-        my $sourceslist = '';
+        my $sourceslists = [];
         if (!defined $suite) {
             # If no suite was specified, then the whole sources.list has to
             # come from standard input
             info "Reading sources.list from standard input...";
-            $sourceslist = do { local $/; <> };
+            my $content = do {
+                local $/;
+                ## no critic (InputOutput::ProhibitExplicitStdin)
+                <STDIN>;
+            };
+            my $type = guess_sources_format($content);
+            if (!defined $type
+                || ($type ne "deb822" and $type ne "one-line")) {
+                error "cannot determine sources.list format";
+            }
+            push @{$sourceslists},
+              {
+                type    => $type,
+                fname   => undef,
+                content => $content,
+              };
         } else {
             my @components = ();
             foreach my $comp (@{ $options->{components} }) {
@@ -3282,18 +3378,90 @@ sub main() {
             if (scalar @ARGV > 0) {
                 for my $arg (@ARGV) {
                     if ($arg eq '-') {
-                        info "Reading sources.list from standard input...";
-                        $sourceslist .= do { local $/; <> };
+                        info 'Reading sources.list from standard input...';
+                        my $content = do {
+                            local $/;
+                            ## no critic (InputOutput::ProhibitExplicitStdin)
+                            <STDIN>;
+                        };
+                        my $type = guess_sources_format($content);
+                        if (!defined $type
+                            || ($type ne 'deb822' and $type ne 'one-line')) {
+                            error "cannot determine sources.list format";
+                        }
+                        # if last entry is of same type and without filename,
+                        # then append
+                        if (   scalar @{$sourceslists} > 0
+                            && $sourceslists->[-1]{type} eq $type
+                            && !defined $sourceslists->[-1]{fname}) {
+                            $sourceslists->[-1]{content}
+                              .= ($type eq 'one-line' ? "\n" : "\n\n")
+                              . $content;
+                        } else {
+                            push @{$sourceslists},
+                              {
+                                type    => $type,
+                                fname   => undef,
+                                content => $content,
+                              };
+                        }
                     } elsif ($arg =~ /^deb(-src)? /) {
-                        $sourceslist .= "$arg\n";
+                        my $content = "$arg\n";
+                        # if last entry is of same type and without filename,
+                        # then append
+                        if (   scalar @{$sourceslists} > 0
+                            && $sourceslists->[-1]{type} eq 'one-line'
+                            && !defined $sourceslists->[-1]{fname}) {
+                            $sourceslists->[-1]{content} .= "\n" . $content;
+                        } else {
+                            push @{$sourceslists},
+                              {
+                                type    => 'one-line',
+                                fname   => undef,
+                                content => $content,
+                              };
+                        }
                     } elsif ($arg =~ /:\/\//) {
-                        $sourceslist .= "deb$signedby $arg $suite $compstr\n";
+                        my $content = "deb$signedby $arg $suite $compstr\n";
+                        # if last entry is of same type and without filename,
+                        # then append
+                        if (   scalar @{$sourceslists} > 0
+                            && $sourceslists->[-1]{type} eq 'one-line'
+                            && !defined $sourceslists->[-1]{fname}) {
+                            $sourceslists->[-1]{content} .= "\n" . $content;
+                        } else {
+                            push @{$sourceslists},
+                              {
+                                type    => 'one-line',
+                                fname   => undef,
+                                content => $content,
+                              };
+                        }
                     } elsif (-f $arg) {
+                        my $content = '';
                         open my $fh, '<', $arg or error "cannot open $arg: $!";
                         while (my $line = <$fh>) {
-                            $sourceslist .= $line;
+                            $content .= $line;
                         }
                         close $fh;
+                        my $type = undef;
+                        if ($arg =~ /\.list$/) {
+                            $type = 'one-line';
+                        } elsif ($arg =~ /\.sources$/) {
+                            $type = 'deb822';
+                        } else {
+                            $type = guess_sources_format($content);
+                        }
+                        if (!defined $type
+                            || ($type ne 'deb822' and $type ne 'one-line')) {
+                            error "cannot determine sources.list format";
+                        }
+                        push @{$sourceslists},
+                          {
+                            type    => $type,
+                            fname   => basename($arg),
+                            content => $content,
+                          };
                     } else {
                         error "invalid mirror: $arg";
                     }
@@ -3328,6 +3496,7 @@ sub main() {
                 } elsif (any { $_ eq $suite } @kali) {
                     $mirror = 'https://http.kali.org/kali';
                 }
+                my $sourceslist = '';
                 $sourceslist .= "deb$signedby $mirror $suite $compstr\n";
                 if (any { $_ eq $suite } @ubuntustable) {
                     $sourceslist
@@ -3358,12 +3527,29 @@ sub main() {
                           . " $compstr\n";
                     }
                 }
+                push @{$sourceslists},
+                  {
+                    type    => 'one-line',
+                    fname   => undef,
+                    content => $sourceslist,
+                  };
             }
         }
-        if ($sourceslist eq '') {
+        if (scalar @{$sourceslists} == 0) {
             error "empty apt sources.list";
         }
-        $options->{sourceslist} = $sourceslist;
+        debug("sources list entries:");
+        for my $list (@{$sourceslists}) {
+            if (defined $list->{fname}) {
+                debug("fname: $list->{fname}");
+            }
+            debug("type: $list->{type}");
+            debug("content:");
+            for my $line (split "\n", $list->{content}) {
+                debug("  $line");
+            }
+        }
+        $options->{sourceslists} = $sourceslists;
     }
 
     if ($options->{target} ne '-') {

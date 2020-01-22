@@ -61,6 +61,12 @@ deletecache() {
 	else
 		echo "does not exist: $dir/debian-security/pool/updates/main" >&2
 	fi
+	for i in $(seq 1 6); do
+		if [ ! -e "$dir/debian$i" ]; then
+			continue
+		fi
+		rm "$dir/debian$i"
+	done
 	rm "$dir/mmdebstrapcache"
 	# now the rest should only be empty directories
 	if [ -e "$dir" ]; then
@@ -372,6 +378,14 @@ deb [arch=$nativearch] $security_mirror stable/updates main
 END
 		fi
 	done
+done
+
+# Create some symlinks so that we can trick apt into accepting multiple apt
+# lines that point to the same repository but look different. This is to
+# avoid the warning:
+# W: Target Packages (main/binary-all/Packages) is configured multiple times...
+for i in $(seq 1 6); do
+	ln -s debian "$newcachedir/debian$i"
 done
 
 tmpdir=""

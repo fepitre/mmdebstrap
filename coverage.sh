@@ -72,7 +72,7 @@ if [ ! -e shared/taridshift ] || [ taridshift -nt shared/taridshift ]; then
 fi
 
 starttime=
-total=138
+total=140
 skipped=0
 runtests=0
 i=1
@@ -985,8 +985,129 @@ set -eu
 export LC_ALL=C.UTF-8
 echo "deb $mirror $DEFAULT_DIST main" > /tmp/sources.list
 $CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar /tmp/sources.list
-tar -tf /tmp/debian-chroot.tar | sort | diff -u tar1.txt -
+tar -tf /tmp/debian-chroot.tar \
+	| sed 's#^./etc/apt/sources.list.d/0000sources.list\$#./etc/apt/sources.list#' \
+	| sort | diff -u tar1.txt -
 rm /tmp/debian-chroot.tar /tmp/sources.list
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+	runtests=$((runtests+1))
+elif [ "$defaultmode" = "root" ]; then
+	./run_null.sh SUDO
+	runtests=$((runtests+1))
+else
+	./run_null.sh
+	runtests=$((runtests+1))
+fi
+
+print_header "mode=$defaultmode,variant=apt: test deb822 (1/2)"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+cat << SOURCES > /tmp/deb822.sources
+Types: deb
+URIs: ${mirror}1
+Suites: $DEFAULT_DIST
+Components: main
+SOURCES
+echo "deb ${mirror}2 $DEFAULT_DIST main" > /tmp/sources.list
+echo "deb ${mirror}3 $DEFAULT_DIST main" \
+	| $CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST \
+		/tmp/debian-chroot \
+		/tmp/deb822.sources \
+		${mirror}4 \
+		- \
+		"deb ${mirror}5 $DEFAULT_DIST main" \
+		${mirror}6 \
+		/tmp/sources.list
+test ! -e /tmp/debian-chroot/etc/apt/sources.list
+cat << SOURCES | cmp /tmp/debian-chroot/etc/apt/sources.list.d/0000deb822.sources -
+Types: deb
+URIs: ${mirror}1
+Suites: $DEFAULT_DIST
+Components: main
+SOURCES
+cat << SOURCES | cmp /tmp/debian-chroot/etc/apt/sources.list.d/0001main.list -
+deb ${mirror}4 $DEFAULT_DIST main
+
+deb ${mirror}3 $DEFAULT_DIST main
+
+deb ${mirror}5 $DEFAULT_DIST main
+
+deb ${mirror}6 $DEFAULT_DIST main
+SOURCES
+echo "deb ${mirror}2 $DEFAULT_DIST main" | cmp /tmp/debian-chroot/etc/apt/sources.list.d/0002sources.list -
+tar -C /tmp/debian-chroot --one-file-system -c . \
+	| {
+		tar -t \
+			| grep -v "^./etc/apt/sources.list.d/0000deb822.sources$" \
+			| grep -v "^./etc/apt/sources.list.d/0001main.list$" \
+			| grep -v "^./etc/apt/sources.list.d/0002sources.list";
+		printf "./etc/apt/sources.list\n";
+	} | sort | diff -u tar1.txt -
+rm -r /tmp/debian-chroot
+rm /tmp/sources.list /tmp/deb822.sources
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+	runtests=$((runtests+1))
+elif [ "$defaultmode" = "root" ]; then
+	./run_null.sh SUDO
+	runtests=$((runtests+1))
+else
+	./run_null.sh
+	runtests=$((runtests+1))
+fi
+
+print_header "mode=$defaultmode,variant=apt: test deb822 (2/2)"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+cat << SOURCES > /tmp/deb822
+Types: deb
+URIs: ${mirror}1
+Suites: $DEFAULT_DIST
+Components: main
+SOURCES
+echo "deb ${mirror}2 $DEFAULT_DIST main" > /tmp/sources
+cat << SOURCES | $CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST \
+		/tmp/debian-chroot \
+		/tmp/deb822 \
+		- \
+		/tmp/sources
+Types: deb
+URIs: ${mirror}3
+Suites: $DEFAULT_DIST
+Components: main
+SOURCES
+test ! -e /tmp/debian-chroot/etc/apt/sources.list
+ls -lha /tmp/debian-chroot/etc/apt/sources.list.d/
+cat << SOURCES | cmp /tmp/debian-chroot/etc/apt/sources.list.d/0000deb822.sources -
+Types: deb
+URIs: ${mirror}1
+Suites: $DEFAULT_DIST
+Components: main
+SOURCES
+cat << SOURCES | cmp /tmp/debian-chroot/etc/apt/sources.list.d/0001main.sources -
+Types: deb
+URIs: ${mirror}3
+Suites: $DEFAULT_DIST
+Components: main
+SOURCES
+echo "deb ${mirror}2 $DEFAULT_DIST main" | cmp /tmp/debian-chroot/etc/apt/sources.list.d/0002sources.list -
+tar -C /tmp/debian-chroot --one-file-system -c . \
+	| {
+		tar -t \
+			| grep -v "^./etc/apt/sources.list.d/0000deb822.sources$" \
+			| grep -v "^./etc/apt/sources.list.d/0001main.sources$" \
+			| grep -v "^./etc/apt/sources.list.d/0002sources.list$";
+		printf "./etc/apt/sources.list\n";
+	} | sort | diff -u tar1.txt -
+rm -r /tmp/debian-chroot
+rm /tmp/sources /tmp/deb822
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
