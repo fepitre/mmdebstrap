@@ -3302,15 +3302,18 @@ sub main() {
                     $gpghome,                 '--no-auto-check-trustdb',
                     '--trust-model',          'always'
                 );
-                my ($ret, $fh, $message);
+                my ($ret, $message);
                 {
-                    # change warning handler to prevent message
-                    # Can't exec "gpg": No such file or directory
-                    local $SIG{__WARN__} = sub { $message = shift; };
-                    $ret = open $fh, '-|', @gpgcmd, '--version';
+                    my $fh;
+                    {
+                        # change warning handler to prevent message
+                        # Can't exec "gpg": No such file or directory
+                        local $SIG{__WARN__} = sub { $message = shift; };
+                        $ret = open $fh, '-|', @gpgcmd, '--version';
+                    }
+                    # we only want to check if the gpg command exists
+                    close $fh;
                 }
-                # we only want to check if the gpg command exists
-                close $fh;
                 if ($? != 0 || !defined $ret || defined $message) {
                     info "gpg --version failed: cannot determine the right"
                       . " signed-by value";
@@ -3336,15 +3339,17 @@ sub main() {
                     $signedby = " [signed-by=\"$keyring\"]";
                     last;
                 }
-                open my $fh, '-|', @gpgcmd, @keyringopts, '--with-colons',
-                  '--list-keys' // error "failed to fork(): $!";
-                while (my $line = <$fh>) {
-                    if ($line !~ /^fpr:::::::::([^:]+):/) {
-                        next;
+                {
+                    open my $fh, '-|', @gpgcmd, @keyringopts, '--with-colons',
+                      '--list-keys' // error "failed to fork(): $!";
+                    while (my $line = <$fh>) {
+                        if ($line !~ /^fpr:::::::::([^:]+):/) {
+                            next;
+                        }
+                        push @aptfingerprints, $1;
                     }
-                    push @aptfingerprints, $1;
+                    close $fh;
                 }
-                close $fh;
                 if ($? != 0) {
                     error "gpg failed";
                 }
@@ -3356,21 +3361,23 @@ sub main() {
                 # are known by apt and only add signed-by option if that's not
                 # the case
                 my @suitefingerprints = ();
-                open my $suitefh, '-|', @gpgcmd, '--keyring', $keyring,
-                  '--with-colons',
-                  '--list-keys' // error "failed to fork(): $!";
-                while (my $line = <$suitefh>) {
-                    if ($line !~ /^fpr:::::::::([^:]+):/) {
-                        next;
+                {
+                    open my $fh, '-|', @gpgcmd, '--keyring', $keyring,
+                      '--with-colons',
+                      '--list-keys' // error "failed to fork(): $!";
+                    while (my $line = <$fh>) {
+                        if ($line !~ /^fpr:::::::::([^:]+):/) {
+                            next;
+                        }
+                        # if this fingerprint is not known by apt, then we need
+                        #to add the signed-by option
+                        if (none { $_ eq $1 } @aptfingerprints) {
+                            $signedby = " [signed-by=\"$keyring\"]";
+                            last;
+                        }
                     }
-                    # if this fingerprint is not known by apt, then we need to
-                    # add the signed-by option
-                    if (none { $_ eq $1 } @aptfingerprints) {
-                        $signedby = " [signed-by=\"$keyring\"]";
-                        last;
-                    }
+                    close $fh;
                 }
-                close $suitefh;
                 if ($? != 0) {
                     error "gpg failed";
                 }
