@@ -929,8 +929,9 @@ sub run_chroot {
                   or warn "umount /sys failed: $?";
             };
             0 == system(
-                'mount',               '-t',  'sysfs', '-o',
-                'nosuid,nodev,noexec', 'sys', "$options->{root}/sys"
+                'mount', '-t',                     'sysfs',
+                '-o',    'ro,nosuid,nodev,noexec', 'sys',
+                "$options->{root}/sys"
             ) or error "mount /sys failed: $?";
         } elsif ($options->{mode} eq 'unshare') {
             # naturally we have to clean up after ourselves in sudo mode where
@@ -978,7 +979,8 @@ sub run_chroot {
                 0 == system('umount', "$options->{root}/proc")
                   or error "umount /proc failed: $?";
             };
-            0 == system('mount', '-t', 'proc', 'proc', "$options->{root}/proc")
+            0 == system('mount', '-t', 'proc', '-o', 'ro', 'proc',
+                "$options->{root}/proc")
               or error "mount /proc failed: $?";
         } elsif ($options->{mode} eq 'unshare') {
             # naturally we have to clean up after ourselves in sudo mode where
