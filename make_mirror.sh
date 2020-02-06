@@ -539,7 +539,10 @@ END
 		copy-in "$tmpdir/worker.sh" / : \
 		copy-in "$tmpdir/mini-httpd" /etc/default : \
 		copy-in "$tmpdir/hosts" /etc/ : \
-		touch /mmdebstrap-testenv :
+		touch /mmdebstrap-testenv : \
+		sync : \
+		umount / : \
+		shutdown
 	qemu-img convert -O qcow2 "$tmpdir/debian-$DEFAULT_DIST.img" "$newcachedir/debian-$DEFAULT_DIST.qcow"
 	cleanuptmpdir
 	trap "cleanup_newcachedir" EXIT INT TERM
