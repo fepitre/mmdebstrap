@@ -1253,7 +1253,7 @@ $CMD --mode=$defaultmode --variant=apt --architectures=i386 $DEFAULT_DIST /tmp/d
 	| grep -v '^\./lib/ld-linux\.so\.2$' \
 	| grep -v '^\./lib/i386-linux-gnu/ld-linux\.so\.2$' \
 	| grep -v '^\./usr/lib/gcc/i686-linux-gnu/$' \
-	| grep -v '^\./usr/lib/gcc/i686-linux-gnu/9/$' \
+	| grep -v '^\./usr/lib/gcc/i686-linux-gnu/[0-9]\+/$' \
 	| grep -v '^\./usr/share/man/man8/i386\.8\.gz$' \
 	| grep -v '^\./usr/share/doc/[^/]\+/changelog\(\.Debian\)\?\.i386\.gz$' \
 	| sed 's/i386-linux-gnu/x86_64-linux-gnu/' \
@@ -1265,7 +1265,7 @@ $CMD --mode=$defaultmode --variant=apt --architectures=i386 $DEFAULT_DIST /tmp/d
 	| grep -v '^\./lib64/$' \
 	| grep -v '^\./lib64/ld-linux-x86-64\.so\.2$' \
 	| grep -v '^\./usr/lib/gcc/x86_64-linux-gnu/$' \
-	| grep -v '^\./usr/lib/gcc/x86_64-linux-gnu/9/$' \
+	| grep -v '^\./usr/lib/gcc/x86_64-linux-gnu/[0-9]\+/$' \
 	| grep -v '^\./lib/x86_64-linux-gnu/ld-linux-x86-64\.so\.2$' \
 	| grep -v '^\./lib/x86_64-linux-gnu/libmvec-2\.[0-9]\+\.so$' \
 	| grep -v '^\./lib/x86_64-linux-gnu/libmvec\.so\.1$' \
