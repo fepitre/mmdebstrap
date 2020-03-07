@@ -4654,6 +4654,10 @@ Example: Exclude paths to reduce chroot size
     --dpkgopt='path-include=/usr/share/doc/*/copyright'
     --dpkgopt='path-include=/usr/share/doc/*/changelog.Debian.*'
 
+Example: Do not perform safe I/O operations when unpacking for more speed
+
+    --dpkgopt=force-unsafe-io
+
 =item B<--include>=I<pkg1>[,I<pkg2>,...]
 
 Comma or whitespace separated list of packages which will be installed in
@@ -5112,6 +5116,15 @@ Create a bootable USB Stick that boots into a full Debian desktop:
         extlinux / : copy-in extlinux.conf / : sync : umount / : shutdown
     $ qemu-system-x86_64 -m 1G -enable-kvm debian-unstable.img
     $ sudo dd if=debian-unstable.img of=/dev/sdXXX status=progress
+
+Build libdvdcss2.deb without installing installing anything or changing apt
+sources on the current system:
+
+    $ mmdebstrap --variant=apt --components=main,contrib --include=libdvd-pkg \
+        --customize-hook='chroot $1 /usr/lib/libdvd-pkg/b-i_libdvdcss.sh' \
+        | tar --extract --verbose --strip-components=4 \
+            --wildcards './usr/src/libdvd-pkg/libdvdcss2_*_*.deb'
+    $ ls libdvdcss2_*_*.deb
 
 Use as replacement for autopkgtest-build-qemu and vmdb2:
 
