@@ -3010,7 +3010,8 @@ sub main() {
                 info "  sudo sysctl -w kernel.unprivileged_userns_clone=1";
                 info "or permanently enable unprivileged usernamespaces by"
                   . " putting the setting into /etc/sysctl.d/";
-                info "see https://bugs.debian.org/cgi-bin/"
+                info "THIS SETTING HAS SECURITY IMPLICATIONS!";
+                info "Refer to https://bugs.debian.org/cgi-bin/"
                   . "bugreport.cgi?bug=898446";
             }
             exit 1;
@@ -4833,8 +4834,10 @@ by the _apt user, then apt sandboxing will be automatically disabled.
 This mode uses Linux user namespaces to allow unprivileged use of chroot and
 creation of files that appear to be owned by the superuser inside the unshared
 namespace. A directory chroot created with this mode will end up with wrong
-permissions. Choose to create a tarball instead. This mode requires the sysctl
-C<kernel.unprivileged_userns_clone> being set to C<1>.
+ownership information. Choose to create a tarball instead. This mode requires
+the sysctl C<kernel.unprivileged_userns_clone> being set to C<1>. B<SETTING
+THIS OPTION HAS SECURITY IMPLICATIONS>. Refer to
+L<https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=898446>
 
 =item B<fakeroot>, B<fakechroot>
 
