@@ -1185,7 +1185,12 @@ sub setup {
         warning "cannot read $options->{apttrustedparts}";
     }
 
-    my ($conf, $tmpfile) = tempfile(UNLINK => 1)
+    # We create the temporary apt.conf inside the rootfs as an easy way to make
+    # sure that the unshared process is able to create it even if the user has
+    # TMPDIR set to a directory that the unshared process does not directly
+    # have access to.
+    my ($conf, $tmpfile)
+      = tempfile("mmdebstrap.apt.conf.XXXXXXXXXXXX", DIR => $options->{root})
       or error "cannot open apt.conf: $!";
     print $conf "Apt::Architecture \"$options->{nativearch}\";\n";
     # the host system might have configured additional architectures
@@ -2331,6 +2336,7 @@ sub setup {
         });
     run_apt_progress(
         { ARGV => ['apt-get', 'clean'], CHDIR => $options->{root} });
+    unlink $tmpfile or error "failed to unlink $tmpfile: $!";
 
     # apt since 1.6 creates the auxfiles directory. If apt inside the chroot
     # is older than that, then it will not know how to clean it.
