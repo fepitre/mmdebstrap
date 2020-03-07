@@ -1190,12 +1190,57 @@ sub setup {
         warning "cannot read $options->{apttrustedparts}";
     }
 
-    # We create the temporary apt.conf inside the rootfs as an easy way to make
-    # sure that the unshared process is able to create it even if the user has
-    # TMPDIR set to a directory that the unshared process does not directly
-    # have access to.
+    {
+        my @directories = (
+            '/etc/apt/apt.conf.d',        '/etc/apt/sources.list.d',
+            '/etc/apt/preferences.d',     '/var/cache/apt',
+            '/var/lib/apt/lists/partial', '/var/lib/dpkg',
+            '/etc/dpkg/dpkg.cfg.d/',      '/tmp'
+        );
+        # if dpkg and apt operate from the outside we need some more
+        # directories because dpkg and apt might not even be installed inside
+        # the chroot
+        if ($options->{mode} eq 'chrootless') {
+            push @directories,
+              (
+                '/var/log/apt',       '/var/lib/dpkg/triggers',
+                '/var/lib/dpkg/info', '/var/lib/dpkg/alternatives',
+                '/var/lib/dpkg/updates'
+              );
+        }
+        foreach my $dir (@directories) {
+            if (-e "$options->{root}/$dir") {
+                if (!-d "$options->{root}/$dir") {
+                    error "$dir already exists but is not a directory";
+                }
+            } else {
+                my $num_created = make_path "$options->{root}/$dir",
+                  { error => \my $err };
+                if ($err && @$err) {
+                    error(
+                        join "; ",
+                        (map { "cannot create " . (join ": ", %{$_}) } @$err));
+                } elsif ($num_created == 0) {
+                    error "cannot create $options->{root}/$dir";
+                }
+            }
+        }
+    }
+
+    # The TMPDIR set by the user or even /tmp might be inaccessible by the
+    # unshared user. Thus, we place all temporary files in /tmp inside the new
+    # rootfs.
+    #
+    # This will affect calls to tempfile() as well as runs of "apt-get update"
+    # which will create temporary clearsigned.message.XXXXXX files to verify
+    # signatures.
+    {
+        ## no critic (Variables::RequireLocalizedPunctuationVars)
+        $ENV{"TMPDIR"} = "$options->{root}/tmp";
+    }
+
     my ($conf, $tmpfile)
-      = tempfile("mmdebstrap.apt.conf.XXXXXXXXXXXX", DIR => $options->{root})
+      = tempfile("mmdebstrap.apt.conf.XXXXXXXXXXXX", TMPDIR => 1)
       or error "cannot open apt.conf: $!";
     print $conf "Apt::Architecture \"$options->{nativearch}\";\n";
     # the host system might have configured additional architectures
@@ -1238,43 +1283,6 @@ sub setup {
         print $conf "APT::Immediate-Configure false;\n";
     }
     close $conf;
-
-    {
-        my @directories = (
-            '/etc/apt/apt.conf.d',        '/etc/apt/sources.list.d',
-            '/etc/apt/preferences.d',     '/var/cache/apt',
-            '/var/lib/apt/lists/partial', '/var/lib/dpkg',
-            '/etc/dpkg/dpkg.cfg.d/'
-        );
-        # if dpkg and apt operate from the outside we need some more
-        # directories because dpkg and apt might not even be installed inside
-        # the chroot
-        if ($options->{mode} eq 'chrootless') {
-            push @directories,
-              (
-                '/var/log/apt',       '/var/lib/dpkg/triggers',
-                '/var/lib/dpkg/info', '/var/lib/dpkg/alternatives',
-                '/var/lib/dpkg/updates'
-              );
-        }
-        foreach my $dir (@directories) {
-            if (-e "$options->{root}/$dir") {
-                if (!-d "$options->{root}/$dir") {
-                    error "$dir already exists but is not a directory";
-                }
-            } else {
-                my $num_created = make_path "$options->{root}/$dir",
-                  { error => \my $err };
-                if ($err && @$err) {
-                    error(
-                        join "; ",
-                        (map { "cannot create " . (join ": ", %{$_}) } @$err));
-                } elsif ($num_created == 0) {
-                    error "cannot create $options->{root}/$dir";
-                }
-            }
-        }
-    }
 
     # We put certain configuration items in their own configuration file
     # because they have to be valid for apt invocation from outside as well as
