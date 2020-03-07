@@ -1224,6 +1224,14 @@ sub setup {
         # options.
         print $conf "pkgCacheGen::ForceEssential \",\";\n";
     }
+    if ($options->{dryrun}) {
+        # Without this option, apt will fail with:
+        # E: Could not configure 'libc6:amd64'.
+        # E: Could not perform immediate configuration on 'libgcc1:amd64'.
+        #
+        # See https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=953260
+        print $conf "APT::Immediate-Configure false;\n";
+    }
     close $conf;
 
     {
@@ -2851,8 +2859,17 @@ sub main() {
         'setup-hook=s@'     => \$options->{setup_hook},
         'essential-hook=s@' => \$options->{essential_hook},
         'customize-hook=s@' => \$options->{customize_hook},
-        'simulate'          => \$options->{dryrun},
-        'dry-run'           => \$options->{dryrun},
+        # Sometimes --simulate fails even though non-simulate succeeds because
+        # in simulate mode, apt cannot rely on dpkg to figure out tricky
+        # dependency situations and will give up instead when it cannot find
+        # a solution.
+        #
+        # 2020-02-06, #debian-apt on OFTC, times in UTC+1
+        # 12:52 < DonKult> [...] It works in non-simulation because simulate is
+        #                  more picky. If you wanna know why simulate complains
+        #                  here prepare for long suffering in dependency hell.
+        'simulate' => \$options->{dryrun},
+        'dry-run'  => \$options->{dryrun},
     ) or pod2usage(-exitval => 2, -verbose => 1);
 
     if (defined($logfile)) {
