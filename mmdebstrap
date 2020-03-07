@@ -1532,6 +1532,8 @@ sub setup {
     }
     if ($verbosity_level >= 3) {
         0 == system('apt-config', 'dump') or error "apt-config failed: $?";
+        debug "content of $tmpfile:";
+        copy($tmpfile, \*STDERR);
     }
 
     # when apt-get update is run by the root user, then apt will attempt to
