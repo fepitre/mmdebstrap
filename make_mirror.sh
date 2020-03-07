@@ -527,12 +527,17 @@ END
 END
 	#libguestfs-test-tool
 	#export LIBGUESTFS_DEBUG=1 LIBGUESTFS_TRACE=1
+	#
+	# In case the rootfs was prepared in fakechroot mode, ldconfig has to
+	# run to populate /etc/ld.so.cache or otherwise fakechroot tests will
+	# fail to run.
 	guestfish -N "$tmpdir/debian-$DEFAULT_DIST.img"=disk:3G -- \
 		part-disk /dev/sda mbr : \
 		part-set-bootable /dev/sda 1 true : \
 		mkfs ext2 /dev/sda1 : \
 		mount /dev/sda1 / : \
 		tar-in "$tmpdir/debian-chroot.tar" / : \
+		command /sbin/ldconfig : \
 		extlinux / : \
 		copy-in "$tmpdir/extlinux.conf" / : \
 		mkdir-p /etc/systemd/system/multi-user.target.wants : \
