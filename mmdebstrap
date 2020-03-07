@@ -1136,13 +1136,14 @@ sub run_hooks {
                 # execute it directly if it's an executable file
                 # or if it there are no shell metacharacters
                 # (the /a regex modifier makes \w match only ASCII)
-                0 == system($script, $options->{root})
+                0 == system('env', '--unset=TMPDIR', $script, $options->{root})
                   or error "command failed: $script";
             } else {
                 info "running --$name-hook in shell: sh -c '$script' exec"
                   . " $options->{root}";
                 # otherwise, wrap everything in sh -c
-                0 == system('sh', '-c', $script, 'exec', $options->{root})
+                0 == system('env', '--unset=TMPDIR',
+                    'sh', '-c', $script, 'exec', $options->{root})
                   or error "command failed: $script";
             }
         }
@@ -1982,9 +1983,9 @@ sub setup {
                 }
             }
 
-            # make sure that APT_CONFIG is not set when executing anything
-            # inside the chroot
-            my @chrootcmd = ();
+            # make sure that APT_CONFIG and TMPDIR are not set when executing
+            # anything inside the chroot
+            my @chrootcmd = ('env', '--unset=APT_CONFIG', '--unset=TMPDIR');
             if ($options->{mode} eq 'proot') {
                 push @chrootcmd,
                   (
@@ -4905,15 +4906,16 @@ hook options in the section B<OPTIONS>.
 The options can be specified multiple times and the commands are executed in
 the order in which they are given on the command line. There are three
 different types of hook option arguments. If the argument passed to the hook
-option starts with C<copy-in>, C<copy-out>, C<tar-in>, C<tar-out>, C<upload>
-or C<download> followed by a space, then the hook is interpreted as a special
+option starts with C<copy-in>, C<copy-out>, C<tar-in>, C<tar-out>, C<upload> or
+C<download> followed by a space, then the hook is interpreted as a special
 hook. Otherwise, if I<command> is an existing executable file from C<$PATH> or
 if I<command> does not contain any shell metacharacters, then I<command> is
 directly exec-ed with the path to the chroot directory passed as the first
 argument. Otherwise, I<command> is executed under I<sh> and the chroot
-directory can be accessed via I<$1>. All environment variables used by
+directory can be accessed via I<$1>. All environment variables set by
 B<mmdebstrap> (like C<APT_CONFIG>, C<DEBIAN_FRONTEND>, C<LC_ALL> and C<PATH>)
-are preserved.
+are preserved. All environment variables set by the user are preserved, except
+for C<TMPDIR> which is cleared.
 
 The paths inside the chroot are relative to the root directory of the chroot.
 The path on the outside is relative to current directory of the original
@@ -5092,8 +5094,21 @@ Build a non-Debian chroot like Ubuntu bionic:
 
 =head1 ENVIRONMENT VARIABLES
 
+=over 8
+
+=item C<SOURCE_DATE_EPOCH>
+
 By setting C<SOURCE_DATE_EPOCH> the result will be reproducible over multiple
 runs with the same options and mirror content.
+
+=item C<TMPDIR>
+
+When creating a tarball, a temporary directory is populated with the rootfs
+before the tarball is packed. The location of that temporary directory will be
+in F</tmp> or the location pointed to by C<TMPDIR> if that environment variable
+is set.
+
+=back
 
 =head1 DEBOOTSTRAP
 
