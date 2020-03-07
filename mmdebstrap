@@ -5057,6 +5057,34 @@ Use as debootstrap replacement in sbuild-createchroot:
 
 =begin comment
 
+Create a bootable USB Stick that boots into a full Debian desktop:
+
+    $ mmdebstrap --aptopt='Apt::Install-Recommends "true"' --customize-hook \
+        'chroot "$1" adduser --gecos user --disabled-password user' \
+        --customize-hook='echo 'user:live' | chroot "$1" chpasswd' \
+        --customize-hook='echo host > "$1/etc/hostname"' \
+        --customize-hook='echo "127.0.0.1 localhost host" > "$1/etc/hosts"' \
+        --include=linux-image-amd64,task-desktop unstable debian-unstable.tar
+    $ cat << END > extlinux.conf
+    > default linux
+    > timeout 0
+    >
+    > label linux
+    > kernel /vmlinuz
+    > append initrd=/initrd.img root=LABEL=rootfs
+    END
+    # You can use $(sudo blockdev --getsize64 /dev/sdXXX) to get the right
+    # image size for the target medium in bytes
+    $ guestfish -N debian-unstable.img=disk:8G -- part-disk /dev/sda mbr : \
+        part-set-bootable /dev/sda 1 true : mkfs ext2 /dev/sda1 : \
+        set-label /dev/sda1 rootfs : mount /dev/sda1 / : \
+        tar-in debian-unstable.tar / xattrs:true : \
+        upload /usr/lib/SYSLINUX/mbr.bin /mbr.bin : \
+        copy-file-to-device /mbr.bin /dev/sda size:440 : rm /mbr.bin : \
+        extlinux / : copy-in extlinux.conf / : sync : umount / : shutdown
+    $ qemu-system-x86_64 -m 1G -enable-kvm debian-unstable.img
+    $ sudo dd if=debian-unstable.img of=/dev/sdXXX status=progress
+
 Use as replacement for autopkgtest-build-qemu and vmdb2:
 
     $ mmdebstrap --variant=important --include=linux-image-amd64 \
@@ -5074,9 +5102,9 @@ Use as replacement for autopkgtest-build-qemu and vmdb2:
     >
     > label linux
     > kernel /vmlinuz
-    > append initrd=/initrd.img root=/dev/vda1 rw console=ttyS0
+    > append initrd=/initrd.img root=/dev/vda1 console=ttyS0
     END
-    $ guestfish -N debian-unstable.img=disk:2G -- \
+    $ guestfish -N debian-unstable.img=disk:8G -- \
         part-disk /dev/sda mbr : \
         part-set-bootable /dev/sda 1 true : \
         mkfs ext2 /dev/sda1 : mount /dev/sda1 / : \
