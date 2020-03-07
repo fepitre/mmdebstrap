@@ -3285,6 +3285,14 @@ sub main() {
             my $signedby = '';
             {
                 # try to guess the right keyring path for the given suite
+                my $debianvendor;
+                my $ubuntuvendor;
+                eval {
+                    require Dpkg::Vendor::Debian;
+                    require Dpkg::Vendor::Ubuntu;
+                    $debianvendor = Dpkg::Vendor::Debian->new();
+                    $ubuntuvendor = Dpkg::Vendor::Ubuntu->new();
+                };
                 my $keyring;
                 if (
                     any { $_ eq $suite } (
@@ -3292,8 +3300,14 @@ sub main() {
                         'lenny',  'squeeze', 'wheezy'
                     )
                 ) {
-                    $keyring
-                      = '/usr/share/keyrings/debian-archive-removed-keys.gpg';
+                    if (defined $debianvendor) {
+                        $keyring = $debianvendor->run_hook(
+                            'archive-keyrings-historic');
+                    } else {
+                        $keyring
+                          = '/usr/share/keyrings/'
+                          . 'debian-archive-removed-keys.gpg';
+                    }
                 } elsif (
                     any { $_ eq $suite }
                     ('aequorea', 'bartholomea', 'chromodoris', 'dasyatis')
@@ -3311,16 +3325,26 @@ sub main() {
                         'cosmic'
                     )
                 ) {
-                    $keyring
-                      = '/usr/share/keyrings/ubuntu-archive-keyring.gpg';
+                    if (defined $ubuntuvendor) {
+                        $keyring = $ubuntuvendor->run_hook('archive-keyrings');
+                    } else {
+                        $keyring
+                          = '/usr/share/keyrings/'
+                          . 'ubuntu-archive-keyring.gpg';
+                    }
                 } elsif (
                     any { $_ eq $suite } (
                         'unstable', 'stable', 'oldstable', 'jessie',
                         'stretch',  'buster', 'bullseye',  'bookworm'
                     )
                 ) {
-                    $keyring
-                      = '/usr/share/keyrings/debian-archive-keyring.gpg';
+                    if (defined $debianvendor) {
+                        $keyring = $debianvendor->run_hook('archive-keyrings');
+                    } else {
+                        $keyring
+                          = '/usr/share/keyrings/'
+                          . 'debian-archive-keyring.gpg';
+                    }
                 } else {
                     last;
                 }
