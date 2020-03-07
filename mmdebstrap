@@ -4460,7 +4460,14 @@ sub main() {
                             if ($file eq '') {
                                 warning "general error: $message";
                             } else {
-                                warning "problem unlinking $file: $message";
+                                # the unshared process might not have
+                                # sufficient permissions to remove the root
+                                # directory. We attempt its removal later, so
+                                # don't warn if its removal fails now.
+                                if ($file ne $options->{root}) {
+                                    warning
+                                      "problem unlinking $file: $message";
+                                }
                             }
                         }
                     }
@@ -4469,6 +4476,14 @@ sub main() {
             );
             waitpid $pid, 0;
             $? == 0 or error "remove_tree failed";
+            # in unshare mode, the toplevel directory might've been created in
+            # a directory that the unshared user cannot change and thus cannot
+            # delete. If the root directory still exists after remove_tree
+            # above, we attempt its removal again outside as the normal user.
+            if (-e $options->{root}) {
+                rmdir "$options->{root}"
+                  or error "cannot rmdir $options->{root}: $!";
+            }
         } elsif (
             any { $_ eq $options->{mode} }
             ('root', 'fakechroot', 'proot', 'chrootless')
