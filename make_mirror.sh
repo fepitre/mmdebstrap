@@ -412,6 +412,8 @@ cleanuptmpdir() {
 	rmdir "$tmpdir"
 }
 
+export SOURCE_DATE_EPOCH=$(date --date="$(grep-dctrl -s Date -n '' "$newmirrordir/dists/unstable/Release")" +%s)
+
 if [ "$HAVE_QEMU" = "yes" ]; then
 	# We must not use any --dpkgopt here because any dpkg options still
 	# leak into the chroot with chrootless mode.
@@ -549,7 +551,6 @@ END
 fi
 
 mirror="http://127.0.0.1/debian"
-SOURCE_DATE_EPOCH=$(date --date="$(grep-dctrl -s Date -n '' "$newmirrordir/dists/unstable/Release")" +%s)
 for dist in stable testing unstable; do
 	for variant in minbase buildd -; do
 		echo running debootstrap --no-merged-usr --variant=$variant $dist /tmp/debian-$dist-debootstrap $mirror
