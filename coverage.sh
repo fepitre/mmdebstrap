@@ -72,7 +72,7 @@ if [ ! -e shared/taridshift ] || [ taridshift -nt shared/taridshift ]; then
 fi
 
 starttime=
-total=140
+total=141
 skipped=0
 runtests=0
 i=1
@@ -626,6 +626,35 @@ runuser -u user -- $CMD --mode=unshare --variant=apt $DEFAULT_DIST /tmp/debian-c
 printf '\037\213\010' | cmp --bytes=3 /tmp/debian-chroot.tar.gz -
 tar -tf /tmp/debian-chroot.tar.gz | sort | diff -u tar1.txt -
 rm /tmp/debian-chroot.tar.gz
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+	runtests=$((runtests+1))
+else
+	echo "HAVE_QEMU != yes -- Skipping test..." >&2
+	skipped=$((skipped+1))
+fi
+
+print_header "mode=unshare,variant=apt: custom TMPDIR"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+if [ ! -e /mmdebstrap-testenv ]; then
+	echo "this test modifies the system and should only be run inside a container" >&2
+	exit 1
+fi
+adduser --gecos user --disabled-password user
+sysctl -w kernel.unprivileged_userns_clone=1
+homedir=\$(runuser -u user -- sh -c 'cd && pwd')
+runuser -u user -- mkdir "\$homedir/tmp"
+runuser -u user -- env TMPDIR="\$homedir/tmp" $CMD --mode=unshare --variant=apt \
+	--setup-hook='case "\$1" in "'"\$homedir/tmp/mmdebstrap."'"??????????) exit 0;; *) exit 1;; esac' \
+	 $DEFAULT_DIST /tmp/debian-chroot.tar $mirror
+tar -tf /tmp/debian-chroot.tar | sort | diff -u tar1.txt -
+# use rmdir as a quick check that nothing is remaining in TMPDIR
+runuser -u user -- rmdir "\$homedir/tmp"
+rm /tmp/debian-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
