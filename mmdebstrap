@@ -3680,6 +3680,10 @@ sub main() {
         if ($? != 0) {
             error("failed to start tar2sqfs --version");
         }
+    } elsif ($options->{target} =~ /\.ext2$/) {
+        error "genext2fs does not yet support tarballs as input. See "
+          . "https://github.com/bestouff/genext2fs/issues/10 for more "
+          . "information";
     }
 
     if ($options->{maketar} or $options->{makesqfs}) {
