@@ -1008,6 +1008,11 @@ sub run_chroot {
 
         # prevent daemons from starting
         # the directory might not exist in custom variant, for example
+        #
+        # ideally, we should use update-alternatives but we cannot rely on it
+        # existing inside the chroot
+        #
+        # See #911290 for more problems of this interface
         if (-d "$options->{root}/usr/sbin/") {
             open my $fh, '>', "$options->{root}/usr/sbin/policy-rc.d"
               or error "cannot open policy-rc.d: $!";
