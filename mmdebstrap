@@ -4904,8 +4904,9 @@ fakeroot.env> and use C<fakeroot.env> later when entering the chroot with
 C<fakechroot fakeroot -i fakeroot.env chroot ...>. This mode will not work if
 maintainer scripts are unable to handle C<LD_PRELOAD> correctly like the
 package B<initramfs-tools> until version 0.132. This mode will also not work
-with a different libc inside the chroot than on the outside. See the section
-B<LIMITATIONS> in B<fakechroot(1)>.
+with a different libc inside the chroot than on the outside. Since ldconfig
+cannot run under fakechroot, the final system will not contain
+F</etc/ld.so.cache>. See the section B<LIMITATIONS> in B<fakechroot(1)>.
 
 =item B<proot>
 
