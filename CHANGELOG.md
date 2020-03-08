@@ -1,3 +1,12 @@
+0.6.1 (2020-03-08)
+------------------
+
+ - replace /etc/machine-id with an empty file
+ - fix deterministic tar with pax and xattr support
+ - support deb822-style format apt sources
+ - mount /sys and /proc as read-only in root mode
+ - unset TMPDIR environment variable for everything running inside the chroot
+
 0.6.0 (2020-01-16)
 ------------------
 
