@@ -248,20 +248,37 @@ done
 if ! cmp /tmp/debian-$dist-debootstrap/etc/shadow /tmp/debian-$dist-mm/etc/shadow; then
 	echo patching /etc/shadow on $dist $variant >&2
 	awk -v FS=: -v OFS=: -v SDE=\$SOURCE_DATE_EPOCH '{ print \$1,\$2,int(SDE/60/60/24),\$4,\$5,\$6,\$7,\$8,\$9 }' < /tmp/debian-$dist-mm/etc/shadow > /tmp/debian-$dist-mm/etc/shadow.bak
-	mv /tmp/debian-$dist-mm/etc/shadow.bak /tmp/debian-$dist-mm/etc/shadow
+	cat /tmp/debian-$dist-mm/etc/shadow.bak > /tmp/debian-$dist-mm/etc/shadow
+	rm /tmp/debian-$dist-mm/etc/shadow.bak
 else
 	echo no difference for /etc/shadow on $dist $variant >&2
 fi
 if ! cmp /tmp/debian-$dist-debootstrap/etc/shadow- /tmp/debian-$dist-mm/etc/shadow-; then
 	echo patching /etc/shadow- on $dist $variant >&2
 	awk -v FS=: -v OFS=: -v SDE=\$SOURCE_DATE_EPOCH '{ print \$1,\$2,int(SDE/60/60/24),\$4,\$5,\$6,\$7,\$8,\$9 }' < /tmp/debian-$dist-mm/etc/shadow- > /tmp/debian-$dist-mm/etc/shadow-.bak
-	mv /tmp/debian-$dist-mm/etc/shadow-.bak /tmp/debian-$dist-mm/etc/shadow-
+	cat /tmp/debian-$dist-mm/etc/shadow-.bak > /tmp/debian-$dist-mm/etc/shadow-
+	rm /tmp/debian-$dist-mm/etc/shadow-.bak
 else
 	echo no difference for /etc/shadow- on $dist $variant >&2
 fi
 
 # check if the file content differs
 diff --no-dereference --recursive /tmp/debian-$dist-debootstrap /tmp/debian-$dist-mm
+
+# check permissions, ownership, symlink targets, modification times using tar
+# directory mtimes will differ, thus we equalize them first
+find /tmp/debian-$dist-debootstrap /tmp/debian-$dist-mm -type d -print0 | xargs -0 touch --date="@$SOURCE_DATE_EPOCH"
+# debootstrap never ran apt -- fixing permissions
+for d in ./var/lib/apt/lists/partial ./var/cache/apt/archives/partial; do
+	chroot /tmp/debian-$dist-debootstrap chmod 0700 \$d
+	chroot /tmp/debian-$dist-debootstrap chown _apt:root \$d
+done
+tar -C /tmp/debian-$dist-debootstrap --numeric-owner --sort=name --clamp-mtime --mtime=$(date --utc --date=@$SOURCE_DATE_EPOCH --iso-8601=seconds) -cf /tmp/root1.tar .
+tar -C /tmp/debian-$dist-mm --numeric-owner --sort=name --clamp-mtime --mtime=$(date --utc --date=@$SOURCE_DATE_EPOCH --iso-8601=seconds) -cf /tmp/root2.tar .
+tar --full-time --verbose -tf /tmp/root1.tar > /tmp/root1.tar.list
+tar --full-time --verbose -tf /tmp/root2.tar > /tmp/root2.tar.list
+diff -u /tmp/root1.tar.list /tmp/root2.tar.list
+rm /tmp/root1.tar /tmp/root2.tar /tmp/root1.tar.list /tmp/root2.tar.list
 
 # check if file properties (permissions, ownership, symlink names, modification time) differ
 #
