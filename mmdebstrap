@@ -2174,14 +2174,19 @@ sub setup {
                     # without --skip-same-version, dpkg will install the given
                     # packages even though they are already installed
                     info "re-installing packages because of path-exclude...";
-                    run_dpkg_progress({
-                            ARGV => [
-                                @chrootcmd,       'env',
-                                '--unset=TMPDIR', 'dpkg',
-                                '--install',      '--force-depends'
-                            ],
-                            PKGS => \@essential_pkgs,
-                        });
+                    run_chroot(
+                        sub {
+                            run_dpkg_progress({
+                                    ARGV => [
+                                        @chrootcmd,       'env',
+                                        '--unset=TMPDIR', 'dpkg',
+                                        '--install',      '--force-depends'
+                                    ],
+                                    PKGS => \@essential_pkgs,
+                                });
+                        },
+                        $options
+                    );
                 }
             }
 
