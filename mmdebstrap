@@ -3658,9 +3658,13 @@ sub main() {
     # figure out whether a tarball has to be created in the end
     $options->{maketar}  = 0;
     $options->{makesqfs} = 0;
-    if (   defined $tar_compressor
+    if (
+           defined $tar_compressor
         or $options->{target} =~ /\.tar$/
-        or $options->{target} eq '-') {
+        or $options->{target} eq '-'
+        or -p $options->{target}    # named pipe (fifo)
+        or -c $options->{target}    # character special like /dev/null
+    ) {
         $options->{maketar} = 1;
         # check if the compressor is installed
         if (defined $tar_compressor) {
@@ -4567,30 +4571,31 @@ https URI, then the packages apt-transport-https and ca-certificates will be
 installed inside the chroot.  If any mirror contains a tor+xxx URI, then the
 apt-transport-tor package will be installed inside the chroot.
 
-The optional I<TARGET> argument can either be the path to a directory, the
-path to a tarball filename, the path to a squashfs image or C<->. If I<TARGET>
-ends with C<.tar>, or with any of the filename extensions listed in the
-section B<COMPRESSION>, then I<TARGET> will be interpreted as a path to a
-tarball filename. If I<TARGET> ends with C<.squashfs> or C<.sqfs>, then
-I<TARGET> will be interpreted as a path to a squashfs image. If I<TARGET> is
-the path to a tarball filename or a squashfs image or if I<TARGET> is C<-> or
-if no I<TARGET> was specified, B<mmdebstrap> will create a temporary chroot
+The optional I<TARGET> argument can either be the path to a directory, the path
+to a tarball filename, the path to a squashfs image, a FIFO, a character
+special device, or C<->. If I<TARGET> ends with C<.tar>, or with any of the
+filename extensions listed in the section B<COMPRESSION>, or if I<TARGET> is a
+FIFO or a character special device, then I<TARGET> will be interpreted as a
+path to a tarball filename. If I<TARGET> ends with C<.squashfs> or C<.sqfs>,
+then I<TARGET> will be interpreted as a path to a squashfs image. If I<TARGET>
+is the path to a tarball filename or a squashfs image or if I<TARGET> is C<->
+or if no I<TARGET> was specified, B<mmdebstrap> will create a temporary chroot
 directory in C<$TMPDIR> or F</tmp>. If I<TARGET> is the path to a tarball
-filename, B<mmdebstrap> will create a tarball of that directory and store it
-as I<TARGET>, optionally applying a compression algorithm as indicated by its
-filename extension. If I<TARGET> is C<-> or if no I<TARGET> was specified,
-then an uncompressed tarball of that directory will be sent to standard
-output. When B<mmdebstrap> creates a tarball it also stores extended
-attributes. To preserve the extended attributes, you have to pass B<--xattrs
---xattrs-include='*'> to tar when extracting the tarball. If I<TARGET> is the
-path to a squashfs image, B<mmdebstrap> will create an xz compressed image
-with a blocksize of 1048576 bytes. If I<TARGET> does neither end with C<.tar>
-nor with any of the filename extensions listed in the section B<COMPRESSION>,
-nor with C<.squashfs> or C<.sqfs>, then I<TARGET> will be interpreted as the
-path to a directory. If the directory already exists, it must either be empty
-or only contain an empty C<lost+found> directory.  If a directory is chosen as
-output in any other mode than B<sudo>, then its contents will have wrong
-ownership information and special device files will be missing.
+filename, B<mmdebstrap> will create a tarball of that directory and store it as
+I<TARGET>, optionally applying a compression algorithm as indicated by its
+filename extension. If I<TARGET> is C<-> or if no I<TARGET> was specified, then
+an uncompressed tarball of that directory will be sent to standard output. When
+B<mmdebstrap> creates a tarball it also stores extended attributes. To preserve
+the extended attributes, you have to pass B<--xattrs --xattrs-include='*'> to
+tar when extracting the tarball. If I<TARGET> is the path to a squashfs image,
+B<mmdebstrap> will create an xz compressed image with a blocksize of 1048576
+bytes. If I<TARGET> does neither end with C<.tar> nor with any of the filename
+extensions listed in the section B<COMPRESSION>, nor with C<.squashfs> or
+C<.sqfs>, then I<TARGET> will be interpreted as the path to a directory. If the
+directory already exists, it must either be empty or only contain an empty
+C<lost+found> directory.  If a directory is chosen as output in any other mode
+than B<sudo>, then its contents will have wrong ownership information and
+special device files will be missing.
 
 The I<SUITE> may be a valid release code name (eg, sid, stretch, jessie) or a
 symbolic name (eg, unstable, testing, stable, oldstable). Any suite name that
