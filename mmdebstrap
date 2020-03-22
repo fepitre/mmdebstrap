@@ -1868,6 +1868,8 @@ sub setup {
         print_progress "done";
     }
 
+    run_hooks('extract', $options);
+
     if ($options->{mode} eq 'chrootless') {
         if ($options->{dryrun}) {
             info "simulate installing packages...";
@@ -2481,7 +2483,7 @@ sub hookhelper {
                 # owned by the root user.
                 push @tarcmd, '--owner=0', '--group=0';
             }
-        } elsif (any { $_ eq $hook } ('essential', 'customize')) {
+        } elsif (any { $_ eq $hook } ('extract', 'essential', 'customize')) {
             if ($mode eq 'fakechroot') {
                 # Fakechroot requires tar to run inside the chroot or
                 # otherwise absolute symlinks will include the path to the
@@ -2517,7 +2519,10 @@ sub hookhelper {
                 my $directory;
                 if ($hook eq 'setup') {
                     $directory = "$root/$outpath";
-                } elsif (any { $_ eq $hook } ('essential', 'customize')) {
+                } elsif (
+                    any { $_ eq $hook }
+                    ('extract', 'essential', 'customize')
+                ) {
                     $directory = $outpath;
                 } else {
                     error "unknown hook: $hook";
@@ -2636,7 +2641,10 @@ sub hookhelper {
                 my $directory;
                 if ($hook eq 'setup') {
                     $directory = "$root/$ARGV[$i]";
-                } elsif (any { $_ eq $hook } ('essential', 'customize')) {
+                } elsif (
+                    any { $_ eq $hook }
+                    ('extract', 'essential', 'customize')
+                ) {
                     $directory = $ARGV[$i];
                 } else {
                     error "unknown hook: $hook";
@@ -2818,6 +2826,7 @@ sub main() {
         apttrustedparts => $apttrustedparts,
         noop            => [],
         setup_hook      => [],
+        extract_hook    => [],
         essential_hook  => [],
         customize_hook  => [],
         dryrun          => 0,
@@ -2872,6 +2881,7 @@ sub main() {
           sub { push @{ $options->{noop} }, 'force-check-gpg'; },
         # hook options are hidden until I'm happy with them
         'setup-hook=s@'     => \$options->{setup_hook},
+        'extract-hook=s@'   => \$options->{extract_hook},
         'essential-hook=s@' => \$options->{essential_hook},
         'customize-hook=s@' => \$options->{customize_hook},
         # Sometimes --simulate fails even though non-simulate succeeds because
@@ -2897,7 +2907,7 @@ sub main() {
     }
 
     if ($options->{dryrun}) {
-        foreach my $hook ('setup', 'essential', 'customize') {
+        foreach my $hook ('setup', 'extract', 'essential', 'customize') {
             if (scalar @{ $options->{"${hook}_hook"} } > 0) {
                 warning "In dry-run mode, --$hook-hook options have no effect";
             }

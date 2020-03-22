@@ -2581,21 +2581,28 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C.UTF-8
 pkgs=base-files,base-passwd,busybox,debianutils,dpkg,libc-bin,mawk,tar
+# busybox --install -s will install symbolic links into the rootfs, leaving
+# existing files untouched. It has to run after extraction (otherwise there is
+# no busybox binary) and before first configuration
 $CMD --mode=root --variant=custom \
     --include=\$pkgs \
     --setup-hook='mkdir -p "\$1/bin"' \
-    --setup-hook='for p in awk cat chmod chown cp diff echo env grep less ln mkdir mount rm rmdir sed sh sleep sort touch uname; do ln -s busybox "\$1/bin/\$p"; done' \
     --setup-hook='echo root:x:0:0:root:/root:/bin/sh > "\$1/etc/passwd"' \
     --setup-hook='printf "root:x:0:\nmail:x:8:\nutmp:x:43:\n" > "\$1/etc/group"' \
+    --extract-hook='chroot "\$1" busybox --install -s' \
     $DEFAULT_DIST /tmp/debian-chroot $mirror
 echo "\$pkgs" | tr ',' '\n' > /tmp/expected
 chroot /tmp/debian-chroot dpkg-query -f '\${binary:Package}\n' -W \
 	| comm -12 - /tmp/expected \
 	| diff -u - /tmp/expected
 rm /tmp/expected
-for cmd in echo cat sort sed grep; do
+for cmd in echo cat sed grep; do
 	test -L /tmp/debian-chroot/bin/\$cmd
-	test "\$(readlink /tmp/debian-chroot/bin/\$cmd)" = "busybox"
+	test "\$(readlink /tmp/debian-chroot/bin/\$cmd)" = "/bin/busybox"
+done
+for cmd in sort; do
+	test -L /tmp/debian-chroot/usr/bin/\$cmd
+	test "\$(readlink /tmp/debian-chroot/usr/bin/\$cmd)" = "/bin/busybox"
 done
 chroot /tmp/debian-chroot echo foobar \
 	| chroot /tmp/debian-chroot cat \
