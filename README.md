@@ -38,6 +38,7 @@ Summary:
  - can operate on filesystems mounted with nodev
  - foreign architecture chroots with qemu-user
  - variant installing only Essential:yes packages and dependencies
+ - temporary chroots by redirecting to /dev/null
 
 The author believes that a chroot of a Debian stable release should include the
 latest packages including security fixes by default. This has been a wontfix
