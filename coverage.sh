@@ -282,7 +282,7 @@ rm /tmp/root1.tar /tmp/root2.tar /tmp/root1.tar.list /tmp/root2.tar.list
 
 # check if file properties (permissions, ownership, symlink names, modification time) differ
 #
-# we cannot use this (yet) because it cannot copy with paths that have [ or @ in them
+# we cannot use this (yet) because it cannot cope with paths that have [ or @ in them
 #fmtree -c -p /tmp/debian-$dist-debootstrap -k flags,gid,link,mode,size,time,uid | sudo fmtree -p /tmp/debian-$dist-mm
 
 rm /tmp/debian-$dist-mm.tar
