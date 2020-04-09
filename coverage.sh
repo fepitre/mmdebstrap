@@ -720,7 +720,10 @@ $CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST /tmp/debian-chroot.squashfs
 printf 'hsqs' | cmp --bytes=4 /tmp/debian-chroot.squashfs -
 # workaround for https://github.com/AgentD/squashfs-tools-ng/issues/37
 sed 's#\\([^.]\\)/\$#\\1#' tar1.txt | sort > /tmp/tar1noslash.txt
-sqfs2tar --no-skip --root-becomes . /tmp/debian-chroot.squashfs | tar -t | sort | diff -u /tmp/tar1noslash.txt -
+# workaround for https://github.com/AgentD/squashfs-tools-ng/issues/42
+sqfs2tar --no-skip --root-becomes . /tmp/debian-chroot.squashfs | tar -t \
+	| sed 's#\\([^.]\\)/\$#\\1#' \
+	| sort | diff -u /tmp/tar1noslash.txt -
 rm /tmp/debian-chroot.squashfs /tmp/tar1noslash.txt
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
