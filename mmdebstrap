@@ -1191,6 +1191,49 @@ sub setup {
         warning "cannot read $options->{apttrustedparts}";
     }
 
+    run_setup($options);
+
+    run_hooks('setup', $options);
+
+    run_update($options);
+
+    (my $pkgs_to_install, my $essential_pkgs) = run_download($options);
+
+    if (   $options->{mode} ne 'chrootless'
+        or $options->{variant} eq 'extract') {
+        # We have to extract the packages from @essential_pkgs either if we run
+        # in chrootless mode and extract variant or in any other mode.  In
+        # other words, the only scenario in which the @essential_pkgs are not
+        # extracted are in chrootless mode in any other than the extract
+        # variant.
+        run_extract($options, $essential_pkgs);
+    }
+
+    run_hooks('extract', $options);
+
+    if ($options->{variant} ne 'extract') {
+        my $chrootcmd = [];
+        if ($options->{mode} ne 'chrootless') {
+            $chrootcmd = run_prepare($options);
+        }
+
+        run_essential($options, $essential_pkgs, $chrootcmd);
+
+        run_hooks('essential', $options);
+
+        run_install($options, $pkgs_to_install, $chrootcmd);
+
+        run_hooks('customize', $options);
+    }
+
+    run_cleanup($options);
+
+    return;
+}
+
+sub run_setup() {
+    my $options = shift;
+
     {
         my @directories = (
             '/etc/apt/apt.conf.d',        '/etc/apt/sources.list.d',
@@ -1580,8 +1623,11 @@ sub setup {
         $ENV{PATH} = "/usr/sbin:/usr/bin:/sbin:/bin";
     }
 
-    # run setup hooks
-    run_hooks('setup', $options);
+    return;
+}
+
+sub run_update() {
+    my $options = shift;
 
     info "running apt-get update...";
     run_apt_progress({
@@ -1606,6 +1652,12 @@ sub setup {
             error "apt-get update didn't download anything";
         }
     }
+
+    return;
+}
+
+sub run_download() {
+    my $options = shift;
 
     my @pkgs_to_install;
     for my $incl (@{ $options->{include} }) {
@@ -1827,51 +1879,252 @@ sub setup {
         }
     }
 
-    # We have to extract the packages from @essential_pkgs either if we run in
-    # chrootless mode and extract variant or in any other mode.
-    # In other words, the only scenario in which the @essential_pkgs are not
-    # extracted are in chrootless mode in any other than the extract variant.
-    if (    $options->{mode} eq 'chrootless'
-        and $options->{variant} ne 'extract') {
-        # nothing to do
-    } elsif ($options->{dryrun}) {
+    return (\@pkgs_to_install, \@essential_pkgs);
+}
+
+sub run_extract() {
+    my $options        = shift;
+    my $essential_pkgs = shift;
+
+    if ($options->{dryrun}) {
         info "skip extracting packages because of --dry-run";
-    } else {
-        info "extracting archives...";
-        print_progress 0.0;
-        my $counter = 0;
-        my $total   = scalar @essential_pkgs;
-        foreach my $deb (@essential_pkgs) {
-            $counter += 1;
-            # not using dpkg-deb --extract as that would replace the
-            # merged-usr symlinks with plain directories
-            pipe my $rfh, my $wfh;
-            my $pid1 = fork() // error "fork() failed: $!";
-            if ($pid1 == 0) {
-                open(STDOUT, '>&', $wfh) or error "cannot open STDOUT: $!";
-                debug("running dpkg-deb --fsys-tarfile $options->{root}/$deb");
-                eval { Devel::Cover::set_coverage("none") } if $is_covering;
-                exec 'dpkg-deb', '--fsys-tarfile', "$options->{root}/$deb";
-            }
-            my $pid2 = fork() // error "fork() failed: $!";
-            if ($pid2 == 0) {
-                open(STDIN, '<&', $rfh) or error "cannot open STDIN: $!";
-                debug(  "running tar -C $options->{root}"
-                      . " --keep-directory-symlink --extract --file -");
-                eval { Devel::Cover::set_coverage("none") } if $is_covering;
-                exec 'tar', '-C', $options->{root},
-                  '--keep-directory-symlink', '--extract', '--file', '-';
-            }
-            waitpid($pid1, 0);
-            $? == 0 or error "dpkg-deb --fsys-tarfile failed: $?";
-            waitpid($pid2, 0);
-            $? == 0 or error "tar --extract failed: $?";
-            print_progress($counter / $total * 100);
-        }
-        print_progress "done";
+        return;
     }
 
-    run_hooks('extract', $options);
+    info "extracting archives...";
+    print_progress 0.0;
+    my $counter = 0;
+    my $total   = scalar @{$essential_pkgs};
+    foreach my $deb (@{$essential_pkgs}) {
+        $counter += 1;
+        # not using dpkg-deb --extract as that would replace the
+        # merged-usr symlinks with plain directories
+        pipe my $rfh, my $wfh;
+        my $pid1 = fork() // error "fork() failed: $!";
+        if ($pid1 == 0) {
+            open(STDOUT, '>&', $wfh) or error "cannot open STDOUT: $!";
+            debug("running dpkg-deb --fsys-tarfile $options->{root}/$deb");
+            eval { Devel::Cover::set_coverage("none") } if $is_covering;
+            exec 'dpkg-deb', '--fsys-tarfile', "$options->{root}/$deb";
+        }
+        my $pid2 = fork() // error "fork() failed: $!";
+        if ($pid2 == 0) {
+            open(STDIN, '<&', $rfh) or error "cannot open STDIN: $!";
+            debug(  "running tar -C $options->{root}"
+                  . " --keep-directory-symlink --extract --file -");
+            eval { Devel::Cover::set_coverage("none") } if $is_covering;
+            exec 'tar', '-C', $options->{root},
+              '--keep-directory-symlink', '--extract', '--file', '-';
+        }
+        waitpid($pid1, 0);
+        $? == 0 or error "dpkg-deb --fsys-tarfile failed: $?";
+        waitpid($pid2, 0);
+        $? == 0 or error "tar --extract failed: $?";
+        print_progress($counter / $total * 100);
+    }
+    print_progress "done";
+
+    return;
+}
+
+sub run_prepare {
+    my $options = shift;
+
+    if ($options->{mode} eq 'fakechroot') {
+        # this borrows from and extends
+        # /etc/fakechroot/debootstrap.env and
+        # /etc/fakechroot/chroot.env
+        {
+            my @fakechrootsubst = ();
+            foreach my $d ('/usr/sbin', '/usr/bin', '/sbin', '/bin') {
+                push @fakechrootsubst, "$d/chroot=/usr/sbin/chroot.fakechroot";
+                push @fakechrootsubst, "$d/mkfifo=/bin/true";
+                push @fakechrootsubst, "$d/ldconfig=/bin/true";
+                push @fakechrootsubst, "$d/ldd=/usr/bin/ldd.fakechroot";
+                push @fakechrootsubst, "$d/ischroot=/bin/true";
+            }
+            if (defined $ENV{FAKECHROOT_CMD_SUBST}
+                && $ENV{FAKECHROOT_CMD_SUBST} ne "") {
+                push @fakechrootsubst, split /:/, $ENV{FAKECHROOT_CMD_SUBST};
+            }
+            ## no critic (Variables::RequireLocalizedPunctuationVars)
+            $ENV{FAKECHROOT_CMD_SUBST} = join ':', @fakechrootsubst;
+        }
+        if (defined $ENV{FAKECHROOT_EXCLUDE_PATH}
+            && $ENV{FAKECHROOT_EXCLUDE_PATH} ne "") {
+            ## no critic (Variables::RequireLocalizedPunctuationVars)
+            $ENV{FAKECHROOT_EXCLUDE_PATH}
+              = "$ENV{FAKECHROOT_EXCLUDE_PATH}:/dev:/proc:/sys";
+        } else {
+            ## no critic (Variables::RequireLocalizedPunctuationVars)
+            $ENV{FAKECHROOT_EXCLUDE_PATH} = '/dev:/proc:/sys';
+        }
+        # workaround for long unix socket path if FAKECHROOT_BASE
+        # exceeds the limit of 108 bytes
+        {
+            ## no critic (Variables::RequireLocalizedPunctuationVars)
+            $ENV{FAKECHROOT_AF_UNIX_PATH} = "/tmp";
+        }
+        {
+            my @ldsoconf = ('/etc/ld.so.conf');
+            opendir(my $dh, '/etc/ld.so.conf.d')
+              or error "Can't opendir(/etc/ld.so.conf.d): $!";
+            while (my $entry = readdir $dh) {
+                # skip the "." and ".." entries
+                next if $entry eq ".";
+                next if $entry eq "..";
+                next if $entry !~ /\.conf$/;
+                push @ldsoconf, "/etc/ld.so.conf.d/$entry";
+            }
+            closedir($dh);
+            my @ldlibpath = ();
+            if (defined $ENV{LD_LIBRARY_PATH}
+                && $ENV{LD_LIBRARY_PATH} ne "") {
+                push @ldlibpath, (split /:/, $ENV{LD_LIBRARY_PATH});
+            }
+            # FIXME: workaround allowing installation of systemd should
+            # live in fakechroot, see #917920
+            push @ldlibpath, "/lib/systemd";
+            foreach my $fname (@ldsoconf) {
+                open my $fh, "<", $fname
+                  or error "cannot open $fname for reading: $!";
+                while (my $line = <$fh>) {
+                    next if $line !~ /^\//;
+                    push @ldlibpath, $line;
+                }
+                close $fh;
+            }
+            ## no critic (Variables::RequireLocalizedPunctuationVars)
+            $ENV{LD_LIBRARY_PATH} = join ':', @ldlibpath;
+        }
+    }
+
+    # make sure that APT_CONFIG and TMPDIR are not set when executing
+    # anything inside the chroot
+    my @chrootcmd = ('env', '--unset=APT_CONFIG', '--unset=TMPDIR');
+    if ($options->{mode} eq 'proot') {
+        push @chrootcmd,
+          (
+            'proot',       '--root-id',
+            '--bind=/dev', '--bind=/proc',
+            '--bind=/sys', "--rootfs=$options->{root}",
+            '--cwd=/'
+          );
+    } elsif (
+        any { $_ eq $options->{mode} }
+        ('root', 'unshare', 'fakechroot')
+    ) {
+        push @chrootcmd, ('/usr/sbin/chroot', $options->{root});
+    } else {
+        error "unknown mode: $options->{mode}";
+    }
+
+    # copy qemu-user-static binary into chroot or setup proot with
+    # --qemu
+    if (defined $options->{qemu}) {
+        if ($options->{mode} eq 'proot') {
+            push @chrootcmd, "--qemu=qemu-$options->{qemu}";
+        } elsif ($options->{mode} eq 'fakechroot') {
+            # Make sure that the fakeroot and fakechroot shared
+            # libraries exist for the right architecture
+            open my $fh, '-|', 'dpkg-architecture', '-a',
+              $options->{nativearch},
+              '-qDEB_HOST_MULTIARCH' // error "failed to fork(): $!";
+            chomp(
+                my $deb_host_multiarch = do { local $/; <$fh> }
+            );
+            close $fh;
+            if (($? != 0) or (!$deb_host_multiarch)) {
+                error "dpkg-architecture failed: $?";
+            }
+            my $fakechrootdir = "/usr/lib/$deb_host_multiarch/fakechroot";
+            if (!-e "$fakechrootdir/libfakechroot.so") {
+                error "$fakechrootdir/libfakechroot.so doesn't exist."
+                  . " Install libfakechroot:$options->{nativearch}"
+                  . " outside the chroot";
+            }
+            my $fakerootdir = "/usr/lib/$deb_host_multiarch/libfakeroot";
+            if (!-e "$fakerootdir/libfakeroot-sysv.so") {
+                error "$fakerootdir/libfakeroot-sysv.so doesn't exist."
+                  . " Install libfakeroot:$options->{nativearch}"
+                  . " outside the chroot";
+            }
+            # The rest of this block sets environment variables, so we
+            # have to add the "no critic" statement to stop perlcritic
+            # from complaining about setting global variables
+            ## no critic (Variables::RequireLocalizedPunctuationVars)
+            # fakechroot only fills LD_LIBRARY_PATH with the
+            # directories of the host's architecture. We append the
+            # directories of the chroot architecture.
+            $ENV{LD_LIBRARY_PATH}
+              = "$ENV{LD_LIBRARY_PATH}:$fakechrootdir:$fakerootdir";
+            # The binfmt support on the outside is used, so qemu needs
+            # to know where it has to look for shared libraries
+            if (defined $ENV{QEMU_LD_PREFIX}
+                && $ENV{QEMU_LD_PREFIX} ne "") {
+                $ENV{QEMU_LD_PREFIX} = "$ENV{QEMU_LD_PREFIX}:$options->{root}";
+            } else {
+                $ENV{QEMU_LD_PREFIX} = $options->{root};
+            }
+        } elsif (any { $_ eq $options->{mode} } ('root', 'unshare')) {
+            # other modes require a static qemu-user binary
+            my $qemubin = "/usr/bin/qemu-$options->{qemu}-static";
+            if (!-e $qemubin) {
+                error "cannot find $qemubin";
+            }
+            copy $qemubin, "$options->{root}/$qemubin"
+              or error "cannot copy $qemubin: $!";
+            # File::Copy does not retain permissions but on some
+            # platforms (like Travis CI) the binfmt interpreter must
+            # have the executable bit set or otherwise execve will
+            # fail with EACCES
+            chmod 0755, "$options->{root}/$qemubin"
+              or error "cannot chmod $qemubin: $!";
+        } else {
+            error "unknown mode: $options->{mode}";
+        }
+    }
+
+    # some versions of coreutils use the renameat2 system call in mv.
+    # This breaks certain versions of fakechroot and proot. Here we do
+    # a sanity check and warn the user in case things might break.
+    if (any { $_ eq $options->{mode} } ('fakechroot', 'proot')
+          and -e "$options->{root}/bin/mv") {
+        mkdir "$options->{root}/000-move-me"
+          or error "cannot create directory: $!";
+        my $ret = system @chrootcmd, '/bin/mv', '/000-move-me',
+          '/001-delete-me';
+        if ($ret != 0) {
+            if ($options->{mode} eq 'proot') {
+                info "the /bin/mv binary inside the chroot doesn't"
+                  . " work under proot";
+                info "this is likely due to missing support for"
+                  . " renameat2 in proot";
+                info "see https://github.com/proot-me/PRoot/issues/147";
+            } else {
+                info "the /bin/mv binary inside the chroot doesn't"
+                  . " work under fakechroot";
+                info "with certain versions of coreutils and glibc,"
+                  . " this is due to missing support for renameat2 in"
+                  . " fakechroot";
+                info "see https://github.com/dex4er/fakechroot/issues/60";
+            }
+            info "expect package post installation scripts not to work";
+            rmdir "$options->{root}/000-move-me"
+              or error "cannot rmdir: $!";
+        } else {
+            rmdir "$options->{root}/001-delete-me"
+              or error "cannot rmdir: $!";
+        }
+    }
+
+    return \@chrootcmd;
+}
+
+sub run_essential() {
+    my $options        = shift;
+    my $essential_pkgs = shift;
+    my $chrootcmd      = shift;
 
     if ($options->{mode} eq 'chrootless') {
         if ($options->{dryrun}) {
@@ -1902,458 +2155,251 @@ sub setup {
                 $ENV{QEMU_LD_PREFIX} = $options->{root};
             }
         }
-        if ($options->{variant} eq 'extract') {
-            # nothing to do
-        } else {
-            run_apt_progress({
-                ARGV => ['apt-get', '--yes', @chrootless_opts, 'install'],
-                PKGS => [map { "$options->{root}/$_" } @essential_pkgs],
-            });
-        }
-        if (any { $_ eq $options->{variant} } ('extract', 'custom')) {
-            # nothing to do
-        } elsif (
-            any { $_ eq $options->{variant} } (
-                'essential', 'apt',    'standard', 'important',
-                'required',  'buildd', 'minbase'
-            )
-        ) {
-            # run essential hooks
-            run_hooks('essential', $options);
-
-            if (scalar @pkgs_to_install > 0) {
-                run_apt_progress({
-                    ARGV =>
-                      ['apt-get', '--yes', @chrootless_opts, 'install'],
-                    PKGS => [@pkgs_to_install],
-                });
-            }
-        } else {
-            error "unknown variant: $options->{variant}";
-        }
+        run_apt_progress({
+            ARGV => ['apt-get', '--yes', @chrootless_opts, 'install'],
+            PKGS => [map { "$options->{root}/$_" } @{$essential_pkgs}],
+        });
     } elsif (
         any { $_ eq $options->{mode} }
         ('root', 'unshare', 'fakechroot', 'proot')
     ) {
+        # install the extracted packages properly
+        # we need --force-depends because dpkg does not take Pre-Depends
+        # into account and thus doesn't install them in the right order
+        # And the --predep-package option is broken: #539133
+        if ($options->{dryrun}) {
+            info "simulate installing packages...";
+        } else {
+            info "installing packages...";
+            run_chroot(
+                sub {
+                    run_dpkg_progress({
+                            ARGV => [
+                                @{$chrootcmd},    'env',
+                                '--unset=TMPDIR', 'dpkg',
+                                '--install',      '--force-depends'
+                            ],
+                            PKGS => $essential_pkgs,
+                        });
+                },
+                $options
+            );
+        }
 
-        if (any { $_ eq $options->{variant} } ('extract')) {
-            # nothing to do
-        } elsif (
-            any { $_ eq $options->{variant} } (
-                'custom',    'essential', 'apt',    'standard',
-                'important', 'required',  'buildd', 'minbase'
-            )
-        ) {
-            if ($options->{mode} eq 'fakechroot') {
-                # this borrows from and extends
-                # /etc/fakechroot/debootstrap.env and
-                # /etc/fakechroot/chroot.env
-                {
-                    my @fakechrootsubst = ();
-                    foreach my $d ('/usr/sbin', '/usr/bin', '/sbin', '/bin') {
-                        push @fakechrootsubst,
-                          "$d/chroot=/usr/sbin/chroot.fakechroot";
-                        push @fakechrootsubst, "$d/mkfifo=/bin/true";
-                        push @fakechrootsubst, "$d/ldconfig=/bin/true";
-                        push @fakechrootsubst,
-                          "$d/ldd=/usr/bin/ldd.fakechroot";
-                        push @fakechrootsubst, "$d/ischroot=/bin/true";
-                    }
-                    if (defined $ENV{FAKECHROOT_CMD_SUBST}
-                        && $ENV{FAKECHROOT_CMD_SUBST} ne "") {
-                        push @fakechrootsubst, split /:/,
-                          $ENV{FAKECHROOT_CMD_SUBST};
-                    }
-                    ## no critic (Variables::RequireLocalizedPunctuationVars)
-                    $ENV{FAKECHROOT_CMD_SUBST} = join ':', @fakechrootsubst;
-                }
-                if (defined $ENV{FAKECHROOT_EXCLUDE_PATH}
-                    && $ENV{FAKECHROOT_EXCLUDE_PATH} ne "") {
-                    ## no critic (Variables::RequireLocalizedPunctuationVars)
-                    $ENV{FAKECHROOT_EXCLUDE_PATH}
-                      = "$ENV{FAKECHROOT_EXCLUDE_PATH}:/dev:/proc:/sys";
-                } else {
-                    ## no critic (Variables::RequireLocalizedPunctuationVars)
-                    $ENV{FAKECHROOT_EXCLUDE_PATH} = '/dev:/proc:/sys';
-                }
-                # workaround for long unix socket path if FAKECHROOT_BASE
-                # exceeds the limit of 108 bytes
-                {
-                    ## no critic (Variables::RequireLocalizedPunctuationVars)
-                    $ENV{FAKECHROOT_AF_UNIX_PATH} = "/tmp";
-                }
-                {
-                    my @ldsoconf = ('/etc/ld.so.conf');
-                    opendir(my $dh, '/etc/ld.so.conf.d')
-                      or error "Can't opendir(/etc/ld.so.conf.d): $!";
-                    while (my $entry = readdir $dh) {
-                        # skip the "." and ".." entries
-                        next if $entry eq ".";
-                        next if $entry eq "..";
-                        next if $entry !~ /\.conf$/;
-                        push @ldsoconf, "/etc/ld.so.conf.d/$entry";
-                    }
-                    closedir($dh);
-                    my @ldlibpath = ();
-                    if (defined $ENV{LD_LIBRARY_PATH}
-                        && $ENV{LD_LIBRARY_PATH} ne "") {
-                        push @ldlibpath, (split /:/, $ENV{LD_LIBRARY_PATH});
-                    }
-                    # FIXME: workaround allowing installation of systemd should
-                    # live in fakechroot, see #917920
-                    push @ldlibpath, "/lib/systemd";
-                    foreach my $fname (@ldsoconf) {
-                        open my $fh, "<", $fname
-                          or error "cannot open $fname for reading: $!";
-                        while (my $line = <$fh>) {
-                            next if $line !~ /^\//;
-                            push @ldlibpath, $line;
-                        }
-                        close $fh;
-                    }
-                    ## no critic (Variables::RequireLocalizedPunctuationVars)
-                    $ENV{LD_LIBRARY_PATH} = join ':', @ldlibpath;
-                }
-            }
-
-            # make sure that APT_CONFIG and TMPDIR are not set when executing
-            # anything inside the chroot
-            my @chrootcmd = ('env', '--unset=APT_CONFIG', '--unset=TMPDIR');
-            if ($options->{mode} eq 'proot') {
-                push @chrootcmd,
-                  (
-                    'proot',       '--root-id',
-                    '--bind=/dev', '--bind=/proc',
-                    '--bind=/sys', "--rootfs=$options->{root}",
-                    '--cwd=/'
-                  );
-            } elsif (
-                any { $_ eq $options->{mode} }
-                ('root', 'unshare', 'fakechroot')
-            ) {
-                push @chrootcmd, ('/usr/sbin/chroot', $options->{root});
-            } else {
-                error "unknown mode: $options->{mode}";
-            }
-
-            # copy qemu-user-static binary into chroot or setup proot with
-            # --qemu
-            if (defined $options->{qemu}) {
-                if ($options->{mode} eq 'proot') {
-                    push @chrootcmd, "--qemu=qemu-$options->{qemu}";
-                } elsif ($options->{mode} eq 'fakechroot') {
-                    # Make sure that the fakeroot and fakechroot shared
-                    # libraries exist for the right architecture
-                    open my $fh, '-|', 'dpkg-architecture', '-a',
-                      $options->{nativearch},
-                      '-qDEB_HOST_MULTIARCH' // error "failed to fork(): $!";
-                    chomp(
-                        my $deb_host_multiarch = do { local $/; <$fh> }
-                    );
-                    close $fh;
-                    if (($? != 0) or (!$deb_host_multiarch)) {
-                        error "dpkg-architecture failed: $?";
-                    }
-                    my $fakechrootdir
-                      = "/usr/lib/$deb_host_multiarch/fakechroot";
-                    if (!-e "$fakechrootdir/libfakechroot.so") {
-                        error "$fakechrootdir/libfakechroot.so doesn't exist."
-                          . " Install libfakechroot:$options->{nativearch}"
-                          . " outside the chroot";
-                    }
-                    my $fakerootdir
-                      = "/usr/lib/$deb_host_multiarch/libfakeroot";
-                    if (!-e "$fakerootdir/libfakeroot-sysv.so") {
-                        error "$fakerootdir/libfakeroot-sysv.so doesn't exist."
-                          . " Install libfakeroot:$options->{nativearch}"
-                          . " outside the chroot";
-                    }
-                    # The rest of this block sets environment variables, so we
-                    # have to add the "no critic" statement to stop perlcritic
-                    # from complaining about setting global variables
-                    ## no critic (Variables::RequireLocalizedPunctuationVars)
-                    # fakechroot only fills LD_LIBRARY_PATH with the
-                    # directories of the host's architecture. We append the
-                    # directories of the chroot architecture.
-                    $ENV{LD_LIBRARY_PATH}
-                      = "$ENV{LD_LIBRARY_PATH}:$fakechrootdir:$fakerootdir";
-                    # The binfmt support on the outside is used, so qemu needs
-                    # to know where it has to look for shared libraries
-                    if (defined $ENV{QEMU_LD_PREFIX}
-                        && $ENV{QEMU_LD_PREFIX} ne "") {
-                        $ENV{QEMU_LD_PREFIX}
-                          = "$ENV{QEMU_LD_PREFIX}:$options->{root}";
-                    } else {
-                        $ENV{QEMU_LD_PREFIX} = $options->{root};
-                    }
-                } elsif (any { $_ eq $options->{mode} } ('root', 'unshare')) {
-                    # other modes require a static qemu-user binary
-                    my $qemubin = "/usr/bin/qemu-$options->{qemu}-static";
-                    if (!-e $qemubin) {
-                        error "cannot find $qemubin";
-                    }
-                    copy $qemubin, "$options->{root}/$qemubin"
-                      or error "cannot copy $qemubin: $!";
-                    # File::Copy does not retain permissions but on some
-                    # platforms (like Travis CI) the binfmt interpreter must
-                    # have the executable bit set or otherwise execve will
-                    # fail with EACCES
-                    chmod 0755, "$options->{root}/$qemubin"
-                      or error "cannot chmod $qemubin: $!";
-                } else {
-                    error "unknown mode: $options->{mode}";
-                }
-            }
-
-            # some versions of coreutils use the renameat2 system call in mv.
-            # This breaks certain versions of fakechroot and proot. Here we do
-            # a sanity check and warn the user in case things might break.
-            if (any { $_ eq $options->{mode} } ('fakechroot', 'proot')
-                  and -e "$options->{root}/bin/mv") {
-                mkdir "$options->{root}/000-move-me"
-                  or error "cannot create directory: $!";
-                my $ret = system @chrootcmd, '/bin/mv', '/000-move-me',
-                  '/001-delete-me';
-                if ($ret != 0) {
-                    if ($options->{mode} eq 'proot') {
-                        info "the /bin/mv binary inside the chroot doesn't"
-                          . " work under proot";
-                        info "this is likely due to missing support for"
-                          . " renameat2 in proot";
-                        info
-                          "see https://github.com/proot-me/PRoot/issues/147";
-                    } else {
-                        info "the /bin/mv binary inside the chroot doesn't"
-                          . " work under fakechroot";
-                        info "with certain versions of coreutils and glibc,"
-                          . " this is due to missing support for renameat2 in"
-                          . " fakechroot";
-                        info
-                          "see https://github.com/dex4er/fakechroot/issues/60";
-                    }
-                    info
-                      "expect package post installation scripts not to work";
-                    rmdir "$options->{root}/000-move-me"
-                      or error "cannot rmdir: $!";
-                } else {
-                    rmdir "$options->{root}/001-delete-me"
-                      or error "cannot rmdir: $!";
-                }
-            }
-
-            # install the extracted packages properly
-            # we need --force-depends because dpkg does not take Pre-Depends
-            # into account and thus doesn't install them in the right order
-            # And the --predep-package option is broken: #539133
-            if ($options->{dryrun}) {
-                info "simulate installing packages...";
-            } else {
-                info "installing packages...";
+        # if the path-excluded option was added to the dpkg config,
+        # reinstall all packages
+        if ((!$options->{dryrun})
+            and -e "$options->{root}/etc/dpkg/dpkg.cfg.d/99mmdebstrap") {
+            open(my $fh, '<',
+                "$options->{root}/etc/dpkg/dpkg.cfg.d/99mmdebstrap")
+              or error "cannot open /etc/dpkg/dpkg.cfg.d/99mmdebstrap: $!";
+            my $num_matches = grep { /^path-exclude=/ } <$fh>;
+            close $fh;
+            if ($num_matches > 0) {
+                # without --skip-same-version, dpkg will install the given
+                # packages even though they are already installed
+                info "re-installing packages because of path-exclude...";
                 run_chroot(
                     sub {
                         run_dpkg_progress({
                                 ARGV => [
-                                    @chrootcmd,       'env',
+                                    @{$chrootcmd},    'env',
                                     '--unset=TMPDIR', 'dpkg',
                                     '--install',      '--force-depends'
                                 ],
-                                PKGS => \@essential_pkgs,
+                                PKGS => $essential_pkgs,
                             });
                     },
                     $options
                 );
             }
+        }
 
-            # if the path-excluded option was added to the dpkg config,
-            # reinstall all packages
-            if ((!$options->{dryrun})
-                and -e "$options->{root}/etc/dpkg/dpkg.cfg.d/99mmdebstrap") {
-                open(my $fh, '<',
-                    "$options->{root}/etc/dpkg/dpkg.cfg.d/99mmdebstrap")
-                  or error "cannot open /etc/dpkg/dpkg.cfg.d/99mmdebstrap: $!";
-                my $num_matches = grep { /^path-exclude=/ } <$fh>;
-                close $fh;
-                if ($num_matches > 0) {
-                    # without --skip-same-version, dpkg will install the given
-                    # packages even though they are already installed
-                    info "re-installing packages because of path-exclude...";
-                    run_chroot(
-                        sub {
-                            run_dpkg_progress({
-                                    ARGV => [
-                                        @chrootcmd,       'env',
-                                        '--unset=TMPDIR', 'dpkg',
-                                        '--install',      '--force-depends'
-                                    ],
-                                    PKGS => \@essential_pkgs,
-                                });
-                        },
-                        $options
-                    );
-                }
+    } else {
+        error "unknown mode: $options->{mode}";
+    }
+
+    foreach my $deb (@{$essential_pkgs}) {
+        unlink "$options->{root}/$deb"
+          or error "cannot unlink $deb: $!";
+    }
+
+    return;
+}
+
+sub run_install() {
+    my $options         = shift;
+    my $pkgs_to_install = shift;
+    my $chrootcmd       = shift;
+
+    if ($options->{mode} eq 'chrootless') {
+        if (scalar @{$pkgs_to_install} > 0) {
+            my @chrootless_opts = (
+                '-oDPkg::Options::=--force-not-root',
+                '-oDPkg::Options::=--force-script-chrootless',
+                '-oDPkg::Options::=--root=' . $options->{root},
+                '-oDPkg::Options::=--log='
+                  . "$options->{root}/var/log/dpkg.log",
+                $options->{dryrun} ? '-oAPT::Get::Simulate=true' : (),
+            );
+            run_apt_progress({
+                ARGV => ['apt-get', '--yes', @chrootless_opts, 'install'],
+                PKGS => $pkgs_to_install,
+            });
+        }
+    } elsif (
+        any { $_ eq $options->{mode} }
+        ('root', 'unshare', 'fakechroot', 'proot')
+    ) {
+        # run essential hooks
+        if ($options->{variant} ne 'custom') {
+        }
+
+        if ($options->{variant} ne 'custom'
+            and scalar @{$pkgs_to_install} > 0) {
+            # some packages have to be installed from the outside before
+            # anything can be installed from the inside.
+            #
+            # we do not need to install any *-archive-keyring packages
+            # inside the chroot prior to installing the packages, because
+            # the keyring is only used when doing "apt-get update" and that
+            # was already done at the beginning using key material from the
+            # outside. Since the apt cache is already filled and we are not
+            # calling "apt-get update" again, the keyring can be installed
+            # later during installation. But: if it's not installed during
+            # installation, then we might end up with a fully installed
+            # system without keyrings that are valid for its sources.list.
+            my @pkgs_to_install_from_outside;
+
+            # install apt if necessary
+            if ($options->{variant} ne 'apt') {
+                push @pkgs_to_install_from_outside, 'apt';
             }
 
-            foreach my $deb (@essential_pkgs) {
-                unlink "$options->{root}/$deb"
-                  or error "cannot unlink $deb: $!";
+            # since apt will be run inside the chroot, make sure that
+            # apt-transport-https and ca-certificates gets installed first
+            # if any mirror is a https URI
+            open(my $pipe_apt, '-|', 'apt-get', 'indextargets',
+                '--format', '$(URI)', 'Created-By: Packages')
+              or error "cannot start apt-get indextargets: $!";
+            while (my $uri = <$pipe_apt>) {
+                if ($uri =~ /^https:\/\//) {
+                    # FIXME: support for https is part of apt >= 1.5
+                    push @pkgs_to_install_from_outside, 'apt-transport-https';
+                    push @pkgs_to_install_from_outside, 'ca-certificates';
+                    last;
+                } elsif ($uri =~ /^tor(\+[a-z]+)*:\/\//) {
+                    # tor URIs can be tor+http://, tor+https:// or even
+                    # tor+mirror+file://
+                    push @pkgs_to_install_from_outside, 'apt-transport-tor';
+                    last;
+                }
             }
+            close $pipe_apt;
+            $? == 0 or error "apt-get indextargets failed";
 
-            # run essential hooks
-            if ($options->{variant} ne 'custom') {
-                run_hooks('essential', $options);
-            }
-
-            if ($options->{variant} ne 'custom'
-                and scalar @pkgs_to_install > 0) {
-                # some packages have to be installed from the outside before
-                # anything can be installed from the inside.
-                #
-                # we do not need to install any *-archive-keyring packages
-                # inside the chroot prior to installing the packages, because
-                # the keyring is only used when doing "apt-get update" and that
-                # was already done at the beginning using key material from the
-                # outside. Since the apt cache is already filled and we are not
-                # calling "apt-get update" again, the keyring can be installed
-                # later during installation. But: if it's not installed during
-                # installation, then we might end up with a fully installed
-                # system without keyrings that are valid for its sources.list.
-                my @pkgs_to_install_from_outside;
-
-                # install apt if necessary
-                if ($options->{variant} ne 'apt') {
-                    push @pkgs_to_install_from_outside, 'apt';
-                }
-
-                # since apt will be run inside the chroot, make sure that
-                # apt-transport-https and ca-certificates gets installed first
-                # if any mirror is a https URI
-                open(my $pipe_apt, '-|', 'apt-get', 'indextargets',
-                    '--format', '$(URI)', 'Created-By: Packages')
-                  or error "cannot start apt-get indextargets: $!";
-                while (my $uri = <$pipe_apt>) {
-                    if ($uri =~ /^https:\/\//) {
-                        # FIXME: support for https is part of apt >= 1.5
-                        push @pkgs_to_install_from_outside,
-                          'apt-transport-https';
-                        push @pkgs_to_install_from_outside, 'ca-certificates';
-                        last;
-                    } elsif ($uri =~ /^tor(\+[a-z]+)*:\/\//) {
-                        # tor URIs can be tor+http://, tor+https:// or even
-                        # tor+mirror+file://
-                        push @pkgs_to_install_from_outside,
-                          'apt-transport-tor';
-                        last;
-                    }
-                }
-                close $pipe_apt;
-                $? == 0 or error "apt-get indextargets failed";
-
-                if (scalar @pkgs_to_install_from_outside > 0) {
-                    if ($options->{dryrun}) {
-                        info 'simulate downloading '
-                          . (join ', ', @pkgs_to_install_from_outside) . "...";
-                    } else {
-                        info 'downloading '
-                          . (join ', ', @pkgs_to_install_from_outside) . "...";
-                    }
-                    run_apt_progress({
-                            ARGV => [
-                                'apt-get',
-                                '--yes',
-                                '-oApt::Get::Download-Only=true',
-                                $options->{dryrun}
-                                ? '-oAPT::Get::Simulate=true'
-                                : (),
-                                'install'
-                            ],
-                            PKGS => [@pkgs_to_install_from_outside],
-                        });
-                    if ($options->{dryrun}) {
-                        info 'simulate installing '
-                          . (join ', ', @pkgs_to_install_from_outside) . "...";
-                    } else {
-                        my @debs_to_install;
-                        my $apt_archives = "/var/cache/apt/archives/";
-                        opendir my $dh, "$options->{root}/$apt_archives"
-                          or error "cannot read $apt_archives";
-                        while (my $deb = readdir $dh) {
-                            if ($deb !~ /\.deb$/) {
-                                next;
-                            }
-                            $deb = "$apt_archives/$deb";
-                            if (!-f "$options->{root}/$deb") {
-                                next;
-                            }
-                            push @debs_to_install, $deb;
-                        }
-                        close $dh;
-                        if (scalar @debs_to_install == 0) {
-                            warning
-                              "nothing got downloaded -- maybe the packages"
-                              . " were already installed?";
-                        } else {
-                           # we need --force-depends because dpkg does not take
-                           # Pre-Depends into account and thus doesn't install
-                           # them in the right order
-                            info 'installing '
-                              . (join ', ', @pkgs_to_install_from_outside)
-                              . "...";
-                            run_dpkg_progress({
-                                    ARGV => [
-                                        @chrootcmd,       'env',
-                                        '--unset=TMPDIR', 'dpkg',
-                                        '--install',      '--force-depends'
-                                    ],
-                                    PKGS => \@debs_to_install,
-                                });
-                            foreach my $deb (@debs_to_install) {
-                                unlink "$options->{root}/$deb"
-                                  or error "cannot unlink $deb: $!";
-                            }
-                        }
-                    }
-                }
-
-                if (!$options->{dryrun}) {
-                    run_chroot(
-                        sub {
-                            info "installing remaining packages inside the"
-                              . " chroot...";
-                            run_apt_progress({
-                                    ARGV => [
-                                        @chrootcmd,
-                                        'env',
-                                        '--unset=APT_CONFIG',
-                                        '--unset=TMPDIR',
-                                        'apt-get',
-                                        '--yes',
-                                        'install'
-                                    ],
-                                    PKGS => [@pkgs_to_install],
-                                });
-                        },
-                        $options
-                    );
+            if (scalar @pkgs_to_install_from_outside > 0) {
+                if ($options->{dryrun}) {
+                    info 'simulate downloading '
+                      . (join ', ', @pkgs_to_install_from_outside) . "...";
                 } else {
-                    info "simulate installing remaining packages inside the"
-                      . " chroot...";
-                    run_apt_progress({
-                            ARGV => [
-                                'apt-get',                   '--yes',
-                                '-oAPT::Get::Simulate=true', 'install'
-                            ],
-                            PKGS => [@pkgs_to_install],
-                        });
+                    info 'downloading '
+                      . (join ', ', @pkgs_to_install_from_outside) . "...";
+                }
+                run_apt_progress({
+                        ARGV => [
+                            'apt-get',
+                            '--yes',
+                            '-oApt::Get::Download-Only=true',
+                            $options->{dryrun}
+                            ? '-oAPT::Get::Simulate=true'
+                            : (),
+                            'install'
+                        ],
+                        PKGS => [@pkgs_to_install_from_outside],
+                    });
+                if ($options->{dryrun}) {
+                    info 'simulate installing '
+                      . (join ', ', @pkgs_to_install_from_outside) . "...";
+                } else {
+                    my @debs_to_install;
+                    my $apt_archives = "/var/cache/apt/archives/";
+                    opendir my $dh, "$options->{root}/$apt_archives"
+                      or error "cannot read $apt_archives";
+                    while (my $deb = readdir $dh) {
+                        if ($deb !~ /\.deb$/) {
+                            next;
+                        }
+                        $deb = "$apt_archives/$deb";
+                        if (!-f "$options->{root}/$deb") {
+                            next;
+                        }
+                        push @debs_to_install, $deb;
+                    }
+                    close $dh;
+                    if (scalar @debs_to_install == 0) {
+                        warning "nothing got downloaded -- maybe the packages"
+                          . " were already installed?";
+                    } else {
+                        # we need --force-depends because dpkg does not take
+                        # Pre-Depends into account and thus doesn't install
+                        # them in the right order
+                        info 'installing '
+                          . (join ', ', @pkgs_to_install_from_outside) . "...";
+                        run_dpkg_progress({
+                                ARGV => [
+                                    @{$chrootcmd},    'env',
+                                    '--unset=TMPDIR', 'dpkg',
+                                    '--install',      '--force-depends'
+                                ],
+                                PKGS => \@debs_to_install,
+                            });
+                        foreach my $deb (@debs_to_install) {
+                            unlink "$options->{root}/$deb"
+                              or error "cannot unlink $deb: $!";
+                        }
+                    }
                 }
             }
-        } else {
-            error "unknown variant: $options->{variant}";
+
+            if (!$options->{dryrun}) {
+                run_chroot(
+                    sub {
+                        info "installing remaining packages inside the"
+                          . " chroot...";
+                        run_apt_progress({
+                                ARGV => [
+                                    @{$chrootcmd},        'env',
+                                    '--unset=APT_CONFIG', '--unset=TMPDIR',
+                                    'apt-get',            '--yes',
+                                    'install'
+                                ],
+                                PKGS => $pkgs_to_install,
+                            });
+                    },
+                    $options
+                );
+            } else {
+                info "simulate installing remaining packages inside the"
+                  . " chroot...";
+                run_apt_progress({
+                        ARGV => [
+                            'apt-get',                   '--yes',
+                            '-oAPT::Get::Simulate=true', 'install'
+                        ],
+                        PKGS => $pkgs_to_install,
+                    });
+            }
         }
     } else {
         error "unknown mode: $options->{mode}";
     }
 
-    run_hooks('customize', $options);
+    return;
+}
+
+sub run_cleanup() {
+    my $options = shift;
 
     # clean up temporary configuration file
     unlink "$options->{root}/etc/apt/apt.conf.d/00mmdebstrap"
@@ -2369,7 +2415,10 @@ sub setup {
         });
     run_apt_progress(
         { ARGV => ['apt-get', 'clean'], CHDIR => $options->{root} });
-    unlink $tmpfile or error "failed to unlink $tmpfile: $!";
+    if (defined $ENV{APT_CONFIG} && -e $ENV{APT_CONFIG}) {
+        unlink $ENV{APT_CONFIG}
+          or error "failed to unlink $ENV{APT_CONFIG}: $!";
+    }
 
     # apt since 1.6 creates the auxfiles directory. If apt inside the chroot
     # is older than that, then it will not know how to clean it.
