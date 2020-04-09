@@ -2401,86 +2401,106 @@ sub run_install() {
 sub run_cleanup() {
     my $options = shift;
 
-    # clean up temporary configuration file
-    unlink "$options->{root}/etc/apt/apt.conf.d/00mmdebstrap"
-      or error "failed to unlink /etc/apt/apt.conf.d/00mmdebstrap: $!";
-    info "cleaning package lists and apt cache...";
-    run_apt_progress({
-            ARGV => [
-                'apt-get',                         '--option',
-                'Dir::Etc::SourceList=/dev/null',  '--option',
-                'Dir::Etc::SourceParts=/dev/null', 'update'
-            ],
-            CHDIR => $options->{root},
-        });
-    run_apt_progress(
-        { ARGV => ['apt-get', 'clean'], CHDIR => $options->{root} });
-    if (defined $ENV{APT_CONFIG} && -e $ENV{APT_CONFIG}) {
-        unlink $ENV{APT_CONFIG}
-          or error "failed to unlink $ENV{APT_CONFIG}: $!";
-    }
+    if (any { $_ eq 'cleanup/apt' } @{ $options->{skip} }) {
+        info "skipping cleanup/apt as requested";
+    } else {
+        info "cleaning package lists and apt cache...";
+        run_apt_progress({
+                ARGV => [
+                    'apt-get',                         '--option',
+                    'Dir::Etc::SourceList=/dev/null',  '--option',
+                    'Dir::Etc::SourceParts=/dev/null', 'update'
+                ],
+                CHDIR => $options->{root},
+            });
+        run_apt_progress(
+            { ARGV => ['apt-get', 'clean'], CHDIR => $options->{root} });
 
-    # apt since 1.6 creates the auxfiles directory. If apt inside the chroot
-    # is older than that, then it will not know how to clean it.
-    if (-e "$options->{root}/var/lib/apt/lists/auxfiles") {
-        rmdir "$options->{root}/var/lib/apt/lists/auxfiles"
-          or die "cannot rmdir /var/lib/apt/lists/auxfiles: $!";
-    }
-
-    if (defined $options->{qemu}
-        and any { $_ eq $options->{mode} } ('root', 'unshare')) {
-        unlink "$options->{root}/usr/bin/qemu-$options->{qemu}-static"
-          or error "cannot unlink /usr/bin/qemu-$options->{qemu}-static: $!";
-    }
-
-    # clean up certain files to make output reproducible
-    foreach my $fname (
-        '/var/log/dpkg.log',             '/var/log/apt/history.log',
-        '/var/log/apt/term.log',         '/var/log/alternatives.log',
-        '/var/cache/ldconfig/aux-cache', '/var/log/apt/eipp.log.xz'
-    ) {
-        my $path = "$options->{root}$fname";
-        if (!-e $path) {
-            next;
+        # apt since 1.6 creates the auxfiles directory. If apt inside the
+        # chroot is older than that, then it will not know how to clean it.
+        if (-e "$options->{root}/var/lib/apt/lists/auxfiles") {
+            rmdir "$options->{root}/var/lib/apt/lists/auxfiles"
+              or die "cannot rmdir /var/lib/apt/lists/auxfiles: $!";
         }
-        unlink $path or error "cannot unlink $path: $!";
     }
 
-    if (-e "$options->{root}/etc/machine-id") {
-        # from machine-id(5):
-        # For operating system images which are created once and used on
-        # multiple machines, for example for containers or in the cloud,
-        # /etc/machine-id should be an empty file in the generic file system
-        # image. An ID will be generated during boot and saved to this file if
-        # possible. Having an empty file in place is useful because it allows a
-        # temporary file to be bind-mounted over the real file, in case the
-        # image is used read-only.
-        unlink "$options->{root}/etc/machine-id"
-          or error "cannot unlink /etc/machine-id: $!";
-        open my $fh, '>', "$options->{root}/etc/machine-id"
-          or error "failed to open(): $!";
-        close $fh;
+    if (any { $_ eq 'cleanup/mmdebstrap' } @{ $options->{skip} }) {
+        info "skipping cleanup/mmdebstrap as requested";
+    } else {
+        # clean up temporary configuration file
+        unlink "$options->{root}/etc/apt/apt.conf.d/00mmdebstrap"
+          or error "failed to unlink /etc/apt/apt.conf.d/00mmdebstrap: $!";
+
+        if (defined $ENV{APT_CONFIG} && -e $ENV{APT_CONFIG}) {
+            unlink $ENV{APT_CONFIG}
+              or error "failed to unlink $ENV{APT_CONFIG}: $!";
+        }
+
+        if (defined $options->{qemu}
+            and any { $_ eq $options->{mode} } ('root', 'unshare')) {
+            unlink "$options->{root}/usr/bin/qemu-$options->{qemu}-static"
+              or error
+              "cannot unlink /usr/bin/qemu-$options->{qemu}-static: $!";
+        }
     }
 
-    # remove any possible leftovers in /tmp but warn about it
-    if (-d "$options->{root}/tmp") {
-        opendir(my $dh, "$options->{root}/tmp")
-          or error "Can't opendir($options->{root}/tmp): $!";
-        while (my $entry = readdir $dh) {
-            # skip the "." and ".." entries
-            next if $entry eq ".";
-            next if $entry eq "..";
-            warning "deleting files in /tmp: $entry";
-            remove_tree("$options->{root}/tmp/$entry", { error => \my $err });
-            if (@$err) {
-                for my $diag (@$err) {
-                    my ($file, $message) = %$diag;
-                    if ($file eq '') { warning "general error: $message"; }
-                    else { warning "problem unlinking $file: $message"; }
+    if (any { $_ eq 'cleanup/reproducible' } @{ $options->{skip} }) {
+        info "skipping cleanup/reproducible as requested";
+    } else {
+        # clean up certain files to make output reproducible
+        foreach my $fname (
+            '/var/log/dpkg.log',             '/var/log/apt/history.log',
+            '/var/log/apt/term.log',         '/var/log/alternatives.log',
+            '/var/cache/ldconfig/aux-cache', '/var/log/apt/eipp.log.xz'
+        ) {
+            my $path = "$options->{root}$fname";
+            if (!-e $path) {
+                next;
+            }
+            unlink $path or error "cannot unlink $path: $!";
+        }
+
+        if (-e "$options->{root}/etc/machine-id") {
+            # from machine-id(5):
+            # For operating system images which are created once and used on
+            # multiple machines, for example for containers or in the cloud,
+            # /etc/machine-id should be an empty file in the generic file
+            # system image. An ID will be generated during boot and saved to
+            # this file if possible. Having an empty file in place is useful
+            # because it allows a temporary file to be bind-mounted over the
+            # real file, in case the image is used read-only.
+            unlink "$options->{root}/etc/machine-id"
+              or error "cannot unlink /etc/machine-id: $!";
+            open my $fh, '>', "$options->{root}/etc/machine-id"
+              or error "failed to open(): $!";
+            close $fh;
+        }
+    }
+
+    if (any { $_ eq 'cleanup/tmp' } @{ $options->{skip} }) {
+        info "skipping cleanup/tmp as requested";
+    } else {
+        # remove any possible leftovers in /tmp but warn about it
+        if (-d "$options->{root}/tmp") {
+            opendir(my $dh, "$options->{root}/tmp")
+              or error "Can't opendir($options->{root}/tmp): $!";
+            while (my $entry = readdir $dh) {
+                # skip the "." and ".." entries
+                next if $entry eq ".";
+                next if $entry eq "..";
+                warning "deleting files in /tmp: $entry";
+                remove_tree("$options->{root}/tmp/$entry",
+                    { error => \my $err });
+                if (@$err) {
+                    for my $diag (@$err) {
+                        my ($file, $message) = %$diag;
+                        if ($file eq '') { warning "general error: $message"; }
+                        else { warning "problem unlinking $file: $message"; }
+                    }
                 }
             }
+            closedir($dh);
         }
-        closedir($dh);
     }
     return;
 }
@@ -2908,6 +2928,7 @@ sub main() {
         essential_hook  => [],
         customize_hook  => [],
         dryrun          => 0,
+        skip            => [],
     };
     my $logfile = undef;
     my $format  = 'auto';
@@ -2975,6 +2996,7 @@ sub main() {
         #                  here prepare for long suffering in dependency hell.
         'simulate' => \$options->{dryrun},
         'dry-run'  => \$options->{dryrun},
+        'skip=s@'  => \$options->{skip},
     ) or pod2usage(-exitval => 2, -verbose => 1);
 
     if (defined($logfile)) {
