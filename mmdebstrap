@@ -5336,8 +5336,11 @@ https://bugs.debian.org/src:mmdebstrap
 
 As of version 1.19.5, dpkg does not provide facilities preventing it from
 reading the dpkg configuration of the machine running B<mmdebstrap>.
-Therefore, until this dpkg limitation is fixed, a default dpkg configuration
-is recommended on machines running B<mmdebstrap>.
+Therefore, until this dpkg limitation is fixed, a default dpkg configuration is
+recommended on machines running B<mmdebstrap>. If you are using B<mmdebstrap>
+as the non-root user, then as a workaround you could run C<chmod 600
+/etc/dpkg/dpkg.cfg.d/*> so that the config files are only accessible by the
+root user.
 
 Setting [trusted=yes] to allow signed archives without a known public key will
 fail because of a gpg warning in the apt output. Since apt does not
