@@ -1141,13 +1141,14 @@ sub run_hooks {
                 # execute it directly if it's an executable file
                 # or if it there are no shell metacharacters
                 # (the /a regex modifier makes \w match only ASCII)
-                0 == system('env', '--unset=TMPDIR', $script, $options->{root})
+                0 == system('env', '--unset=TMPDIR', '--unset=APT_CONFIG',
+                    $script, $options->{root})
                   or error "command failed: $script";
             } else {
                 info "running --$name-hook in shell: sh -c '$script' exec"
                   . " $options->{root}";
                 # otherwise, wrap everything in sh -c
-                0 == system('env', '--unset=TMPDIR',
+                0 == system('env', '--unset=TMPDIR', '--unset=APT_CONFIG',
                     'sh', '-c', $script, 'exec', $options->{root})
                   or error "command failed: $script";
             }
