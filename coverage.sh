@@ -72,7 +72,7 @@ if [ ! -e shared/taridshift ] || [ taridshift -nt shared/taridshift ]; then
 fi
 
 starttime=
-total=141
+total=146
 skipped=0
 runtests=0
 i=1
@@ -711,6 +711,31 @@ else
 	runtests=$((runtests+1))
 fi
 
+print_header "mode=$defaultmode,variant=apt: directory ending in .tar"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+$CMD --mode=$defaultmode --variant=apt --format=directory $DEFAULT_DIST /tmp/debian-chroot.tar $mirror
+ftype=\$(stat -c %F /tmp/debian-chroot.tar)
+if [ "\$ftype" != directory ]; then
+	echo "expected directory but got: \$ftype" >&2
+	exit 1
+fi
+tar -C /tmp/debian-chroot.tar --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
+rm -r /tmp/debian-chroot.tar
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+	runtests=$((runtests+1))
+elif [ "$defaultmode" = "root" ]; then
+	./run_null.sh SUDO
+	runtests=$((runtests+1))
+else
+	./run_null.sh
+	runtests=$((runtests+1))
+fi
+
 print_header "mode=$defaultmode,variant=apt: test squashfs image"
 cat << END > shared/test.sh
 #!/bin/sh
@@ -736,6 +761,50 @@ else
 	./run_null.sh
 	runtests=$((runtests+1))
 fi
+
+for mode in root unshare fakechroot proot; do
+	print_header "mode=$mode,variant=apt: test ext2 image"
+	cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+if [ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1; then
+	if [ ! -e /mmdebstrap-testenv ]; then
+		echo "this test modifies the system and should only be run inside a container" >&2
+		exit 1
+	fi
+	adduser --gecos user --disabled-password user
+fi
+if [ "$mode" = unshare ]; then
+	if [ ! -e /mmdebstrap-testenv ]; then
+		echo "this test modifies the system and should only be run inside a container" >&2
+		exit 1
+	fi
+	sysctl -w kernel.unprivileged_userns_clone=1
+fi
+prefix=
+[ "\$(id -u)" -eq 0 ] && [ "$mode" != "root" ] && prefix="runuser -u user --"
+[ "$mode" = "fakechroot" ] && prefix="\$prefix fakechroot fakeroot"
+\$prefix $CMD --mode=$mode --variant=apt $DEFAULT_DIST /tmp/debian-chroot.ext2 $mirror
+mount /tmp/debian-chroot.ext2 /mnt
+rmdir /mnt/lost+found
+# in fakechroot mode, we use a fake ldconfig, so we have to
+# artificially add some files
+{ tar -C /mnt -c . | tar -t;
+  [ "$mode" = "fakechroot" ] && printf "./etc/ld.so.cache\n./var/cache/ldconfig/\n";
+  [ "$mode" = "fakechroot" ] && printf "./etc/.pwd.lock\n";
+} | sort | diff -u tar1.txt -
+umount /mnt
+rm /tmp/debian-chroot.ext2
+END
+	if [ "$HAVE_QEMU" = "yes" ]; then
+		./run_qemu.sh
+		runtests=$((runtests+1))
+	else
+		echo "HAVE_QEMU != yes -- Skipping test..." >&2
+		skipped=$((skipped+1))
+	fi
+done
 
 print_header "mode=auto,variant=apt: test auto-mode without unshare capabilities"
 cat << END > shared/test.sh
@@ -2017,8 +2086,9 @@ set -eu
 export LC_ALL=C.UTF-8
 $CMD --mode=root --variant=apt --logfile=log $DEFAULT_DIST /tmp/debian-chroot $mirror
 # we check the full log to also prevent debug printfs to accidentally make it into a commit
-cat << LOG | diff - log
+cat << LOG | diff -u - log
 I: chroot architecture $HOSTARCH is equal to the host's architecture
+I: automatically chosen format: directory
 I: running apt-get update...
 I: downloading packages with apt...
 I: extracting archives...
