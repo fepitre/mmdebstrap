@@ -1776,8 +1776,20 @@ for mode in root unshare fakechroot proot; do
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-[ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1 && adduser --gecos user --disabled-password user
-[ "$mode" = unshare ] && sysctl -w kernel.unprivileged_userns_clone=1
+if [ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1; then
+	if [ ! -e /mmdebstrap-testenv ]; then
+		echo "this test modifies the system and should only be run inside a container" >&2
+		exit 1
+	fi
+	adduser --gecos user --disabled-password user
+fi
+if [ "$mode" = unshare ]; then
+	if [ ! -e /mmdebstrap-testenv ]; then
+		echo "this test modifies the system and should only be run inside a container" >&2
+		exit 1
+	fi
+	sysctl -w kernel.unprivileged_userns_clone=1
+fi
 prefix=
 [ "\$(id -u)" -eq 0 ] && [ "$mode" != "root" ] && prefix="runuser -u user --"
 [ "$mode" = "fakechroot" ] && prefix="\$prefix fakechroot fakeroot"
@@ -2154,9 +2166,17 @@ include=
 if [ "\$(id -u)" -eq 0 ] && [ "$mode" != root ]; then
 	# this must be qemu
 	if ! id -u user >/dev/null 2>&1; then
+		if [ ! -e /mmdebstrap-testenv ]; then
+			echo "this test modifies the system and should only be run inside a container" >&2
+			exit 1
+		fi
 		adduser --gecos user --disabled-password user
 	fi
 	if [ "$mode" = unshare ]; then
+		if [ ! -e /mmdebstrap-testenv ]; then
+			echo "this test modifies the system and should only be run inside a container" >&2
+			exit 1
+		fi
 		sysctl -w kernel.unprivileged_userns_clone=1
 	fi
 	prefix="runuser -u user --"
@@ -2239,8 +2259,20 @@ END
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-[ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1 && adduser --gecos user --disabled-password user
-[ "$mode" = unshare ] && sysctl -w kernel.unprivileged_userns_clone=1
+if [ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1; then
+	if [ ! -e /mmdebstrap-testenv ]; then
+		echo "this test modifies the system and should only be run inside a container" >&2
+		exit 1
+	fi
+	adduser --gecos user --disabled-password user
+fi
+if [ "$mode" = unshare ]; then
+	if [ ! -e /mmdebstrap-testenv ]; then
+		echo "this test modifies the system and should only be run inside a container" >&2
+		exit 1
+	fi
+	sysctl -w kernel.unprivileged_userns_clone=1
+fi
 prefix=
 [ "\$(id -u)" -eq 0 ] && prefix="runuser -u user --"
 \$prefix $CMD --mode=$mode --variant=$variant $DEFAULT_DIST /tmp/debian-chroot.tar $mirror
@@ -2322,8 +2354,20 @@ for mode in root unshare fakechroot proot chrootless; do
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-[ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1 && adduser --gecos user --disabled-password user
-[ "$mode" = unshare ] && sysctl -w kernel.unprivileged_userns_clone=1
+if [ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1; then
+	if [ ! -e /mmdebstrap-testenv ]; then
+		echo "this test modifies the system and should only be run inside a container" >&2
+		exit 1
+	fi
+	adduser --gecos user --disabled-password user
+fi
+if [ "$mode" = unshare ]; then
+	if [ ! -e /mmdebstrap-testenv ]; then
+		echo "this test modifies the system and should only be run inside a container" >&2
+		exit 1
+	fi
+	sysctl -w kernel.unprivileged_userns_clone=1
+fi
 prefix=
 [ "\$(id -u)" -eq 0 ] && [ "$mode" != "root" ] && prefix="runuser -u user --"
 [ "$mode" = "fakechroot" ] && prefix="\$prefix fakechroot fakeroot"
@@ -2384,7 +2428,13 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-[ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1 && adduser --gecos user --disabled-password user
+if [ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1; then
+	if [ ! -e /mmdebstrap-testenv ]; then
+		echo "this test modifies the system and should only be run inside a container" >&2
+		exit 1
+	fi
+	adduser --gecos user --disabled-password user
+fi
 prefix=
 [ "\$(id -u)" -eq 0 ] && prefix="runuser -u user --"
 \$prefix $CMD --mode=chrootless --variant=custom --include=doc-debian $DEFAULT_DIST /tmp/debian-chroot $mirror
@@ -2441,7 +2491,13 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C.UTF-8
 export SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH
-[ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1 && adduser --gecos user --disabled-password user
+if [ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1; then
+	if [ ! -e /mmdebstrap-testenv ]; then
+		echo "this test modifies the system and should only be run inside a container" >&2
+		exit 1
+	fi
+	adduser --gecos user --disabled-password user
+fi
 prefix=
 [ "\$(id -u)" -eq 0 ] && prefix="runuser -u user --"
 \$prefix $CMD --mode=chrootless --variant=custom --include=doc-debian $DEFAULT_DIST /tmp/debian-chroot.tar $mirror
@@ -2462,7 +2518,13 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C.UTF-8
 export SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH
-[ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1 && adduser --gecos user --disabled-password user
+if [ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1; then
+	if [ ! -e /mmdebstrap-testenv ]; then
+		echo "this test modifies the system and should only be run inside a container" >&2
+		exit 1
+	fi
+	adduser --gecos user --disabled-password user
+fi
 prefix=
 [ "\$(id -u)" -eq 0 ] && prefix="runuser -u user --"
 \$prefix $CMD --mode=chrootless --variant=custom --include=doc-debian --setup-hook='touch "\$1/setup"' --customize-hook='touch "\$1/customize"' $DEFAULT_DIST /tmp/debian-chroot $mirror
@@ -2519,7 +2581,13 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-[ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1 && adduser --gecos user --disabled-password user
+if [ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1; then
+	if [ ! -e /mmdebstrap-testenv ]; then
+		echo "this test modifies the system and should only be run inside a container" >&2
+		exit 1
+	fi
+	adduser --gecos user --disabled-password user
+fi
 prefix=
 [ "\$(id -u)" -eq 0 ] && prefix="runuser -u user --"
 \$prefix $CMD --mode=chrootless --variant=custom --architectures=armhf --include=libmagic-mgc $DEFAULT_DIST /tmp/debian-chroot $mirror
@@ -2651,8 +2719,20 @@ for mode in root unshare fakechroot proot; do
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-[ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1 && adduser --gecos user --disabled-password user
-[ "$mode" = unshare ] && sysctl -w kernel.unprivileged_userns_clone=1
+if [ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1; then
+	if [ ! -e /mmdebstrap-testenv ]; then
+		echo "this test modifies the system and should only be run inside a container" >&2
+		exit 1
+	fi
+	adduser --gecos user --disabled-password user
+fi
+if [ "$mode" = unshare ]; then
+	if [ ! -e /mmdebstrap-testenv ]; then
+		echo "this test modifies the system and should only be run inside a container" >&2
+		exit 1
+	fi
+	sysctl -w kernel.unprivileged_userns_clone=1
+fi
 prefix=
 [ "\$(id -u)" -eq 0 ] && [ "$mode" != "root" ] && prefix="runuser -u user --"
 [ "$mode" = "fakechroot" ] && prefix="\$prefix fakechroot fakeroot"
