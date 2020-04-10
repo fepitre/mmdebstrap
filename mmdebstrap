@@ -3344,6 +3344,12 @@ sub main() {
                       . " binary";
                 }
                 $options->{qemu} = $deb2qemu->{ $options->{nativearch} };
+                if (any { $_ eq $options->{mode} } ('root', 'unshare')) {
+                    my $qemubin = "/usr/bin/qemu-$options->{qemu}-static";
+                    if (!-e $qemubin) {
+                        error "cannot find $qemubin";
+                    }
+                }
             } elsif ($withemu == 1 and $noemu == 1) {
                 info "$options->{nativearch} is different from $hostarch but"
                   . " can be executed natively";
