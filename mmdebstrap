@@ -3298,9 +3298,9 @@ sub main() {
                       or error "failed to open /proc/mounts: $!";
                     unless (
                         grep {
-                            /^binfmt_misc
-                            \/proc\/sys\/fs\/binfmt_misc
-                            binfmt_misc/x
+                            /^binfmt_misc\s+
+                            \/proc\/sys\/fs\/binfmt_misc\s+
+                            binfmt_misc\s+/x
                         } (<$fh>)
                     ) {
                         warning "binfmt_misc not found in /proc/mounts -- not"
