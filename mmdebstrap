@@ -3312,6 +3312,10 @@ sub main() {
                     if (!exists $deb2qemu->{ $options->{nativearch} }) {
                         warning "no mapping from $options->{nativearch} to"
                           . " qemu-user binary";
+                    } elsif (
+                        system('/usr/sbin/update-binfmts --version>/dev/null')
+                        != 0) {
+                        warning "cannot find /usr/sbin/update-binfmts";
                     } else {
                         my $binfmt_identifier
                           = 'qemu-' . $deb2qemu->{ $options->{nativearch} };
