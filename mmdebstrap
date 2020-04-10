@@ -600,6 +600,8 @@ sub run_progress {
         info "run_progress() received signal $_[0]: waiting for child...";
     };
 
+    debug("run_progress: exec " . (join ' ', ($get_exec->('${FD}'))));
+
     # delay signals so that we can fork and change behaviour of the signal
     # handler in parent and child without getting interrupted
     my $sigset = POSIX::SigSet->new(SIGINT, SIGHUP, SIGPIPE, SIGTERM);
