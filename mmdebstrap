@@ -3221,6 +3221,9 @@ sub main() {
             sparc64  => 'sparc64',
         };
         if ($hostarch ne $options->{nativearch}) {
+            if (system('arch-test --version>/dev/null') != 0) {
+                error "install arch-test for foreign architecture support";
+            }
             my $withemu = 0;
             my $noemu   = 0;
             {
