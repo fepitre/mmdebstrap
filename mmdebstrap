@@ -3326,7 +3326,7 @@ sub main() {
                             my $binfmts = do { local $/; <$fh> }
                         );
                         close $fh;
-                        if ($binfmts eq '') {
+                        if ($? != 0 || $binfmts eq '') {
                             warning "$binfmt_identifier is not a supported"
                               . " binfmt name";
                         }
