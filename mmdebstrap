@@ -1405,6 +1405,10 @@ sub run_setup() {
             }
         }
         close $fh;
+        if ($verbosity_level >= 3) {
+            debug "content of /etc/apt/apt.conf.d/99mmdebstrap:";
+            copy("$options->{root}/etc/apt/apt.conf.d/99mmdebstrap", \*STDERR);
+        }
     }
 
     if (scalar @{ $options->{dpkgopts} } > 0) {
@@ -1426,6 +1430,11 @@ sub run_setup() {
             }
         }
         close $fh;
+        if ($verbosity_level >= 3) {
+            debug "content of /etc/dpkg/dpkg.cfg.d/99mmdebstrap:";
+            copy("$options->{root}/etc/dpkg/dpkg.cfg.d/99mmdebstrap",
+                \*STDERR);
+        }
     }
 
     ## setup merged usr
