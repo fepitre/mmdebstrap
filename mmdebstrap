@@ -5170,11 +5170,11 @@ useful if you plan to use the chroot with proot.
 =item B<chrootless>
 
 Uses the dpkg option C<--force-script-chrootless> to install packages into
-B<TARGET> without dpkg and apt inside B<TARGET> but using apt and dpkg from
+I<TARGET> without dpkg and apt inside I<TARGET> but using apt and dpkg from
 the machine running B<mmdebstrap>. Maintainer scripts are run without chrooting
-into B<TARGET> and rely on their dependencies being installed on the machine
+into I<TARGET> and rely on their dependencies being installed on the machine
 running B<mmdebstrap>. Unless B<mmdebstrap> was run inside fakeroot, the
-B<TARGET> directory will be owned by the user running mmdebstrap.
+I<TARGET> directory will be owned by the user running mmdebstrap.
 
 =for TODO
 =item B<qemu>
@@ -5242,8 +5242,8 @@ When selecting this format (the default), the actual format will be inferred
 from the I<TARGET> positional argument. If I<TARGET> is an existing directory,
 and does not equal to C<->, then the B<directory> format will be chosen. If
 I<TARGET> ends with C<.tar> or with one of the filename extensions listed in
-the section B<COMPRESSION>, or if B<TARGET> equals C<->, or if B<TARGET> is a
-named pipe (fifo) or if B<TARGET> is a character special file like
+the section B<COMPRESSION>, or if I<TARGET> equals C<->, or if I<TARGET> is a
+named pipe (fifo) or if I<TARGET> is a character special file like
 F</dev/null>, then the B<tar> format will be chosen. If I<TARGET> ends with
 C<.squashfs> or C<.sqfs>, then the B<squashfs> format will be chosen. If
 <TARGET> ends with C<.ext2> then the B<ext2> format will be chosen. If none of
