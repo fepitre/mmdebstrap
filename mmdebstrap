@@ -5276,7 +5276,7 @@ directory cannot be written to standard output. If you need your directory be
 named C<->, then just explicitly pass the relative path to it like F<./->.  If
 a directory is chosen as output in any other mode than B<sudo>, then its
 contents will have wrong ownership information and special device files will be
-missing.
+missing. Refer to the section B<MODES> for more information.
 
 =item B<tar>
 
