@@ -5139,11 +5139,28 @@ by the _apt user, then apt sandboxing will be automatically disabled.
 
 This mode uses Linux user namespaces to allow unprivileged use of chroot and
 creation of files that appear to be owned by the superuser inside the unshared
-namespace. A directory chroot created with this mode will end up with wrong
-ownership information. Choose to create a tarball instead. This mode requires
-the sysctl C<kernel.unprivileged_userns_clone> being set to C<1>. B<SETTING
-THIS OPTION HAS SECURITY IMPLICATIONS>. Refer to
+namespace. A tarball created in this mode should be bit-by-bit identical to a
+tarball created with the B<root> mode.  This mode requires the sysctl
+C<kernel.unprivileged_userns_clone> being set to C<1>. B<SETTING THIS OPTION
+HAS SECURITY IMPLICATIONS>. Refer to
 L<https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=898446>
+
+A directory chroot created with this mode will end up with wrong ownership
+information. For correct ownership information, the directory must be accessed
+from a user namespace with the right subuid/subgid offset, like so:
+
+    $ lxc-usernsexec -- lxc-unshare -s 'MOUNT|PID|UTSNAME|IPC' -- \
+    > /usr/sbin/chroot ./debian-rootfs /bin/bash
+
+Or without LXC:
+
+    $ mmdebstrap --unshare-helper /usr/sbin/chroot ./debian-rootfs /bin/bash
+
+Or, if you don't mind using superuser privileges and have systemd-nspawn
+available and you know your subuid/subgid offset (100000 in this example):
+
+    $ sudo systemd-nspawn --private-users=100000 \
+    > --directory=./debian-rootfs /bin/bash
 
 =item B<fakeroot>, B<fakechroot>
 
