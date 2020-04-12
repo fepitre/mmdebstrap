@@ -5256,8 +5256,9 @@ Without that option the default format is I<auto>. The following formats exist:
 =item B<auto>
 
 When selecting this format (the default), the actual format will be inferred
-from the I<TARGET> positional argument. If I<TARGET> is an existing directory,
-and does not equal to C<->, then the B<directory> format will be chosen. If
+from the I<TARGET> positional argument. If I<TARGET> was not specified, then
+the B<tar> format will be chosen. If I<TARGET> is an existing directory, and
+does not equal to C<->, then the B<directory> format will be chosen. If
 I<TARGET> ends with C<.tar> or with one of the filename extensions listed in
 the section B<COMPRESSION>, or if I<TARGET> equals C<->, or if I<TARGET> is a
 named pipe (fifo) or if I<TARGET> is a character special file like
