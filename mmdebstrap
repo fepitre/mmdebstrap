@@ -3234,7 +3234,9 @@ sub main() {
             sparc    => 'sparc',
             sparc64  => 'sparc64',
         };
-        if ($hostarch ne $options->{nativearch}) {
+        if ($options->{mode} eq "chrootless") {
+            info "skipping emulation check in chrootless mode";
+        } elsif ($hostarch ne $options->{nativearch}) {
             if (system('arch-test --version>/dev/null') != 0) {
                 error "install arch-test for foreign architecture support";
             }
