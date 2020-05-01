@@ -4901,7 +4901,7 @@ Example: Settings controlling download of package description translations
     --aptopt='Acquire::Languages { "environment"; "en"; }'
     --aptopt='Acquire::Languages "none"'
 
-Example: Enable installing Recommends (by default mmdebstrap doesn't)
+Example: Enable installing Recommends (by default B<mmdebstrap> doesn't)
 
     --aptopt='Apt::Install-Recommends "true"'
 
@@ -5196,11 +5196,11 @@ useful if you plan to use the chroot with proot.
 =item B<chrootless>
 
 Uses the dpkg option C<--force-script-chrootless> to install packages into
-I<TARGET> without dpkg and apt inside I<TARGET> but using apt and dpkg from
-the machine running B<mmdebstrap>. Maintainer scripts are run without chrooting
+I<TARGET> without dpkg and apt inside I<TARGET> but using apt and dpkg from the
+machine running B<mmdebstrap>. Maintainer scripts are run without chrooting
 into I<TARGET> and rely on their dependencies being installed on the machine
 running B<mmdebstrap>. Unless B<mmdebstrap> was run inside fakeroot, the
-I<TARGET> directory will be owned by the user running mmdebstrap.
+I<TARGET> directory will be owned by the user running B<mmdebstrap>.
 
 =for TODO
 =item B<qemu>
@@ -5257,7 +5257,7 @@ The B<important> set plus all packages with Priority:standard.
 
 =head1 FORMATS
 
-The output format of mmdebstrap is specified using the B<--format> option.
+The output format of B<mmdebstrap> is specified using the B<--format> option.
 Without that option the default format is I<auto>. The following formats exist:
 
 =over 8
@@ -5642,8 +5642,8 @@ extension to compressor applies:
  .zst      zstd
 
 To change compression specific options, either use the respecitve environment
-variables like B<XZ_OPT> or send mmdebstrap output to your compressor of choice
-with a pipe.
+variables like B<XZ_OPT> or send B<mmdebstrap> output to your compressor of
+choice with a pipe.
 
 =head1 BUGS
 
