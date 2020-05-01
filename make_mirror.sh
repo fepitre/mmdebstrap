@@ -558,15 +558,17 @@ fi
 mirror="http://127.0.0.1/debian"
 for dist in stable testing unstable; do
 	for variant in minbase buildd -; do
-		echo running debootstrap --no-merged-usr --variant=$variant $dist /tmp/debian-$dist-debootstrap $mirror
+		echo "running debootstrap --no-merged-usr --variant=$variant $dist \${TEMPDIR} $mirror"
 		cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
 export SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH
-debootstrap --no-merged-usr --variant=$variant $dist /tmp/debian-$dist-debootstrap $mirror
-tar --sort=name --mtime=@$SOURCE_DATE_EPOCH --clamp-mtime --numeric-owner --one-file-system --xattrs -C /tmp/debian-$dist-debootstrap -c . > "$newcache/debian-$dist-$variant.tar"
-rm -r /tmp/debian-$dist-debootstrap
+tmpdir="\$(mktemp -d)"
+chmod 755 "\$tmpdir"
+debootstrap --no-merged-usr --variant=$variant $dist "\$tmpdir" $mirror
+tar --sort=name --mtime=@$SOURCE_DATE_EPOCH --clamp-mtime --numeric-owner --one-file-system --xattrs -C "\$tmpdir" -c . > "$newcache/debian-$dist-$variant.tar"
+rm -r "\$tmpdir"
 END
 		if [ "$HAVE_QEMU" = "yes" ]; then
 			cachedir=$newcachedir ./run_qemu.sh
