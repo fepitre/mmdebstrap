@@ -3911,38 +3911,43 @@ sub main() {
             if (!-d $options->{root}) {
                 error "$options->{root} exists and is not a directory";
             }
-            # check if the directory is empty or contains nothing more than an
-            # empty lost+found directory. The latter exists on freshly created
-            # ext3 and ext4 partitions.
-            # rationale for requiring an empty directory:
-            # https://bugs.debian.org/833525
-            opendir(my $dh, $options->{root})
-              or error "Can't opendir($options->{root}): $!";
-            while (my $entry = readdir $dh) {
-                # skip the "." and ".." entries
-                next if $entry eq ".";
-                next if $entry eq "..";
-                # if the entry is a directory named "lost+found" then skip it
-                # if it's empty
-                if ($entry eq "lost+found" and -d "$options->{root}/$entry") {
-                    opendir(my $dh2, "$options->{root}/$entry");
-                    # Attempt reading the directory thrice. If the third time
-                    # succeeds, then it has more entries than just "." and ".."
-                    # and must thus not be empty.
-                    readdir $dh2;
-                    readdir $dh2;
-                    # rationale for requiring an empty directory:
-                    # https://bugs.debian.org/833525
-                    if (readdir $dh2) {
-                        error "$options->{root} contains a non-empty"
-                          . " lost+found directory";
+            if (any { $_ eq 'check/empty' } @{ $options->{skip} }) {
+                info "skipping check/empty as requested";
+            } else {
+                # check if the directory is empty or contains nothing more than
+                # an empty lost+found directory. The latter exists on freshly
+                # created ext3 and ext4 partitions.
+                # rationale for requiring an empty directory:
+                # https://bugs.debian.org/833525
+                opendir(my $dh, $options->{root})
+                  or error "Can't opendir($options->{root}): $!";
+                while (my $entry = readdir $dh) {
+                    # skip the "." and ".." entries
+                    next if $entry eq ".";
+                    next if $entry eq "..";
+                    # if the entry is a directory named "lost+found" then skip
+                    # it, if it's empty
+                    if ($entry eq "lost+found"
+                        and -d "$options->{root}/$entry") {
+                        opendir(my $dh2, "$options->{root}/$entry");
+                        # Attempt reading the directory thrice. If the third
+                        # time succeeds, then it has more entries than just "."
+                        # and ".." and must thus not be empty.
+                        readdir $dh2;
+                        readdir $dh2;
+                        # rationale for requiring an empty directory:
+                        # https://bugs.debian.org/833525
+                        if (readdir $dh2) {
+                            error "$options->{root} contains a non-empty"
+                              . " lost+found directory";
+                        }
+                        closedir($dh2);
+                    } else {
+                        error "$options->{root} is not empty";
                     }
-                    closedir($dh2);
-                } else {
-                    error "$options->{root} is not empty";
                 }
+                closedir($dh);
             }
-            closedir($dh);
         } else {
             my $num_created = make_path "$options->{root}",
               { error => \my $err };
