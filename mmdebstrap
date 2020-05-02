@@ -3067,7 +3067,7 @@ sub main() {
 
     # sqfs is an alias for squashfs
     if ($format eq 'sqfs') {
-        $format = 'squasfs';
+        $format = 'squashfs';
     }
     # dir is an alias for directory
     if ($format eq 'dir') {
