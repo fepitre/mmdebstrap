@@ -3171,7 +3171,10 @@ sub main() {
             exit 1;
         }
     } elsif ($options->{mode} eq 'chrootless') {
-        # nothing to do
+        if ($EFFECTIVE_USER_ID == 0) {
+            warning "running chrootless mode as root might damage the host "
+              . "system";
+        }
     } else {
         error "unknown mode: $options->{mode}";
     }
