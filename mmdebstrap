@@ -4061,12 +4061,19 @@ sub main() {
         '--clamp-mtime',
         '--numeric-owner',
         '--one-file-system',
-        '--xattrs',
         '--format=pax',
         '--pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime',
         '-c',
         '--exclude=./dev'
     );
+    # tar2sqfs and genext2fs do not support extended attributes
+    if ($format eq "squashfs") {
+        warning "tar2sqfs does not support extended attributes";
+    } elsif ($format eq "ext2") {
+        warning "genext2fs does not support extended attributes";
+    } else {
+        push @taropts, '--xattrs';
+    }
 
     # disable signals so that we can fork and change behaviour of the signal
     # handler in the parent and child without getting interrupted
@@ -5314,7 +5321,8 @@ C<tar2sqfs> utility, which will create an xz compressed squashfs image with a
 blocksize of 1048576 bytes in I<TARGET>.  The special I<TARGET> C<-> does not
 work with this format because C<tar2sqfs> can only write to a regular file. If
 you need your squashfs image be named C<->, then just explicitly pass the
-relative path to it like F<./->.
+relative path to it like F<./->. Since C<tar2sqfs> does not support extended
+attributes, the resulting image will not contain them.
 
 =item B<ext2>
 
@@ -5326,7 +5334,8 @@ with this format because C<genext2fs> can only write to a regular file. If you
 need your ext2 image be named C<->, then just explicitly pass the relative path
 to it like F<./->. To convert the result to an ext3 image, use C<tune2fs -O
 has_journal TARGET> and to convert it to ext4, use C<tune2fs -O
-extents,uninit_bg,dir_index,has_journal TARGET>
+extents,uninit_bg,dir_index,has_journal TARGET>. Since C<genext2fs> does not
+support extended attributes, the resulting image will not contain them.
 
 =back
 
