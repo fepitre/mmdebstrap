@@ -2857,8 +2857,10 @@ sub guess_sources_format {
 sub approx_disk_usage {
     my $directory = shift;
     info "approximating disk usage...";
+    # to return the same number of blocks irrespective of the chosen mode
+    # we exclude /dev from being counted
     open my $fh, '-|', 'du', '--block-size', '1024',
-      '--summarize', '--one-file-system',
+      "--exclude=$directory/dev", '--summarize', '--one-file-system',
       $directory // error "failed to fork(): $!";
     chomp(
         my $du = do { local $/; <$fh> }
