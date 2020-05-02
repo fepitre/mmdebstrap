@@ -1610,7 +1610,7 @@ sub run_setup() {
     # drop privileges to the _apt user. This will fail if the _apt user does
     # not have permissions to read the root directory. In that case, we have
     # to disable apt sandboxing.
-    if ($options->{mode} eq 'root') {
+    {
         my $partial = '/var/lib/apt/lists/partial';
         if (
             system('/usr/lib/apt/apt-helper', 'drop-privs', '--', 'test',
