@@ -4686,7 +4686,7 @@ sub main() {
                       or error "Can't unblock signals: $!";
                     waitpid $cpid, 0;
                     if ($? != 0) {
-                        error("failed to start " . (join " ", @argv));
+                        error("failed to run " . (join " ", @argv));
                     }
                 } else {
                     if (!copy($rfh, $options->{target})) {
