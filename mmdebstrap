@@ -1271,6 +1271,8 @@ sub run_setup() {
                 }
             }
         }
+        # make sure /tmp is not 0755 like the rest
+        chmod 01777, "$options->{root}/tmp" or error "cannot chmod /tmp: $!";
     }
 
     # The TMPDIR set by the user or even /tmp might be inaccessible by the
