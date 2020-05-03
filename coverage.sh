@@ -72,7 +72,7 @@ if [ ! -e shared/taridshift ] || [ taridshift -nt shared/taridshift ]; then
 fi
 
 starttime=
-total=148
+total=149
 skipped=0
 runtests=0
 i=1
@@ -300,6 +300,90 @@ END
 		fi
 	done
 done
+
+# this is a solution for https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=829134
+print_header "mode=unshare,variant=custom: as debootstrap unshare wrapper"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+export SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH
+if [ ! -e /mmdebstrap-testenv ]; then
+	echo "this test modifies the system and should only be run inside a container" >&2
+	exit 1
+fi
+sysctl -w kernel.unprivileged_userns_clone=1
+adduser --gecos user --disabled-password user
+runuser -u user -- $CMD --variant=custom --mode=unshare --setup-hook='env container=lxc debootstrap --no-merged-usr unstable "\$1" $mirror' - /tmp/debian-mm.tar $mirror
+
+mkdir /tmp/debian-mm
+tar --xattrs --xattrs-include='*' -C /tmp/debian-mm -xf /tmp/debian-mm.tar
+
+mkdir /tmp/debian-debootstrap
+tar --xattrs --xattrs-include='*' -C /tmp/debian-debootstrap -xf "cache/debian-unstable--.tar"
+
+# diff cannot compare device nodes, so we use tar to do that for us and then
+# delete the directory
+tar -C /tmp/debian-debootstrap -cf dev1.tar ./dev
+tar -C /tmp/debian-mm -cf dev2.tar ./dev
+cmp dev1.tar dev2.tar
+rm dev1.tar dev2.tar
+rm -r /tmp/debian-debootstrap/dev /tmp/debian-mm/dev
+
+# remove downloaded deb packages
+rm /tmp/debian-debootstrap/var/cache/apt/archives/*.deb
+# remove aux-cache
+rm /tmp/debian-debootstrap/var/cache/ldconfig/aux-cache
+# remove logs
+rm /tmp/debian-debootstrap/var/log/dpkg.log \
+	/tmp/debian-debootstrap/var/log/bootstrap.log \
+	/tmp/debian-debootstrap/var/log/alternatives.log \
+	/tmp/debian-mm/var/log/bootstrap.log
+
+# debootstrap doesn't clean apt
+rm /tmp/debian-debootstrap/var/lib/apt/lists/127.0.0.1_debian_dists_unstable_main_binary-${HOSTARCH}_Packages \
+	/tmp/debian-debootstrap/var/lib/apt/lists/127.0.0.1_debian_dists_unstable_Release \
+	/tmp/debian-debootstrap/var/lib/apt/lists/127.0.0.1_debian_dists_unstable_Release.gpg
+
+rm /tmp/debian-debootstrap/etc/machine-id /tmp/debian-mm/etc/machine-id
+rm /tmp/debian-mm/var/cache/apt/archives/lock
+rm /tmp/debian-mm/var/lib/apt/lists/lock
+
+# check if the file content differs
+diff --no-dereference --recursive /tmp/debian-debootstrap /tmp/debian-mm
+
+# check permissions, ownership, symlink targets, modification times using tar
+# mtimes of directories created by mmdebstrap will differ, thus we equalize them first
+for d in etc/apt/preferences.d/ etc/apt/sources.list.d/ etc/dpkg/dpkg.cfg.d/; do
+	touch --date="@$SOURCE_DATE_EPOCH" /tmp/debian-debootstrap/\$d /tmp/debian-mm/\$d
+done
+# debootstrap never ran apt -- fixing permissions
+for d in ./var/lib/apt/lists/partial ./var/cache/apt/archives/partial; do
+	chroot /tmp/debian-debootstrap chmod 0700 \$d
+	chroot /tmp/debian-debootstrap chown _apt:root \$d
+done
+tar -C /tmp/debian-debootstrap --numeric-owner --xattrs --xattrs-include='*' --sort=name --clamp-mtime --mtime=$(date --utc --date=@$SOURCE_DATE_EPOCH --iso-8601=seconds) -cf /tmp/root1.tar .
+tar -C /tmp/debian-mm --numeric-owner --xattrs --xattrs-include='*' --sort=name --clamp-mtime --mtime=$(date --utc --date=@$SOURCE_DATE_EPOCH --iso-8601=seconds) -cf /tmp/root2.tar .
+tar --full-time --verbose -tf /tmp/root1.tar > /tmp/root1.tar.list
+tar --full-time --verbose -tf /tmp/root2.tar > /tmp/root2.tar.list
+# despite SOURCE_DATE_EPOCH and --clamp-mtime, the timestamps in the tarball
+# will slightly differ from each other in the sub-second precision (last
+# decimals) so the tarballs will not be identical, so we use diff to compare
+# content and tar to compare attributes
+diff -u /tmp/root1.tar.list /tmp/root2.tar.list
+rm /tmp/root1.tar /tmp/root2.tar /tmp/root1.tar.list /tmp/root2.tar.list
+
+rm /tmp/debian-mm.tar
+rm -r /tmp/debian-debootstrap /tmp/debian-mm
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+	runtests=$((runtests+1))
+else
+	echo "HAVE_QEMU != yes -- Skipping test..." >&2
+	skipped=$((skipped+1))
+fi
+
 
 print_header "test --help"
 cat << END > shared/test.sh
