@@ -4150,7 +4150,11 @@ sub main() {
                     # Add ./dev as the first entries of the tar file.
                     # We cannot add them after calling tar, because there is no
                     # way to prevent tar from writing NULL entries at the end.
-                    print $devtar;
+                    if (any { $_ eq 'output/dev' } @{ $options->{skip} }) {
+                        info "skipping output/dev as requested";
+                    } else {
+                        print $devtar;
+                    }
 
                     # pack everything except ./dev
                     0 == system('tar', @taropts, '-C', $options->{root}, '.')
@@ -4214,7 +4218,11 @@ sub main() {
                 # Add ./dev as the first entries of the tar file.
                 # We cannot add them after calling tar, because there is no way
                 # to prevent tar from writing NULL entries at the end.
-                print $devtar;
+                if (any { $_ eq 'output/dev' } @{ $options->{skip} }) {
+                    info "skipping output/dev as requested";
+                } else {
+                    print $devtar;
+                }
 
                 if ($options->{mode} eq 'fakechroot') {
                     # Fakechroot requires tar to run inside the chroot or
