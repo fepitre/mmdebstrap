@@ -1696,6 +1696,11 @@ sub run_download() {
     # (essential variant) then we have to compute the package set ourselves.
     # Same if we want to install priority based variants.
     if (any { $_ eq $options->{variant} } ('extract', 'custom')) {
+        if (scalar @pkgs_to_install == 0) {
+            info "nothing to download -- skipping...";
+            return ([], []);
+        }
+
         if ($options->{dryrun}) {
             info "simulate downloading packages with apt...";
         } else {
@@ -1899,6 +1904,11 @@ sub run_extract() {
 
     if ($options->{dryrun}) {
         info "skip extracting packages because of --dry-run";
+        return;
+    }
+
+    if (scalar @{$essential_pkgs} == 0) {
+        info "nothing to extract -- skipping...";
         return;
     }
 
@@ -2136,6 +2146,11 @@ sub run_essential() {
     my $options        = shift;
     my $essential_pkgs = shift;
     my $chrootcmd      = shift;
+
+    if (scalar @{$essential_pkgs} == 0) {
+        info "no essential packages -- skipping...";
+        return;
+    }
 
     if ($options->{mode} eq 'chrootless') {
         if ($options->{dryrun}) {
