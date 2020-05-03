@@ -72,7 +72,7 @@ if [ ! -e shared/taridshift ] || [ taridshift -nt shared/taridshift ]; then
 fi
 
 starttime=
-total=146
+total=148
 skipped=0
 runtests=0
 i=1
@@ -396,8 +396,9 @@ else
 	skipped=$((skipped+1))
 fi
 
-print_header "mode=unshare/root,variant=debootstrap: check for bit-by-bit identical output"
-cat << END > shared/test.sh
+for format in tar squashfs ext2; do
+	print_header "mode=unshare/root,variant=debootstrap: check for bit-by-bit identical $format output"
+	cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
@@ -408,18 +409,28 @@ fi
 adduser --gecos user --disabled-password user
 sysctl -w kernel.unprivileged_userns_clone=1
 export SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH
-$CMD --mode=root --variant=debootstrap $DEFAULT_DIST /tmp/debian-chroot-root.tar $mirror
-runuser -u user -- $CMD --mode=unshare --variant=debootstrap $DEFAULT_DIST /tmp/debian-chroot-unshare.tar $mirror
-cmp /tmp/debian-chroot-root.tar /tmp/debian-chroot-unshare.tar
-rm /tmp/debian-chroot-root.tar /tmp/debian-chroot-unshare.tar
-END
-if [ "$HAVE_QEMU" = "yes" ]; then
-	./run_qemu.sh
-	runtests=$((runtests+1))
+$CMD --mode=root --variant=debootstrap $DEFAULT_DIST /tmp/debian-chroot-root.$format $mirror
+if [ "$format" = tar ]; then
+	printf 'ustar ' | cmp --bytes=6 --ignore-initial=257:0 /tmp/debian-chroot-root.tar -
+elif [ "$format" = squashfs ]; then
+	printf 'hsqs' | cmp --bytes=4 /tmp/debian-chroot-root.squashfs -
+elif [ "$format" = ext2 ]; then
+	printf '\123\357' | cmp --bytes=2 --ignore-initial=1080:0 /tmp/debian-chroot-root.ext2 -
 else
-	echo "HAVE_QEMU != yes -- Skipping test..." >&2
-	skipped=$((skipped+1))
+	echo "unknown format: $format" >&2
 fi
+runuser -u user -- $CMD --mode=unshare --variant=debootstrap $DEFAULT_DIST /tmp/debian-chroot-unshare.$format $mirror
+cmp /tmp/debian-chroot-root.$format /tmp/debian-chroot-unshare.$format
+rm /tmp/debian-chroot-root.$format /tmp/debian-chroot-unshare.$format
+END
+	if [ "$HAVE_QEMU" = "yes" ]; then
+		./run_qemu.sh
+		runtests=$((runtests+1))
+	else
+		echo "HAVE_QEMU != yes -- Skipping test..." >&2
+		skipped=$((skipped+1))
+	fi
+done
 
 print_header "mode=unshare,variant=apt: test taridshift utility"
 cat << END > shared/test.sh
@@ -786,15 +797,17 @@ prefix=
 [ "\$(id -u)" -eq 0 ] && [ "$mode" != "root" ] && prefix="runuser -u user --"
 [ "$mode" = "fakechroot" ] && prefix="\$prefix fakechroot fakeroot"
 \$prefix $CMD --mode=$mode --variant=apt $DEFAULT_DIST /tmp/debian-chroot.ext2 $mirror
-mount /tmp/debian-chroot.ext2 /mnt
-rmdir /mnt/lost+found
+mkdir /tmp/mnt
+mount /tmp/debian-chroot.ext2 /tmp/mnt
+rmdir /tmp/mnt/lost+found
 # in fakechroot mode, we use a fake ldconfig, so we have to
 # artificially add some files
-{ tar -C /mnt -c . | tar -t;
+{ tar -C /tmp/mnt -c . | tar -t;
   [ "$mode" = "fakechroot" ] && printf "./etc/ld.so.cache\n./var/cache/ldconfig/\n";
   [ "$mode" = "fakechroot" ] && printf "./etc/.pwd.lock\n";
 } | sort | diff -u tar1.txt -
-umount /mnt
+umount /tmp/mnt
+rmdir /tmp/mnt
 rm /tmp/debian-chroot.ext2
 END
 	if [ "$HAVE_QEMU" = "yes" ]; then
@@ -2767,6 +2780,11 @@ for mode in root unshare fakechroot proot; do
 	print_header "mode=$mode,variant=apt: create armhf tarball"
 	if [ "$HOSTARCH" != amd64 ]; then
 		echo "HOSTARCH != amd64 -- Skipping test..." >&2
+		skipped=$((skipped+1))
+		continue
+	fi
+	if [ "$RUN_MA_SAME_TESTS" != yes ]; then
+		echo "RUN_MA_SAME_TESTS != yes -- Skipping test..." >&2
 		skipped=$((skipped+1))
 		continue
 	fi
