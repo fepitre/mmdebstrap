@@ -5592,6 +5592,13 @@ Use as replacement for autopkgtest-build-qemu and vmdb2:
         sync : umount / : shutdown
     $ qemu-img convert -O qcow2 debian-unstable.img debian-unstable.qcow2
 
+As a debootstrap wrapper to run it without superuser privileges but using Linux
+user namespaces instead. This fixes Debian bug #829134.
+
+    $ mmdebstrap --variant=custom --mode=unshare \
+        --setup-hook='env container=lxc debootstrap unstable "$1"' \
+        - debian-debootstrap.tar
+
 =end comment
 
 Build a non-Debian chroot like Ubuntu bionic:
