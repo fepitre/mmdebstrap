@@ -137,9 +137,6 @@ sub warning {
 }
 
 sub error {
-    if ($verbosity_level == 0) {
-        return;
-    }
     # if error() is called with the string from a previous error() that was
     # caught inside an eval(), then the string will have a newline which we
     # are stripping here
