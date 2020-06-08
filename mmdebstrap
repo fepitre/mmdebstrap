@@ -1605,11 +1605,22 @@ sub run_setup() {
         copy($tmpfile, \*STDERR);
     }
 
-    # when apt-get update is run by the root user, then apt will attempt to
-    # drop privileges to the _apt user. This will fail if the _apt user does
-    # not have permissions to read the root directory. In that case, we have
-    # to disable apt sandboxing.
-    {
+    if (any { $_ eq $options->{mode} } ('fakechroot', 'proot')) {
+        # Apt dropping privileges to another user than root is not useful in
+        # fakechroot and proot mode because all users are faked and thus there
+        # is no real privilege difference anyways. Thus, we also print no
+        # warning message in this case.
+        open my $fh, '>>', $tmpfile
+          or error "cannot open $tmpfile for appending: $!";
+        print $fh "APT::Sandbox::User \"root\";\n";
+        close $fh;
+    } else {
+        # when apt-get update is run by the root user, then apt will attempt to
+        # drop privileges to the _apt user. This will fail if the _apt user
+        # does not have permissions to read the root directory. In that case,
+        # we have to disable apt sandboxing. This can for example happen in
+        # root mode when the path of the chroot is not in a world-readable
+        # location.
         my $partial = '/var/lib/apt/lists/partial';
         if (
             system('/usr/lib/apt/apt-helper', 'drop-privs', '--', 'test',
