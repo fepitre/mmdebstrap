@@ -32,6 +32,7 @@ use File::Copy;
 use File::Path qw(make_path remove_tree);
 use File::Temp qw(tempfile tempdir);
 use File::Basename;
+use File::Find;
 use Cwd qw(abs_path);
 require "syscall.ph";    ## no critic (Modules::RequireBarewordIncludes)
 use Fcntl qw(S_IFCHR S_IFBLK FD_CLOEXEC F_GETFD F_SETFD);
@@ -2882,24 +2883,36 @@ sub guess_sources_format {
 sub approx_disk_usage {
     my $directory = shift;
     info "approximating disk usage...";
-    # to return the same number of blocks irrespective of the chosen mode
-    # we exclude /dev from being counted
-    open my $fh, '-|', 'du', '--block-size', '1024',
-      "--exclude=$directory/dev", '--summarize', '--one-file-system',
-      $directory // error "failed to fork(): $!";
-    chomp(
-        my $du = do { local $/; <$fh> }
-    );
-    close $fh;
-    if (($? != 0) or (!$du)) {
-        error "du failed: $?";
-    }
-    if ($du =~ /^(\d+)\t/) {
-        return int($1 * 1.1);
-    } else {
-        error "unexpected du output: $du";
-    }
-    return;
+    # the "du" utility reports different results depending on the underlying
+    # filesystem, see https://bugs.debian.org/650077 for a discussion
+    #
+    # we use code similar to the one used by dpkg-gencontrol instead
+    #
+    # Regular files are measured in number of 1024 byte blocks. All other
+    # entries are assumed to take one block of space.
+    #
+    # We ignore /dev because depending on the mode, the directory might be
+    # populated or not and we want consistent disk usage results independent
+    # of the mode.
+    my $installed_size      = 0;
+    my $scan_installed_size = sub {
+        if ($File::Find::name eq "$directory/dev") {
+            # add all entries of @devfiles once
+            $installed_size += scalar @devfiles;
+        } elsif ($File::Find::name =~ /^$directory\/dev\//) {
+            # ignore everything below /dev
+        } elsif (-f $File::Find::name) {
+            # add file size in 1024 byte blocks, rounded up
+            $installed_size += int(((-s $File::Find::name) + 1024) / 1024);
+        } else {
+            # all other entries are assumed to only take up one block
+            $installed_size += 1;
+        }
+    };
+    find($scan_installed_size, $directory);
+
+    # because the above is only a heuristic we add 10% extra for good measure
+    return int($installed_size * 1.1);
 }
 
 sub main() {
