@@ -5022,6 +5022,7 @@ Example: Exclude paths to reduce chroot size
     --dpkgopt='path-exclude=/usr/share/doc/*'
     --dpkgopt='path-include=/usr/share/doc/*/copyright'
     --dpkgopt='path-include=/usr/share/doc/*/changelog.Debian.*'
+    --dpkgopt='path-exclude=/usr/share/{doc,info,man,omf,help,gnome/help}/*'
 
 Example: Do not perform safe I/O operations when unpacking for more speed
 
