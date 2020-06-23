@@ -5087,11 +5087,7 @@ whether a package selection within a certain suite and variant can in principle
 be installed as far as their dependencies go. If the output is a tarball, then
 no output is produced. If the output is a directory, then the directory will be
 left populated with the skeleton files and directories necessary for apt to run
-in it.
-
-=begin comment
-
-No hooks are executed in with B<--simulate> or B<--dry-run>.
+in it. No hooks are executed in with B<--simulate> or B<--dry-run>.
 
 =item B<--setup-hook>=I<command>
 
@@ -5116,6 +5112,16 @@ Example: Setup chroot for installing a sub-essential busybox-based chroot with
         ln -s busybox "$1/bin/$p"; done'
     --setup-hook='echo root:x:0:0:root:/root:/bin/sh > "$1/etc/passwd"'
     --setup-hook='printf "root:x:0:\nmail:x:8:\nutmp:x:43:\n" > "$1/etc/group"'
+
+=item B<--extract-hook>=I<command>
+
+Execute arbitrary I<command>s after the Essential:yes packages have been
+extracted but before installing them. See section B<HOOKS> for more
+information.
+
+Example: Install busybox symlinks
+
+    --extract-hook='chroot "$1" busybox --install -s'
 
 =item B<--essential-hook>=I<command>
 
@@ -5153,7 +5159,12 @@ Example: Preparing a chroot for use with autopkgtest
     --customize-hook='echo "127.0.0.1 localhost host" > "$1/etc/hosts"'
     --customize-hook=/usr/share/autopkgtest/setup-commands/setup-testbed
 
-=end comment
+=item B<--skip>=I<stage>[,I<stage>,...]
+
+B<mmdebstrap> tries hard to implement sensible defaults and will try to stop
+you before shooting yourself in the foot. This option is for when you are sure
+you know what you are doing and allows one to skip certain actions and safety
+checks.
 
 =item B<-q,--quiet>, B<-s,--silent>
 
@@ -5386,14 +5397,12 @@ support extended attributes, the resulting image will not contain them.
 
 =back
 
-=begin comment
-
 =head1 HOOKS
 
 This section describes properties of the hook options B<--setup-hook>,
-B<--essential-hook> and B<--customize-hook> which are common to all three of
-them. Any information specific to each hook is documented under the specific
-hook options in the section B<OPTIONS>.
+B<--extract-hook>, B<--essential-hook> and B<--customize-hook> which are common
+to all three of them. Any information specific to each hook is documented under
+the specific hook options in the section B<OPTIONS>.
 
 The options can be specified multiple times and the commands are executed in
 the order in which they are given on the command line. There are three
@@ -5481,8 +5490,6 @@ inside can have a different name from the file on the outside.
 
 =back
 
-=end comment
-
 =head1 EXAMPLES
 
 Use like debootstrap:
@@ -5546,8 +5553,6 @@ Use as debootstrap replacement in sbuild-createchroot:
     $ sbuild-createchroot --debootstrap=mmdebstrap \
         --make-sbuild-tarball ~/.cache/sbuild/unstable-amd64.tar.gz \
         unstable $(mktemp -d)
-
-=begin comment
 
 Create a bootable USB Stick that boots into a full Debian desktop:
 
@@ -5620,8 +5625,6 @@ user namespaces instead. This fixes Debian bug #829134.
     $ mmdebstrap --variant=custom --mode=unshare \
         --setup-hook='env container=lxc debootstrap unstable "$1"' \
         - debian-debootstrap.tar
-
-=end comment
 
 Build a non-Debian chroot like Ubuntu bionic:
 
@@ -5739,8 +5742,6 @@ B<mmdebstrap> treats any warning from "apt-get update" as an error. Fixing
 this will require apt to provide a machine readable status interface. See
 Debian bugs #778357, #776152, #696335, and #745735.
 
-=begin comment
-
 Special hooks either require C<tar> or C<sh> and C<cat> be present inside the
 chroot or otherwise there is no support for absolute symlinks. This limitation
 can be dropped for the B<root> and B<unshare> modes as well as for the
@@ -5749,8 +5750,6 @@ absolute symlinks even inside the chroot directory reliably. Due to how
 symlinks are handled by B<fakechroot> and B<proot>, the requirement of having
 C<tar> or C<sh> and C<cat> inside the chroot can never be dropped for these
 modes.
-
-=end comment
 
 =head1 SEE ALSO
 
