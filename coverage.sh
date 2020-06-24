@@ -72,7 +72,7 @@ if [ ! -e shared/taridshift ] || [ taridshift -nt shared/taridshift ]; then
 fi
 
 starttime=
-total=149
+total=150
 skipped=0
 runtests=0
 i=1
@@ -2634,6 +2634,30 @@ rm /tmp/debian-chroot/var/lib/dpkg/info/doc-debian.md5sums
 rm /tmp/debian-chroot/var/lib/dpkg/info/doc-debian.list
 # the rest should be empty directories that we can rmdir recursively
 find /tmp/debian-chroot -depth -print0 | xargs -0 rmdir
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+	runtests=$((runtests+1))
+else
+	./run_null.sh
+	runtests=$((runtests+1))
+fi
+
+print_header "mode=chrootless,variant=custom: install known-good from essential:yes"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+if [ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1; then
+	if [ ! -e /mmdebstrap-testenv ]; then
+		echo "this test modifies the system and should only be run inside a container" >&2
+		exit 1
+	fi
+	adduser --gecos user --disabled-password user
+fi
+prefix=
+[ "\$(id -u)" -eq 0 ] && prefix="runuser -u user --"
+\$prefix $CMD --mode=chrootless --variant=custom --include=bsdutils,coreutils,debianutils,diffutils,dpkg,findutils,grep,gzip,hostname,init-system-helpers,ncurses-base,ncurses-bin,perl-base,sed,tar $DEFAULT_DIST /dev/null $mirror
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
