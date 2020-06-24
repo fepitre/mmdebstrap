@@ -239,7 +239,7 @@ END
 			--or --field=Priority important --or --field=Priority standard \
 			--or --field=Package build-essential \) )
 
-	pkgs="$(echo $pkgs) build-essential busybox gpg libgcc1"
+	pkgs="$(echo $pkgs) build-essential busybox gpg"
 
 	APT_CONFIG="$rootdir/etc/apt/apt.conf" apt-get --yes install $pkgs
 

@@ -131,15 +131,6 @@ tar --xattrs --xattrs-include='*' -C /tmp/debian-$dist-mm -xf /tmp/debian-$dist-
 mkdir /tmp/debian-$dist-debootstrap
 tar --xattrs --xattrs-include='*' -C /tmp/debian-$dist-debootstrap -xf "cache/debian-$dist-$variant.tar"
 
-# The buildd variant of debootstrap will install libgcc-s1 *and* libgcc1 even
-# though the former provides the latter. Remove the latter manually.
-if [ "$variant" = "buildd" ] \
-	&& chroot /tmp/debian-$dist-debootstrap dpkg -s libgcc-s1 2>&1 | grep --quiet '^Status: install ok installed$' \
-	&& chroot /tmp/debian-$dist-debootstrap dpkg -s libgcc1 2>&1 | grep --quiet '^Status: install ok installed$' \
-	&& dpkg --compare-versions "\$(chroot /tmp/debian-$dist-debootstrap dpkg -s libc6 | grep '^Version:' | cut -d ' ' -f 2)" ge 2.30-2; then
-	chroot /tmp/debian-$dist-debootstrap dpkg --remove libgcc1
-fi
-
 # diff cannot compare device nodes, so we use tar to do that for us and then
 # delete the directory
 tar -C /tmp/debian-$dist-debootstrap -cf dev1.tar ./dev
