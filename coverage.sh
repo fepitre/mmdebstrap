@@ -1490,14 +1490,21 @@ $CMD --mode=$defaultmode --variant=apt --architectures=i386 $DEFAULT_DIST /tmp/d
 } | sort | diff -u - tar2.txt
 rm /tmp/debian-chroot.tar
 END
-if [ "$HOSTARCH" != amd64 ]; then
-	echo "HOSTARCH != amd64 -- Skipping test..." >&2
-	skipped=$((skipped+1))
-elif [ "$HAVE_QEMU" = "yes" ]; then
-	./run_qemu.sh
-	runtests=$((runtests+1))
+# this test compares the contents of different architectures, so this might
+# fail if the versions do not match
+if [ "$RUN_MA_SAME_TESTS" = "yes" ]; then
+	if [ "$HOSTARCH" != amd64 ]; then
+		echo "HOSTARCH != amd64 -- Skipping test..." >&2
+		skipped=$((skipped+1))
+	elif [ "$HAVE_QEMU" = "yes" ]; then
+		./run_qemu.sh
+		runtests=$((runtests+1))
+	else
+		echo "HAVE_QEMU != yes -- Skipping test..." >&2
+		skipped=$((skipped+1))
+	fi
 else
-	echo "HAVE_QEMU != yes -- Skipping test..." >&2
+	echo "RUN_MA_SAME_TESTS != yes -- Skipping test..." >&2
 	skipped=$((skipped+1))
 fi
 
