@@ -72,7 +72,7 @@ if [ ! -e shared/taridshift ] || [ taridshift -nt shared/taridshift ]; then
 fi
 
 starttime=
-total=150
+total=148
 skipped=0
 runtests=0
 i=1
@@ -116,6 +116,10 @@ mirror="http://127.0.0.1/debian"
 
 for dist in stable testing unstable; do
 	for variant in minbase buildd -; do
+		if [ $dist != stable ] && [ $variant = - ]; then
+			# skipping because of #963788
+			continue
+		fi
 		print_header "mode=$defaultmode,variant=$variant: check against debootstrap $dist"
 
 		cat << END > shared/test.sh
