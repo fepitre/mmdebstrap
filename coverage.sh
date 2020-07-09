@@ -258,7 +258,7 @@ else
 fi
 
 # check if the file content differs
-diff --no-dereference --recursive /tmp/debian-$dist-debootstrap /tmp/debian-$dist-mm
+diff --unified --no-dereference --recursive /tmp/debian-$dist-debootstrap /tmp/debian-$dist-mm
 
 # check permissions, ownership, symlink targets, modification times using tar
 # directory mtimes will differ, thus we equalize them first
