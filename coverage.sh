@@ -2654,6 +2654,8 @@ else
 	runtests=$((runtests+1))
 fi
 
+# regularly check whether more packages work with chrootless:
+# for p in $(grep-aptavail -F Essential yes -s Package -n | sort -u); do ./mmdebstrap --mode=chrootless --variant=custom --include=bsdutils,coreutils,debianutils,diffutils,dpkg,findutils,grep,gzip,hostname,init-system-helpers,ncurses-base,ncurses-bin,perl-base,sed,tar,$p unstable /dev/null; done
 print_header "mode=chrootless,variant=custom: install known-good from essential:yes"
 cat << END > shared/test.sh
 #!/bin/sh
