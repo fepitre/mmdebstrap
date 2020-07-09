@@ -3892,8 +3892,7 @@ sub main() {
             (undef, my $filename)
               = tempfile("mmdebstrap.ext2.XXXXXXXXXXXX", OPEN => 0);
             open my $fh, '|-', 'genext2fs', '-B', '1024', '-b', '8', '-N',
-              '11',
-              $filename // error "failed to fork(): $!";
+              '11', '-a', '-', $filename // error "failed to fork(): $!";
             # write 10240 null-bytes to genext2fs -- this represents an empty
             # tar archive
             print $fh ("\0" x 10240)
@@ -4688,7 +4687,7 @@ sub main() {
                             error "invalid number of blocks: $numblocks";
                         }
                         push @argv, 'genext2fs', '-B', 1024, '-b', $numblocks,
-                          '-N', '0', $options->{target};
+                          '-i', '16384', '-a', '-', $options->{target};
                     } elsif ($format eq 'tar') {
                         push @argv, @{$tar_compressor};
                     } else {
