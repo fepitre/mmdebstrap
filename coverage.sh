@@ -553,12 +553,12 @@ mkdir /tmp/debian-chroot
 tar --xattrs --xattrs-include='*' --directory /tmp/debian-chroot -xf /tmp/debian-chroot-shifted.tar
 echo "100000 100000" > expected
 stat --format="%u %g" /tmp/debian-chroot/bin/ping | diff expected -
-echo "/tmp/debian-chroot/bin/ping = cap_net_raw+ep" > expected
+echo "/tmp/debian-chroot/bin/ping cap_net_raw=ep" > expected
 getcap /tmp/debian-chroot/bin/ping | diff expected -
 echo "0 0" > expected
 runuser -u user -- $CMD --unshare-helper /usr/sbin/chroot /tmp/debian-chroot stat --format="%u %g" /bin/ping \
 	| diff expected -
-echo "/bin/ping = cap_net_raw+ep" > expected
+echo "/bin/ping cap_net_raw=ep" > expected
 runuser -u user -- $CMD --unshare-helper /usr/sbin/chroot /tmp/debian-chroot getcap /bin/ping \
 	| diff expected -
 rm /tmp/debian-chroot.tar /tmp/debian-chroot-shifted.tar /tmp/debian-chroot.txt /tmp/debian-chroot-shiftedback.tar expected
