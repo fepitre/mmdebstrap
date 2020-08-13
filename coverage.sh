@@ -72,7 +72,7 @@ if [ ! -e shared/taridshift ] || [ taridshift -nt shared/taridshift ]; then
 fi
 
 starttime=
-total=148
+total=147
 skipped=0
 runtests=0
 i=1
@@ -2375,6 +2375,11 @@ done
 # test all variants
 
 for variant in essential apt required minbase buildd important debootstrap - standard; do
+	if [ "$variant" = standard ]; then
+		# python is priority:standard but uninstallable since August 03
+		# 2020, see Debian bug #968217
+		continue
+	fi
 	print_header "mode=root,variant=$variant: create tarball"
 	cat << END > shared/test.sh
 #!/bin/sh
