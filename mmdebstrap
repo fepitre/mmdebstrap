@@ -3474,11 +3474,45 @@ sub main() {
           sub { push @{ $options->{noop} }, 'no-merged-usr'; },
         'force-check-gpg' =>
           sub { push @{ $options->{noop} }, 'force-check-gpg'; },
-        # hook options are hidden until I'm happy with them
         'setup-hook=s@'     => \$options->{setup_hook},
         'extract-hook=s@'   => \$options->{extract_hook},
         'essential-hook=s@' => \$options->{essential_hook},
         'customize-hook=s@' => \$options->{customize_hook},
+        'hook-directory=s'  => sub {
+            my ($opt_name, $opt_value) = @_;
+            if (!-e $opt_value) {
+                error "hook directory \"$opt_value\" does not exist";
+            }
+            my $abs_path = abs_path($opt_value);
+            if (!defined $abs_path) {
+                error(  "unable to get absolute path of "
+                      . "--hook-directory: $opt_value");
+            }
+            # since abs_path resolved all symlinks for us, we can now test
+            # what the actual target actually is
+            if (!-d $opt_value) {
+                error "hook directory \"$opt_value\" is not a directory";
+            }
+            # gather all files starting with special prefixes into the
+            # respective keys of a hash
+            my %scripts;
+            opendir(my $dh, $opt_value)
+              or error "Can't opendir($opt_value): $!";
+            while (my $entry = readdir $dh) {
+                foreach
+                  my $hook ('setup', 'extract', 'essential', 'customize') {
+                      if ($entry =~ m/^\Q$hook\E/ and -x "$opt_value/$entry") {
+                          push @{$scripts{$hook}}, "$opt_value/$entry";
+                      }
+                }
+            }
+            closedir($dh);
+            # add the sorted list associated with each key to the respective
+            # list of hooks
+            foreach my $hook (keys %scripts) {
+                push @{ $options->{"${hook}_hook"} }, (sort @{$scripts{$hook}});
+            }
+        },
         # Sometimes --simulate fails even though non-simulate succeeds because
         # in simulate mode, apt cannot rely on dpkg to figure out tricky
         # dependency situations and will give up instead when it cannot find
@@ -5290,6 +5324,35 @@ Example: Preparing a chroot for use with autopkgtest
     --customize-hook='echo host > "$1/etc/hostname"'
     --customize-hook='echo "127.0.0.1 localhost host" > "$1/etc/hosts"'
     --customize-hook=/usr/share/autopkgtest/setup-commands/setup-testbed
+
+=item B<--hook-directory>=I<directory>
+
+Execute scripts in I<directory> with filenames starting with C<setup>,
+C<extract>, C<essential> or C<customize>, at the respective stages during an
+mmdebstrap run. The files must be marked executable. Their extension is
+ignored. Subdirectories are not traversed. This option is a short-hand for
+specifying the remaining four hook options individually for each file in the
+directory. If there are more than one script for a stage, then they are added
+alphabetically. This is useful in cases, where a user wants to run the same
+hooks frequently. For example, given a directory C<./hooks> with two scripts
+C<setup01-foo.sh> and C<setup01-bar.sh>, this call:
+
+    mmdebstrap --customize=./scriptA --hook-dir=./hooks --setup=./scriptB
+
+is equivalent to this call:
+
+    mmdebstrap --customize=./scriptA --setup=./hooks/setup01-foo.sh \
+        --setup=./hooks/setup02-bar.sh --setup=./scriptB
+
+The option can be specified multiple times and scripts are added to the
+respective hooks in the order the options are given on the command line. Thus,
+if the scripts in two directories depend upon each other, the scripts must be
+placed into a common directory and be named such that they get added in the
+correct order.
+
+Example: Run mmdebstrap with eatmydata
+
+    --hook-dir=/usr/share/mmdebstrap/hooks/eatmydata
 
 =item B<--skip>=I<stage>[,I<stage>,...]
 
