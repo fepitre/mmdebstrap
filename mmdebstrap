@@ -41,6 +41,7 @@ use POSIX qw(SIGINT SIGHUP SIGPIPE SIGTERM SIG_BLOCK SIG_UNBLOCK);
 use Carp;
 use Term::ANSIColor;
 use Socket;
+use version;
 
 ## no critic (InputOutput::RequireBriefOpen)
 
@@ -1234,23 +1235,43 @@ sub setup {
 sub run_setup() {
     my $options = shift;
 
+    my $dpkgversion;
+    {
+        open my $fh, '-|', 'dpkg', '--robot',
+          '--version' // error "failed to fork(): $!";
+        chomp(
+            $dpkgversion = do { local $/; <$fh> }
+        );
+        close $fh;
+        if ($? == 0 and $dpkgversion =~ /^([0-9]+\.[0-9]+\.[0-9]+) \(\S+\)$/) {
+            # dpkg is new enough for the --robot option
+            $dpkgversion = version->new($1);
+        } else {
+            $dpkgversion = undef;
+        }
+    }
+
     {
         my @directories = (
             '/etc/apt/apt.conf.d',        '/etc/apt/sources.list.d',
             '/etc/apt/preferences.d',     '/var/cache/apt',
-            '/var/lib/apt/lists/partial', '/var/lib/dpkg',
-            '/etc/dpkg/dpkg.cfg.d/',      '/tmp'
+            '/var/lib/apt/lists/partial', '/tmp'
         );
+        # we need /var/lib/dpkg in case we need to write to /var/lib/dpkg/arch
+        push @directories, '/var/lib/dpkg';
+        if (not defined $dpkgversion or $dpkgversion < "1.20.0") {
+            push @directories, '/etc/dpkg/dpkg.cfg.d/';
+        }
         # if dpkg and apt operate from the outside we need some more
         # directories because dpkg and apt might not even be installed inside
         # the chroot
         if ($options->{mode} eq 'chrootless') {
-            push @directories,
-              (
-                '/var/log/apt',       '/var/lib/dpkg/triggers',
-                '/var/lib/dpkg/info', '/var/lib/dpkg/alternatives',
-                '/var/lib/dpkg/updates'
-              );
+            push @directories, '/var/log/apt';
+            if (not defined $dpkgversion or $dpkgversion < "1.20.0") {
+                push @directories, '/var/lib/dpkg/triggers',
+                  '/var/lib/dpkg/info', '/var/lib/dpkg/alternatives',
+                  '/var/lib/dpkg/updates';
+            }
         }
         foreach my $dir (@directories) {
             if (-e "$options->{root}/$dir") {
@@ -1343,6 +1364,7 @@ sub run_setup() {
         close $fh;
     }
 
+    # apt-get update requires this
     {
         open my $fh, '>', "$options->{root}/var/lib/dpkg/status"
           or error "failed to open(): $!";
@@ -1351,7 +1373,7 @@ sub run_setup() {
 
     # /var/lib/dpkg/available is required to exist or otherwise package
     # removals will fail
-    {
+    if (not defined $dpkgversion or $dpkgversion < "1.20.0") {
         open my $fh, '>', "$options->{root}/var/lib/dpkg/available"
           or error "failed to open(): $!";
         close $fh;
@@ -1359,7 +1381,7 @@ sub run_setup() {
 
     # /var/lib/dpkg/cmethopt is used by dselect
     # see #930788
-    {
+    if (not defined $dpkgversion or $dpkgversion < "1.20.0") {
         open my $fh, '>', "$options->{root}/var/lib/dpkg/cmethopt"
           or error "failed to open(): $!";
         print $fh "apt apt\n";
