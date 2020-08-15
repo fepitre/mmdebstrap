@@ -561,15 +561,15 @@ tar --numeric-owner -tvf /tmp/debian-chroot-shifted.tar \
 mkdir /tmp/debian-chroot
 tar --xattrs --xattrs-include='*' --directory /tmp/debian-chroot -xf /tmp/debian-chroot-shifted.tar
 echo "100000 100000" > expected
-stat --format="%u %g" /tmp/debian-chroot/bin/ping | diff expected -
+stat --format="%u %g" /tmp/debian-chroot/bin/ping | diff -u expected -
 echo "/tmp/debian-chroot/bin/ping cap_net_raw=ep" > expected
-getcap /tmp/debian-chroot/bin/ping | diff expected -
+getcap /tmp/debian-chroot/bin/ping | diff -u expected -
 echo "0 0" > expected
 runuser -u user -- $CMD --unshare-helper /usr/sbin/chroot /tmp/debian-chroot stat --format="%u %g" /bin/ping \
-	| diff expected -
+	| diff -u expected -
 echo "/bin/ping cap_net_raw=ep" > expected
 runuser -u user -- $CMD --unshare-helper /usr/sbin/chroot /tmp/debian-chroot getcap /bin/ping \
-	| diff expected -
+	| diff -u expected -
 rm /tmp/debian-chroot.tar /tmp/debian-chroot-shifted.tar /tmp/debian-chroot.txt /tmp/debian-chroot-shiftedback.tar expected
 rm -r /tmp/debian-chroot
 END
