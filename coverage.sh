@@ -530,6 +530,15 @@ sysctl -w kernel.unprivileged_userns_clone=1
 # identical to a round trip through "taridshift X" and "taridshift -X"
 runuser -u user -- $CMD --mode=unshare --variant=apt --include=iputils-ping $DEFAULT_DIST - $mirror \
 	| ./taridshift 0 > /tmp/debian-chroot.tar
+# make sure that xattrs are set in the original tarball
+mkdir /tmp/debian-chroot
+tar --xattrs --xattrs-include='*' --directory /tmp/debian-chroot -xf /tmp/debian-chroot.tar ./bin/ping
+echo "/tmp/debian-chroot/bin/ping cap_net_raw=ep" > expected
+getcap /tmp/debian-chroot/bin/ping | diff -u expected -
+rm /tmp/debian-chroot/bin/ping
+rmdir /tmp/debian-chroot/bin
+rmdir /tmp/debian-chroot
+# shift the uid/gid forward by 100000 and backward by 100000
 ./taridshift 100000 < /tmp/debian-chroot.tar > /tmp/debian-chroot-shifted.tar
 ./taridshift -100000 < /tmp/debian-chroot-shifted.tar > /tmp/debian-chroot-shiftedback.tar
 # the tarball before and after the roundtrip through taridshift should be bit
