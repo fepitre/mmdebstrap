@@ -2585,6 +2585,49 @@ sub checkokthx {
     return;
 }
 
+# resolve a path inside a chroot
+sub chrooted_realpath {
+    my $root   = shift;
+    my $src    = shift;
+    my $result = $root;
+    my $prefix;
+
+    # relative paths are relative to the root of the chroot
+    # remove prefixed slashes
+    $src =~ s{^/+}{};
+    my $loop = 0;
+    while (length $src) {
+        if ($loop > 25) {
+            error "too many levels of symbolic links";
+        }
+        # Get the first directory component.
+        ($prefix, $src) = split m{/+}, $src, 2;
+        # Resolve the first directory component.
+        if ($prefix eq ".") {
+            # Ignore, stay at the same directory.
+        } elsif ($prefix eq "..") {
+            # Go up one directory.
+            $result =~ s{(.*)/[^/]*}{$1};
+            # but not further than the root
+            if ($result !~ m/^\Q$root\E/) {
+                $result = $root;
+            }
+        } elsif (-l "$result/$prefix") {
+            my $dst = readlink "$result/$prefix";
+            if ($dst =~ s{^/+}{}) {
+                # Absolute pathname, reset result back to $root.
+                $result = $root;
+            }
+            $src = length $src ? "$dst/$src" : $dst;
+            $loop++;
+        } else {
+            # Otherwise append the prefix.
+            $result = "$result/$prefix";
+        }
+    }
+    return $result;
+}
+
 sub hookhelper {
     # we put everything in an eval block because that way we can easily handle
     # errors without goto labels or much code duplication: the error handler
@@ -2597,15 +2640,6 @@ sub hookhelper {
         $verbosity_level = $ARGV[5];
         my $command = $ARGV[6];
 
-        # unless we are in the setup hook (where there is no tar inside the
-        # chroot) we need to run tar on the inside because otherwise, possible
-        # absolute symlinks in the path given via --directory are not
-        # correctly resolved
-        #
-        # FIXME: the issue above can be fixed by a function that is able to
-        # resolve absolute symlinks even inside the chroot directory to a full
-        # path that is valid on the outside -- fakechroot and proot have their
-        # own reasons, see below
         my @cmdprefix = ();
         my @tarcmd    = (
             'tar', '--numeric-owner', '--xattrs', '--format=pax',
@@ -2634,7 +2668,7 @@ sub hookhelper {
                 push @cmdprefix, 'proot', '--root-id', "--rootfs=$root",
                   '--cwd=/', "--qemu=$qemu";
             } elsif (any { $_ eq $mode } ('root', 'chrootless', 'unshare')) {
-                push @cmdprefix, '/usr/sbin/chroot', $root;
+                # not chrooting in this case
             } else {
                 error "unknown mode: $mode";
             }
@@ -2657,21 +2691,43 @@ sub hookhelper {
                 # outside
                 my $directory;
                 if ($hook eq 'setup') {
-                    $directory = "$root/$outpath";
+                    # tar runs outside, so acquire the correct path
+                    $directory = chrooted_realpath $root, $outpath;
                 } elsif (
                     any { $_ eq $hook }
                     ('extract', 'essential', 'customize')
                 ) {
-                    $directory = $outpath;
+                    if (any { $_ eq $mode } ('fakechroot', 'proot')) {
+                        # tar will run inside the chroot
+                        $directory = $outpath;
+                    } elsif (
+                        any { $_ eq $mode }
+                        ('root', 'chrootless', 'unshare')
+                    ) {
+                        $directory = chrooted_realpath $root, $outpath;
+                    } else {
+                        error "unknown mode: $mode";
+                    }
                 } else {
                     error "unknown hook: $hook";
                 }
 
-                # FIXME: here we would like to check if the path inside the
-                # chroot given by $directory actually exists but we cannot
-                # because we are missing a function that can resolve even
-                # paths including absolute symlinks to paths that are valid
-                # outside the chroot
+                # if chrooted_realpath was used and if neither fakechroot or
+                # proot were used (absolute symlinks will be broken) we can
+                # check and potentially fail early if the target does not exist
+                if (none { $_ eq $mode } ('fakechroot', 'proot')) {
+                    my $dirtocheck = $directory;
+                    if ($command eq 'upload') {
+                        # check the parent directory instead
+                        $dirtocheck =~ s/(.*)\/[^\/]*/$1/;
+                    }
+                    if (!-e $dirtocheck) {
+                        error "path does not exist: $dirtocheck";
+                    }
+                    if (!-d $dirtocheck) {
+                        error "path is not a directory: $dirtocheck";
+                    }
+                }
 
                 my $fh;
                 if ($command eq 'upload') {
@@ -2779,21 +2835,40 @@ sub hookhelper {
                 # outside
                 my $directory;
                 if ($hook eq 'setup') {
-                    $directory = "$root/$ARGV[$i]";
+                    # tar runs outside, so acquire the correct path
+                    $directory = chrooted_realpath $root, $ARGV[$i];
                 } elsif (
                     any { $_ eq $hook }
                     ('extract', 'essential', 'customize')
                 ) {
-                    $directory = $ARGV[$i];
+                    if (any { $_ eq $mode } ('fakechroot', 'proot')) {
+                        # tar will run inside the chroot
+                        $directory = $ARGV[$i];
+                    } elsif (
+                        any { $_ eq $mode }
+                        ('root', 'chrootless', 'unshare')
+                    ) {
+                        $directory = chrooted_realpath $root, $ARGV[$i];
+                    } else {
+                        error "unknown mode: $mode";
+                    }
                 } else {
                     error "unknown hook: $hook";
                 }
 
-                # FIXME: here we would like to check if the path inside the
-                # chroot given by $directory actually exists but we cannot
-                # because we are missing a function that can resolve even
-                # paths including absolute symlinks to paths that are valid
-                # outside the chroot
+                # if chrooted_realpath was used and if neither fakechroot or
+                # proot were used (absolute symlinks will be broken) we can
+                # check and potentially fail early if the source does not exist
+                if (none { $_ eq $mode } ('fakechroot', 'proot')) {
+                    if (!-e $directory) {
+                        error "path does not exist: $directory";
+                    }
+                    if ($command eq 'download') {
+                        if (!-f $directory) {
+                            error "path is not a file: $directory";
+                        }
+                    }
+                }
 
                 my $fh;
                 if ($command eq 'download') {
@@ -5444,12 +5519,12 @@ The path on the outside is relative to current directory of the original
 B<mmdebstrap> invocation. The path inside the chroot must already exist. Paths
 outside the chroot are created as necessary.
 
-To be able to resolve even absolute symlinks, C<tar> or C<sh> and C<cat> are
-executed inside the chroot for the B<essential> and B<customize> hooks. This
-means that the special hooks might fail for the B<extract> and B<custom>
-variants if no C<tar> or C<sh> and C<cat> is available inside the chroot.
-Since nothing is yet installed at the time of the B<setup> hook, no absolute
-symlinks in paths inside the chroot are supported during that hook.
+In B<fakechroot> and B<proot> mode, C<tar>, or C<sh> and C<cat> have to be run
+inside the chroot or otherwise, symlinks will be wrongly resolved and/or
+permissions will be off. This means that the special hooks might fail in
+B<fakechroot> and B<proot> mode for the B<setup> hook or for the B<extract> and
+B<custom> variants if no C<tar> or C<sh> and C<cat> is available inside the
+chroot.
 
 =over 8
 
