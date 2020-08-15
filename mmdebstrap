@@ -2954,6 +2954,341 @@ sub hookhelper {
     return;
 }
 
+sub hooklistener {
+    # we put everything in an eval block because that way we can easily handle
+    # errors without goto labels or much code duplication: the error handler
+    # has to send an "error" message to the other side
+    eval {
+        while (1) {
+            # get the next message
+            my $msg = "error";
+            my $len = -1;
+            {
+                debug "reading next command";
+                my $ret = read(STDIN, my $buf, 2 + 5)
+                  // error "cannot read from socket: $!";
+                debug "finished reading command";
+                if ($ret == 0) {
+                    error "received eof on socket";
+                }
+                ($len, $msg) = unpack("nA5", $buf);
+            }
+            if ($msg eq "adios") {
+                # setup finished, so we break out of the loop
+                if ($len != 0) {
+                    error "expected no payload but got $len bytes";
+                }
+                last;
+            } elsif ($msg eq "openr") {
+                # handle the openr message
+                debug "received message: openr";
+                my $infile;
+                {
+                    my $ret = read(STDIN, $infile, $len)
+                      // error "cannot read from socket: $!";
+                    if ($ret == 0) {
+                        error "received eof on socket";
+                    }
+                }
+                # make sure that the requested path exists outside the chroot
+                if (!-e $infile) {
+                    error "$infile does not exist";
+                }
+                debug "sending okthx";
+                print STDOUT (pack("n", 0) . "okthx")
+                  or error "cannot write to socket: $!";
+                STDOUT->flush();
+
+                open my $fh, '<', $infile
+                  or error "failed to open $infile for reading: $!";
+
+                # read from the file and send as payload to the child process
+                while (1) {
+                    # read from file
+                    my $ret = read($fh, my $cont, 4096)
+                      // error "cannot read from pipe: $!";
+                    if ($ret == 0) { last; }
+                    debug "sending write";
+                    # send to child
+                    print STDOUT pack("n", $ret) . "write" . $cont;
+                    STDOUT->flush();
+                    debug "waiting for okthx";
+                    checkokthx \*STDIN;
+                    if ($ret < 4096) { last; }
+                }
+
+                # signal to the child process that we are done
+                debug "sending close";
+                print STDOUT pack("n", 0) . "close";
+                STDOUT->flush();
+                debug "waiting for okthx";
+                checkokthx \*STDIN;
+
+                close $fh;
+            } elsif ($msg eq "openw") {
+                debug "received message: openw";
+                # payload is the output directory
+                my $outfile;
+                {
+                    my $ret = read(STDIN, $outfile, $len)
+                      // error "cannot read from socket: $!";
+                    if ($ret == 0) {
+                        error "received eof on socket";
+                    }
+                }
+                # make sure that the directory exists
+                my $outdir = dirname($outfile);
+                if (-e $outdir) {
+                    if (!-d $outdir) {
+                        error "$outdir already exists but is not a directory";
+                    }
+                } else {
+                    my $num_created = make_path $outdir, { error => \my $err };
+                    if ($err && @$err) {
+                        error(
+                            join "; ",
+                            (
+                                map { "cannot create " . (join ": ", %{$_}) }
+                                  @$err
+                            ));
+                    } elsif ($num_created == 0) {
+                        error "cannot create $outdir";
+                    }
+                }
+                debug "sending okthx";
+                print STDOUT (pack("n", 0) . "okthx")
+                  or error "cannot write to socket: $!";
+                STDOUT->flush();
+
+                # now we expect one or more "write" messages containing the
+                # tarball to write
+                open my $fh, '>', $outfile
+                  or error "failed to open $outfile for writing: $!";
+
+                # handle "write" messages from the child process and feed
+                # their payload into the file handle until a "close" message
+                # is encountered
+                while (1) {
+                    # receive the next message
+                    my $ret = read(STDIN, my $buf, 2 + 5)
+                      // error "cannot read from socket: $!";
+                    if ($ret == 0) {
+                        error "received eof on socket";
+                    }
+                    my ($len, $msg) = unpack("nA5", $buf);
+                    debug "received message: $msg";
+                    if ($msg eq "close") {
+                        # finish the loop
+                        if ($len != 0) {
+                            error "expected no payload but got $len bytes";
+                        }
+                        debug "sending okthx";
+                        print STDOUT (pack("n", 0) . "okthx")
+                          or error "cannot write to socket: $!";
+                        STDOUT->flush();
+                        last;
+                    } elsif ($msg ne "write") {
+                        # we should not receive this message at this point
+                        error "expected write but got: $msg";
+                    }
+                    # read the payload
+                    my $content;
+                    {
+                        my $ret = read(STDIN, $content, $len)
+                          // error "error cannot read from socket: $!";
+                        if ($ret == 0) {
+                            error "received eof on socket";
+                        }
+                    }
+                    # write the payload to the file handle
+                    print $fh $content
+                      or error "cannot write to file handle: $!";
+                    debug "sending okthx";
+                    print STDOUT (pack("n", 0) . "okthx")
+                      or error "cannot write to socket: $!";
+                    STDOUT->flush();
+                }
+                close $fh;
+            } elsif (any { $_ eq $msg } ('mktar', 'mktac')) {
+                # handle the mktar message
+                debug "received message: $msg";
+                my $indir;
+                {
+                    my $ret = read(STDIN, $indir, $len)
+                      // error "cannot read from socket: $!";
+                    if ($ret == 0) {
+                        error "received eof on socket";
+                    }
+                }
+                # make sure that the requested path exists outside the chroot
+                if (!-e $indir) {
+                    error "$indir does not exist";
+                }
+                debug "sending okthx";
+                print STDOUT (pack("n", 0) . "okthx")
+                  or error "cannot write to socket: $!";
+                STDOUT->flush();
+
+                # Open a tar process creating a tarfile of the instructed
+                # path. To emulate the behaviour of cp, change to the
+                # dirname of the requested path first.
+                open my $fh, '-|', 'tar', '--numeric-owner', '--xattrs',
+                  '--format=pax',
+                  '--pax-option=exthdr.name=%d/PaxHeaders/%f,'
+                  . 'delete=atime,delete=ctime',
+                  '--directory',
+                  $msg eq 'mktar' ? dirname($indir) : $indir,
+                  '--create', '--file', '-',
+                  $msg eq 'mktar' ? basename($indir) : '.'
+                  // error "failed to fork(): $!";
+
+                # read from the tar process and send as payload to the child
+                # process
+                while (1) {
+                    # read from tar
+                    my $ret = read($fh, my $cont, 4096)
+                      // error "cannot read from pipe: $!";
+                    if ($ret == 0) { last; }
+                    debug "sending write";
+                    # send to child
+                    print STDOUT pack("n", $ret) . "write" . $cont;
+                    STDOUT->flush();
+                    debug "waiting for okthx";
+                    checkokthx \*STDIN;
+                    if ($ret < 4096) { last; }
+                }
+
+                # signal to the child process that we are done
+                debug "sending close";
+                print STDOUT pack("n", 0) . "close";
+                STDOUT->flush();
+                debug "waiting for okthx";
+                checkokthx \*STDIN;
+
+                close $fh;
+                if ($? != 0) {
+                    error "tar failed";
+                }
+            } elsif ($msg eq "untar") {
+                debug "received message: untar";
+                # payload is the output directory
+                my $outdir;
+                {
+                    my $ret = read(STDIN, $outdir, $len)
+                      // error "cannot read from socket: $!";
+                    if ($ret == 0) {
+                        error "received eof on socket";
+                    }
+                }
+                # make sure that the directory exists
+                if (-e $outdir) {
+                    if (!-d $outdir) {
+                        error "$outdir already exists but is not a directory";
+                    }
+                } else {
+                    my $num_created = make_path $outdir, { error => \my $err };
+                    if ($err && @$err) {
+                        error(
+                            join "; ",
+                            (
+                                map { "cannot create " . (join ": ", %{$_}) }
+                                  @$err
+                            ));
+                    } elsif ($num_created == 0) {
+                        error "cannot create $outdir";
+                    }
+                }
+                debug "sending okthx";
+                print STDOUT (pack("n", 0) . "okthx")
+                  or error "cannot write to socket: $!";
+                STDOUT->flush();
+
+                # now we expect one or more "write" messages containing the
+                # tarball to unpack
+                open my $fh, '|-', 'tar', '--numeric-owner', '--xattrs',
+                  '--xattrs-include=*', '--directory', $outdir,
+                  '--extract', '--file',
+                  '-' // error "failed to fork(): $!";
+
+                # handle "write" messages from the child process and feed
+                # their payload into the tar process until a "close" message
+                # is encountered
+                while (1) {
+                    # receive the next message
+                    my $ret = read(STDIN, my $buf, 2 + 5)
+                      // error "cannot read from socket: $!";
+                    if ($ret == 0) {
+                        error "received eof on socket";
+                    }
+                    my ($len, $msg) = unpack("nA5", $buf);
+                    debug "received message: $msg";
+                    if ($msg eq "close") {
+                        # finish the loop
+                        if ($len != 0) {
+                            error "expected no payload but got $len bytes";
+                        }
+                        debug "sending okthx";
+                        print STDOUT (pack("n", 0) . "okthx")
+                          or error "cannot write to socket: $!";
+                        STDOUT->flush();
+                        last;
+                    } elsif ($msg ne "write") {
+                        # we should not receive this message at this point
+                        error "expected write but got: $msg";
+                    }
+                    # read the payload
+                    my $content;
+                    {
+                        my $ret = read(STDIN, $content, $len)
+                          // error "error cannot read from socket: $!";
+                        if ($ret == 0) {
+                            error "received eof on socket";
+                        }
+                    }
+                    # write the payload to the tar process
+                    print $fh $content
+                      or error "cannot write to tar process: $!";
+                    debug "sending okthx";
+                    print STDOUT (pack("n", 0) . "okthx")
+                      or error "cannot write to socket: $!";
+                    STDOUT->flush();
+                }
+                close $fh;
+                if ($? != 0) {
+                    error "tar failed";
+                }
+            } elsif ($msg eq "nblks") {
+                # handle the nblks message
+                my $numblocks;
+                debug "received message: nblks";
+                {
+                    my $ret = read(STDIN, $numblocks, $len)
+                      // error "cannot read from socket: $!";
+                    if ($ret == 0) {
+                        error "received eof on socket";
+                    }
+                }
+                if ($numblocks !~ /^\d+$/) {
+                    error "invalid number of blocks: $numblocks";
+                }
+                debug "sending okthx";
+                print STDOUT (pack("n", 0) . "okthx")
+                  or error "cannot write to socket: $!";
+                STDOUT->flush();
+            } else {
+                error "unknown message: $msg";
+            }
+        }
+    };
+    if ($@) {
+        # inform the other side that something went wrong
+        print STDOUT (pack("n", 0) . "error")
+          or error "cannot write to socket: $!";
+        STDOUT->flush();
+    }
+    return;
+}
+
 sub guess_sources_format {
     my $content    = shift;
     my $is_deb822  = 0;
@@ -3019,6 +3354,14 @@ sub main() {
         hookhelper();
         exit 0;
     }
+
+    # this is the counterpart to --hook-helper and will receive and carry
+    # out its instructions
+    if (scalar @ARGV == 1 && $ARGV[0] eq "--hook-listener") {
+        hooklistener();
+        exit 0;
+    }
+
     # this is like:
     # lxc-usernsexec -- lxc-unshare -s 'MOUNT|PID|UTSNAME|IPC' ...
     # but without needing lxc
@@ -4418,334 +4761,27 @@ sub main() {
 
     debug "starting to listen for hooks";
     # handle special hook commands via parentsock
-    # we use eval() so that error() doesn't take this process down and
-    # thus leaves the setup() process without a parent
-    eval {
-        while (1) {
-            # get the next message
-            my $msg = "error";
-            my $len = -1;
-            {
-                debug "reading from parentsock";
-                my $ret = read($parentsock, my $buf, 2 + 5)
-                  // error "cannot read from socket: $!";
-                debug "finished reading from parentsock";
-                if ($ret == 0) {
-                    error "received eof on socket";
-                }
-                ($len, $msg) = unpack("nA5", $buf);
-            }
-            if ($msg eq "adios") {
-                # setup finished, so we break out of the loop
-                if ($len != 0) {
-                    error "expected no payload but got $len bytes";
-                }
-                last;
-            } elsif ($msg eq "openr") {
-                # handle the openr message
-                debug "received message: openr";
-                my $infile;
-                {
-                    my $ret = read($parentsock, $infile, $len)
-                      // error "cannot read from socket: $!";
-                    if ($ret == 0) {
-                        error "received eof on socket";
-                    }
-                }
-                # make sure that the requested path exists outside the chroot
-                if (!-e $infile) {
-                    error "$infile does not exist";
-                }
-                debug "sending okthx";
-                print $parentsock (pack("n", 0) . "okthx")
-                  or error "cannot write to socket: $!";
-                $parentsock->flush();
+    my $lpid = fork() // error "fork() failed: $!";
+    if ($lpid == 0) {
+        # whatever the script writes on stdout is sent to the
+        # socket
+        # whatever is written to the socket, send to stdin
+        open(STDOUT, '>&', $parentsock)
+          or error "cannot open STDOUT: $!";
+        open(STDIN, '<&', $parentsock)
+          or error "cannot open STDIN: $!";
 
-                open my $fh, '<', $infile
-                  or error "failed to open $infile for reading: $!";
-
-                # read from the file and send as payload to the child process
-                while (1) {
-                    # read from file
-                    my $ret = read($fh, my $cont, 4096)
-                      // error "cannot read from pipe: $!";
-                    if ($ret == 0) { last; }
-                    debug "sending write";
-                    # send to child
-                    print $parentsock pack("n", $ret) . "write" . $cont;
-                    $parentsock->flush();
-                    debug "waiting for okthx";
-                    checkokthx $parentsock;
-                    if ($ret < 4096) { last; }
-                }
-
-                # signal to the child process that we are done
-                debug "sending close";
-                print $parentsock pack("n", 0) . "close";
-                $parentsock->flush();
-                debug "waiting for okthx";
-                checkokthx $parentsock;
-
-                close $fh;
-            } elsif ($msg eq "openw") {
-                debug "received message: openw";
-                # payload is the output directory
-                my $outfile;
-                {
-                    my $ret = read($parentsock, $outfile, $len)
-                      // error "cannot read from socket: $!";
-                    if ($ret == 0) {
-                        error "received eof on socket";
-                    }
-                }
-                # make sure that the directory exists
-                my $outdir = dirname($outfile);
-                if (-e $outdir) {
-                    if (!-d $outdir) {
-                        error "$outdir already exists but is not a directory";
-                    }
-                } else {
-                    my $num_created = make_path $outdir, { error => \my $err };
-                    if ($err && @$err) {
-                        error(
-                            join "; ",
-                            (
-                                map { "cannot create " . (join ": ", %{$_}) }
-                                  @$err
-                            ));
-                    } elsif ($num_created == 0) {
-                        error "cannot create $outdir";
-                    }
-                }
-                debug "sending okthx";
-                print $parentsock (pack("n", 0) . "okthx")
-                  or error "cannot write to socket: $!";
-                $parentsock->flush();
-
-                # now we expect one or more "write" messages containing the
-                # tarball to write
-                open my $fh, '>', $outfile
-                  or error "failed to open $outfile for writing: $!";
-
-                # handle "write" messages from the child process and feed
-                # their payload into the file handle until a "close" message
-                # is encountered
-                while (1) {
-                    # receive the next message
-                    my $ret = read($parentsock, my $buf, 2 + 5)
-                      // error "cannot read from socket: $!";
-                    if ($ret == 0) {
-                        error "received eof on socket";
-                    }
-                    my ($len, $msg) = unpack("nA5", $buf);
-                    debug "received message: $msg";
-                    if ($msg eq "close") {
-                        # finish the loop
-                        if ($len != 0) {
-                            error "expected no payload but got $len bytes";
-                        }
-                        debug "sending okthx";
-                        print $parentsock (pack("n", 0) . "okthx")
-                          or error "cannot write to socket: $!";
-                        $parentsock->flush();
-                        last;
-                    } elsif ($msg ne "write") {
-                        # we should not receive this message at this point
-                        error "expected write but got: $msg";
-                    }
-                    # read the payload
-                    my $content;
-                    {
-                        my $ret = read($parentsock, $content, $len)
-                          // error "error cannot read from socket: $!";
-                        if ($ret == 0) {
-                            error "received eof on socket";
-                        }
-                    }
-                    # write the payload to the file handle
-                    print $fh $content
-                      or error "cannot write to file handle: $!";
-                    debug "sending okthx";
-                    print $parentsock (pack("n", 0) . "okthx")
-                      or error "cannot write to socket: $!";
-                    $parentsock->flush();
-                }
-                close $fh;
-            } elsif (any { $_ eq $msg } ('mktar', 'mktac')) {
-                # handle the mktar message
-                debug "received message: $msg";
-                my $indir;
-                {
-                    my $ret = read($parentsock, $indir, $len)
-                      // error "cannot read from socket: $!";
-                    if ($ret == 0) {
-                        error "received eof on socket";
-                    }
-                }
-                # make sure that the requested path exists outside the chroot
-                if (!-e $indir) {
-                    error "$indir does not exist";
-                }
-                debug "sending okthx";
-                print $parentsock (pack("n", 0) . "okthx")
-                  or error "cannot write to socket: $!";
-                $parentsock->flush();
-
-                # Open a tar process creating a tarfile of the instructed
-                # path. To emulate the behaviour of cp, change to the
-                # dirname of the requested path first.
-                open my $fh, '-|', 'tar', '--numeric-owner', '--xattrs',
-                  '--format=pax',
-                  '--pax-option=exthdr.name=%d/PaxHeaders/%f,'
-                  . 'delete=atime,delete=ctime',
-                  '--directory',
-                  $msg eq 'mktar' ? dirname($indir) : $indir,
-                  '--create', '--file', '-',
-                  $msg eq 'mktar' ? basename($indir) : '.'
-                  // error "failed to fork(): $!";
-
-                # read from the tar process and send as payload to the child
-                # process
-                while (1) {
-                    # read from tar
-                    my $ret = read($fh, my $cont, 4096)
-                      // error "cannot read from pipe: $!";
-                    if ($ret == 0) { last; }
-                    debug "sending write";
-                    # send to child
-                    print $parentsock pack("n", $ret) . "write" . $cont;
-                    $parentsock->flush();
-                    debug "waiting for okthx";
-                    checkokthx $parentsock;
-                    if ($ret < 4096) { last; }
-                }
-
-                # signal to the child process that we are done
-                debug "sending close";
-                print $parentsock pack("n", 0) . "close";
-                $parentsock->flush();
-                debug "waiting for okthx";
-                checkokthx $parentsock;
-
-                close $fh;
-                if ($? != 0) {
-                    error "tar failed";
-                }
-            } elsif ($msg eq "untar") {
-                debug "received message: untar";
-                # payload is the output directory
-                my $outdir;
-                {
-                    my $ret = read($parentsock, $outdir, $len)
-                      // error "cannot read from socket: $!";
-                    if ($ret == 0) {
-                        error "received eof on socket";
-                    }
-                }
-                # make sure that the directory exists
-                if (-e $outdir) {
-                    if (!-d $outdir) {
-                        error "$outdir already exists but is not a directory";
-                    }
-                } else {
-                    my $num_created = make_path $outdir, { error => \my $err };
-                    if ($err && @$err) {
-                        error(
-                            join "; ",
-                            (
-                                map { "cannot create " . (join ": ", %{$_}) }
-                                  @$err
-                            ));
-                    } elsif ($num_created == 0) {
-                        error "cannot create $outdir";
-                    }
-                }
-                debug "sending okthx";
-                print $parentsock (pack("n", 0) . "okthx")
-                  or error "cannot write to socket: $!";
-                $parentsock->flush();
-
-                # now we expect one or more "write" messages containing the
-                # tarball to unpack
-                open my $fh, '|-', 'tar', '--numeric-owner', '--xattrs',
-                  '--xattrs-include=*', '--directory', $outdir,
-                  '--extract', '--file',
-                  '-' // error "failed to fork(): $!";
-
-                # handle "write" messages from the child process and feed
-                # their payload into the tar process until a "close" message
-                # is encountered
-                while (1) {
-                    # receive the next message
-                    my $ret = read($parentsock, my $buf, 2 + 5)
-                      // error "cannot read from socket: $!";
-                    if ($ret == 0) {
-                        error "received eof on socket";
-                    }
-                    my ($len, $msg) = unpack("nA5", $buf);
-                    debug "received message: $msg";
-                    if ($msg eq "close") {
-                        # finish the loop
-                        if ($len != 0) {
-                            error "expected no payload but got $len bytes";
-                        }
-                        debug "sending okthx";
-                        print $parentsock (pack("n", 0) . "okthx")
-                          or error "cannot write to socket: $!";
-                        $parentsock->flush();
-                        last;
-                    } elsif ($msg ne "write") {
-                        # we should not receive this message at this point
-                        error "expected write but got: $msg";
-                    }
-                    # read the payload
-                    my $content;
-                    {
-                        my $ret = read($parentsock, $content, $len)
-                          // error "error cannot read from socket: $!";
-                        if ($ret == 0) {
-                            error "received eof on socket";
-                        }
-                    }
-                    # write the payload to the tar process
-                    print $fh $content
-                      or error "cannot write to tar process: $!";
-                    debug "sending okthx";
-                    print $parentsock (pack("n", 0) . "okthx")
-                      or error "cannot write to socket: $!";
-                    $parentsock->flush();
-                }
-                close $fh;
-                if ($? != 0) {
-                    error "tar failed";
-                }
-            } elsif ($msg eq "nblks") {
-                # handle the nblks message
-                debug "received message: nblks";
-                {
-                    my $ret = read($parentsock, $numblocks, $len)
-                      // error "cannot read from socket: $!";
-                    if ($ret == 0) {
-                        error "received eof on socket";
-                    }
-                }
-                if ($numblocks !~ /^\d+$/) {
-                    error "invalid number of blocks: $numblocks";
-                }
-                debug "sending okthx";
-                print $parentsock (pack("n", 0) . "okthx")
-                  or error "cannot write to socket: $!";
-                $parentsock->flush();
-            } else {
-                error "unknown message: $msg";
-            }
+        # we execute ourselves under sh to avoid having to
+        # implement a clever parser of the quoting used in $script
+        # for the filenames
+        my @prefix = ();
+        if ($is_covering) {
+            @prefix = ($EXECUTABLE_NAME, "-MDevel::Cover=-silent,-nogcov");
         }
-    };
-    if ($@) {
-        # inform the other side that something went wrong
-        print $parentsock (pack("n", 0) . "error")
-          or error "cannot write to socket: $!";
-        $parentsock->flush();
+        exec @prefix, $PROGRAM_NAME, "--hook-listener";
+    }
+    waitpid($lpid, 0);
+    if ($? != 0) {
         # we cannot die here because that would leave the other thread
         # running without a parent
         warning "listening on child socket failed: $@";

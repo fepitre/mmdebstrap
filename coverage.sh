@@ -1936,6 +1936,44 @@ else
 	runtests=$((runtests+1))
 fi
 
+print_header "mode=root,variant=apt: test special hooks using helpers"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+mkfifo /tmp/myfifo
+mkdir /tmp/root
+ln -s /real /tmp/root/link
+mkdir /tmp/root/real
+run_testA() {
+  echo content > /tmp/foo
+  { { { $CMD --hook-helper /tmp/root root setup env 1 upload /tmp/foo \$1 < /tmp/myfifo 3>&-; echo \$? >&3;
+      } | $CMD --hook-listener 3>&- >/tmp/myfifo; echo \$?; } 3>&1;
+  } | { read xs1; [ "\$xs1" -eq 0 ]; read xs2; [ "\$xs2" -eq 0 ]; }
+  echo content | diff -u - /tmp/root/real/foo
+  rm /tmp/foo
+  rm /tmp/root/real/foo
+}
+run_testA link/foo
+run_testA /link/foo
+run_testA ///link///foo///
+run_testA /././link/././foo/././
+run_testA /link/../link/foo
+run_testA /link/../../link/foo
+run_testA /../../link/foo
+rmdir /tmp/root/real
+rm /tmp/root/link
+rmdir /tmp/root
+rm /tmp/myfifo
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+	runtests=$((runtests+1))
+else
+	./run_null.sh SUDO
+	runtests=$((runtests+1))
+fi
+
 # test special hooks
 for mode in root unshare fakechroot proot; do
 	print_header "mode=$mode,variant=apt: test special hooks with $mode mode"
