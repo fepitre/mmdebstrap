@@ -3501,16 +3501,17 @@ sub main() {
             while (my $entry = readdir $dh) {
                 foreach
                   my $hook ('setup', 'extract', 'essential', 'customize') {
-                      if ($entry =~ m/^\Q$hook\E/ and -x "$opt_value/$entry") {
-                          push @{$scripts{$hook}}, "$opt_value/$entry";
-                      }
+                    if ($entry =~ m/^\Q$hook\E/ and -x "$opt_value/$entry") {
+                        push @{ $scripts{$hook} }, "$opt_value/$entry";
+                    }
                 }
             }
             closedir($dh);
             # add the sorted list associated with each key to the respective
             # list of hooks
             foreach my $hook (keys %scripts) {
-                push @{ $options->{"${hook}_hook"} }, (sort @{$scripts{$hook}});
+                push @{ $options->{"${hook}_hook"} },
+                  (sort @{ $scripts{$hook} });
             }
         },
         # Sometimes --simulate fails even though non-simulate succeeds because
