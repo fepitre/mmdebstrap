@@ -72,7 +72,7 @@ if [ ! -e shared/taridshift ] || [ taridshift -nt shared/taridshift ]; then
 fi
 
 starttime=
-total=147
+total=148
 skipped=0
 runtests=0
 i=1
@@ -1935,6 +1935,67 @@ else
 	./run_null.sh SUDO
 	runtests=$((runtests+1))
 fi
+
+print_header "mode=root,variant=apt: test --hook-directory"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+for h in hookA hookB; do
+	mkdir /tmp/\$h
+	for s in setup extract essential customize; do
+		cat << SCRIPT > /tmp/\$h/\${s}00.sh
+#!/bin/sh
+echo \$h/\${s}00 >> "\\\$1/\$s"
+SCRIPT
+		chmod +x /tmp/\$h/\${s}00.sh
+		cat << SCRIPT > /tmp/\$h/\${s}01.sh
+echo \$h/\${s}01 >> "\\\$1/\$s"
+SCRIPT
+		chmod +x /tmp/\$h/\${s}01.sh
+	done
+done
+$CMD --mode=root --variant=apt \
+	--setup-hook='echo cliA/setup >> "\$1"/setup' \
+	--extract-hook='echo cliA/extract >> "\$1"/extract' \
+	--essential-hook='echo cliA/essential >> "\$1"/essential' \
+	--customize-hook='echo cliA/customize >> "\$1"/customize' \
+	--hook-dir=/tmp/hookA \
+	--setup-hook='echo cliB/setup >> "\$1"/setup' \
+	--extract-hook='echo cliB/extract >> "\$1"/extract' \
+	--essential-hook='echo cliB/essential >> "\$1"/essential' \
+	--customize-hook='echo cliB/customize >> "\$1"/customize' \
+	--hook-dir=/tmp/hookB \
+	--setup-hook='echo cliC/setup >> "\$1"/setup' \
+	--extract-hook='echo cliC/extract >> "\$1"/extract' \
+	--essential-hook='echo cliC/essential >> "\$1"/essential' \
+	--customize-hook='echo cliC/customize >> "\$1"/customize' \
+	 $DEFAULT_DIST /tmp/debian-chroot $mirror
+printf "cliA/setup\nhookA/setup00\nhookA/setup01\ncliB/setup\nhookB/setup00\nhookB/setup01\ncliC/setup\n" | diff -u - /tmp/debian-chroot/setup
+printf "cliA/extract\nhookA/extract00\nhookA/extract01\ncliB/extract\nhookB/extract00\nhookB/extract01\ncliC/extract\n" | diff -u - /tmp/debian-chroot/extract
+printf "cliA/essential\nhookA/essential00\nhookA/essential01\ncliB/essential\nhookB/essential00\nhookB/essential01\ncliC/essential\n" | diff -u - /tmp/debian-chroot/essential
+printf "cliA/customize\nhookA/customize00\nhookA/customize01\ncliB/customize\nhookB/customize00\nhookB/customize01\ncliC/customize\n" | diff -u - /tmp/debian-chroot/customize
+for s in setup extract essential customize; do
+	rm /tmp/debian-chroot/\$s
+done
+tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
+for h in hookA hookB; do
+	for s in setup extract essential customize; do
+		rm /tmp/\$h/\${s}00.sh
+		rm /tmp/\$h/\${s}01.sh
+	done
+	rmdir /tmp/\$h
+done
+rm -r /tmp/debian-chroot
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+	runtests=$((runtests+1))
+else
+	./run_null.sh SUDO
+	runtests=$((runtests+1))
+fi
+exit 0
 
 print_header "mode=root,variant=apt: test special hooks using helpers"
 cat << END > shared/test.sh
