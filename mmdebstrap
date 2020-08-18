@@ -1911,7 +1911,7 @@ sub run_download() {
             }
             push @essential_pkgs, $deb;
         }
-        close $dh;
+        closedir $dh;
 
         if (scalar @essential_pkgs == 0) {
             # check if a file:// URI was used
@@ -2398,7 +2398,7 @@ sub run_install() {
                         }
                         push @debs_to_install, $deb;
                     }
-                    close $dh;
+                    closedir $dh;
                     if (scalar @debs_to_install == 0) {
                         warning "nothing got downloaded -- maybe the packages"
                           . " were already installed?";
@@ -4071,6 +4071,7 @@ sub main() {
                     push @keyringopts, '--keyring',
                       "$options->{apttrustedparts}/$filename";
                 }
+                closedir $dh;
                 if (-e $options->{apttrusted}) {
                     push @keyringopts, '--keyring', $options->{apttrusted};
                 }
