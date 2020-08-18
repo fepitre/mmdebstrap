@@ -5192,10 +5192,6 @@ Example: Exclude paths to reduce chroot size
     --dpkgopt='path-include=/usr/share/doc/*/changelog.Debian.*'
     --dpkgopt='path-exclude=/usr/share/{doc,info,man,omf,help,gnome/help}/*'
 
-Example: Do not perform safe I/O operations when unpacking for more speed
-
-    --dpkgopt=force-unsafe-io
-
 =item B<--include>=I<pkg1>[,I<pkg2>,...]
 
 Comma or whitespace separated list of packages which will be installed in
