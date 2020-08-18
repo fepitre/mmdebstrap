@@ -2681,7 +2681,7 @@ sub hookhelper {
             ('copy-in', 'tar-in', 'upload', 'sync-in')
         ) {
             if (scalar @ARGV < 9) {
-                error "copy-in and tar-in need at least one path on the"
+                error "$command needs at least one path on the"
                   . " outside and the output path inside the chroot";
             }
             my $outpath = $ARGV[-1];
@@ -2825,7 +2825,7 @@ sub hookhelper {
             ('copy-out', 'tar-out', 'download', 'sync-out')
         ) {
             if (scalar @ARGV < 9) {
-                error "copy-out needs at least one path inside the chroot and"
+                error "$command needs at least one path inside the chroot and"
                   . " the output path on the outside";
             }
             my $outpath = $ARGV[-1];
