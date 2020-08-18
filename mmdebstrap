@@ -5111,12 +5111,12 @@ section B<FORMATS> for more information.
 
 =item B<--aptopt>=I<option>|I<file>
 
-Pass arbitrary I<option>s to apt. Will be added to
-F</etc/apt/apt.conf.d/99mmdebstrap> inside the chroot.  Can be specified
-multiple times. Each I<option> will be appended to 99mmdebstrap. A semicolon
-will be added at the end of the option if necessary. If the command line
-argument is an existing I<file>, the content of the file will be appended to
-99mmdebstrap verbatim.
+Pass arbitrary I<option>s to apt. Will be permamently added to
+F</etc/apt/apt.conf.d/99mmdebstrap> inside the chroot. Use hooks for temporary
+configuration options. Can be specified multiple times. Each I<option> will be
+appended to 99mmdebstrap. A semicolon will be added at the end of the option if
+necessary. If the command line argument is an existing I<file>, the content of
+the file will be appended to 99mmdebstrap verbatim.
 
 Example: This is necessary for allowing old timestamps from snapshot.debian.org
 
@@ -5175,11 +5175,11 @@ pointing to F</usr/share/keyrings/ubuntu-archive-keyring.gpg>.
 
 =item B<--dpkgopt>=I<option>|I<file>
 
-Pass arbitrary I<option>s to dpkg. Will be added to
-F</etc/dpkg/dpkg.cfg.d/99mmdebstrap> inside the chroot. Can be specified
-multiple times. Each I<option> will be appended to 99mmdebstrap. If the command
-line argument is an existing I<file>, the content of the file will be appended
-to 99mmdebstrap verbatim.
+Pass arbitrary I<option>s to dpkg. Will be permanently added to
+F</etc/dpkg/dpkg.cfg.d/99mmdebstrap> inside the chroot. Use hooks for temporary
+configuration options. Can be specified multiple times. Each I<option> will be
+appended to 99mmdebstrap. If the command line argument is an existing I<file>,
+the content of the file will be appended to 99mmdebstrap verbatim.
 
 Example: Exclude paths to reduce chroot size
 
