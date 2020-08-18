@@ -5594,11 +5594,11 @@ support extended attributes, the resulting image will not contain them.
 
 This section describes properties of the hook options B<--setup-hook>,
 B<--extract-hook>, B<--essential-hook> and B<--customize-hook> which are common
-to all three of them. Any information specific to each hook is documented under
+to all four of them. Any information specific to each hook is documented under
 the specific hook options in the section B<OPTIONS>.
 
 The options can be specified multiple times and the commands are executed in
-the order in which they are given on the command line. There are three
+the order in which they are given on the command line. There are four
 different types of hook option arguments. If the argument passed to the hook
 option starts with C<copy-in>, C<copy-out>, C<tar-in>, C<tar-out>, C<upload> or
 C<download> followed by a space, then the hook is interpreted as a special
