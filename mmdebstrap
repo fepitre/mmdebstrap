@@ -657,11 +657,28 @@ sub run_progress {
         POSIX::sigprocmask(SIG_UNBLOCK, $sigset)
           or error "Can't unblock signals: $!";
 
-        print_progress(0.0);
+        my $progress = 0.0;
+        my $status   = undef;
+        print_progress($progress);
         while (my $line = <$rfh>) {
-            my $output = $line_handler->($line);
-            next unless $output;
-            print_progress($output);
+            my ($newprogress, $newstatus) = $line_handler->($line);
+            next unless $newprogress;
+            # start a new line if the new progress value is less than the
+            # previous one
+            if ($newprogress < $progress) {
+                print_progress("done");
+            }
+            if (defined $newstatus) {
+                $status = $newstatus;
+            }
+            ## no critic (InputOutput::ProhibitInteractiveTest)
+            if (defined $status and $verbosity_level == 1 and -t STDERR) {
+                # \e[2K clears everything on the current line (i.e. the
+                # progress bar)
+                print STDERR "\e[2K$status: ";
+            }
+            print_progress($newprogress);
+            $progress = $newprogress;
         }
         print_progress("done");
 
@@ -727,10 +744,18 @@ sub run_dpkg_progress {
     # number is twice the number of packages
     my $total        = (scalar @debs) * 2;
     my $line_handler = sub {
+        my $status = undef;
         if ($_[0] =~ /^processing: (install|configure): /) {
+            if ($1 eq 'install') {
+                $status = 'installing';
+            } elsif ($1 eq 'configure') {
+                $status = 'configuring';
+            } else {
+                error "unknown status: $1";
+            }
             $num += 1;
         }
-        return $num / $total * 100;
+        return $num / $total * 100, $status;
     };
     run_progress $get_exec, $line_handler, $line_has_error;
     return;
@@ -764,7 +789,15 @@ sub run_apt_progress {
     }
     my $line_handler = sub {
         if ($_[0] =~ /(pmstatus|dlstatus):[^:]+:(\d+\.\d+):.*/) {
-            return $2;
+            my $status = undef;
+            if ($1 eq 'pmstatus') {
+                $status = "installing";
+            } elsif ($1 eq 'dlstatus') {
+                $status = "downloading";
+            } else {
+                error "unknown status: $1";
+            }
+            return $2, $status;
         }
     };
     run_progress $get_exec, $line_handler, $line_has_error, $options->{CHDIR};
