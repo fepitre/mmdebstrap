@@ -3257,24 +3257,6 @@ sub hooklistener {
                 if ($? != 0) {
                     error "tar failed";
                 }
-            } elsif ($msg eq "nblks") {
-                # handle the nblks message
-                my $numblocks;
-                debug "received message: nblks";
-                {
-                    my $ret = read(STDIN, $numblocks, $len)
-                      // error "cannot read from socket: $!";
-                    if ($ret == 0) {
-                        error "received eof on socket";
-                    }
-                }
-                if ($numblocks !~ /^\d+$/) {
-                    error "invalid number of blocks: $numblocks";
-                }
-                debug "sending okthx";
-                print STDOUT (pack("n", 0) . "okthx")
-                  or error "cannot write to socket: $!";
-                STDOUT->flush();
             } else {
                 error "unknown message: $msg";
             }
@@ -4566,7 +4548,6 @@ sub main() {
         error "unknown format: $format";
     }
 
-    my $numblocks  = 0;
     my $exitstatus = 0;
     my @taropts    = (
         '--sort=name',
@@ -4602,6 +4583,13 @@ sub main() {
     socketpair my $childsock, my $parentsock, AF_UNIX, SOCK_STREAM, PF_UNSPEC
       or error "socketpair failed: $!";
     $options->{hooksock} = $childsock;
+    # for communicating the required number of blocks, we don't need
+    # bidirectional communication, so a pipe() is enough
+    # we don't communicate this via the hook communication because
+    #   a) this would abuse the functionality exclusively for hooks
+    #   b) it puts code writing the protocol outside of the helper/listener
+    #   c) the forked listener process cannot communicate to its parent
+    pipe my $nblkreader, my $nblkwriter or error "pipe failed: $!";
     if ($options->{mode} eq 'unshare') {
         $pid = get_unshare_cmd(
             sub {
@@ -4621,20 +4609,18 @@ sub main() {
 
                 setup($options);
 
-                if (!$options->{dryrun} && $format eq 'ext2') {
-                    my $numblocks = approx_disk_usage($options->{root});
-                    debug "sending nblks";
-                    print $childsock (
-                        pack("n", length "$numblocks") . "nblks$numblocks");
-                    $childsock->flush();
-                    debug "waiting for okthx";
-                    checkokthx $childsock;
-                }
-
                 print $childsock (pack('n', 0) . 'adios');
                 $childsock->flush();
 
                 close $childsock;
+
+                close $nblkreader;
+                if (!$options->{dryrun} && $format eq 'ext2') {
+                    my $numblocks = approx_disk_usage($options->{root});
+                    print $nblkwriter "$numblocks\n";
+                    $nblkwriter->flush();
+                }
+                close $nblkwriter;
 
                 if ($options->{dryrun}) {
                     info "simulate creating tarball...";
@@ -4690,19 +4676,18 @@ sub main() {
 
             setup($options);
 
-            if (!$options->{dryrun} && $format eq 'ext2') {
-                my $numblocks = approx_disk_usage($options->{root});
-                print $childsock (
-                    pack("n", length "$numblocks") . "nblks$numblocks");
-                $childsock->flush();
-                debug "waiting for okthx";
-                checkokthx $childsock;
-            }
-
             print $childsock (pack('n', 0) . 'adios');
             $childsock->flush();
 
             close $childsock;
+
+            close $nblkreader;
+            if (!$options->{dryrun} && $format eq 'ext2') {
+                my $numblocks = approx_disk_usage($options->{root});
+                print $nblkwriter $numblocks;
+                $nblkwriter->flush();
+            }
+            close $nblkwriter;
 
             if ($options->{dryrun}) {
                 info "simulate creating tarball...";
@@ -4826,6 +4811,13 @@ sub main() {
     debug "finish to listen for hooks";
 
     close $parentsock;
+
+    my $numblocks = 0;
+    close $nblkwriter;
+    if (!$options->{dryrun} && $format eq 'ext2') {
+        chomp($numblocks = <$nblkreader>);
+    }
+    close $nblkreader;
 
     if ($options->{dryrun}) {
         # nothing to do
