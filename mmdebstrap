@@ -94,6 +94,23 @@ my $verbosity_level = 1;
 
 my $is_covering = !!(eval { Devel::Cover::get_coverage() });
 
+# the reason why Perl::Critic warns about this is, that it suspects that the
+# programmer wants to implement a test whether the terminal is interactive or
+# not, in which case, complex interactions with the magic *ARGV indeed make it
+# advisable to use IO::Interactive. In our case, we do not want to create an
+# interactivity check but just want to check whether STDERR is opened to a tty,
+# so our use of -t is fine and not "fragile and complicated" as is written in
+# the description of InputOutput::ProhibitInteractiveTest. Also see
+# https://github.com/Perl-Critic/Perl-Critic/issues/918
+sub stderr_is_tty() {
+    ## no critic (InputOutput::ProhibitInteractiveTest)
+    if (-t STDERR) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
 sub debug {
     if ($verbosity_level < 3) {
         return;
@@ -101,7 +118,7 @@ sub debug {
     my $msg = shift;
     my ($package, $filename, $line) = caller;
     $msg = "D: $PID $line $msg";
-    if (-t STDERR) {    ## no critic (InputOutput::ProhibitInteractiveTest)
+    if (stderr_is_tty()) {
         $msg = colored($msg, 'clear');
     }
     print STDERR "$msg\n";
@@ -118,7 +135,7 @@ sub info {
         $msg = "$PID $line $msg";
     }
     $msg = "I: $msg";
-    if (-t STDERR) {    ## no critic (InputOutput::ProhibitInteractiveTest)
+    if (stderr_is_tty()) {
         $msg = colored($msg, 'green');
     }
     print STDERR "$msg\n";
@@ -131,7 +148,7 @@ sub warning {
     }
     my $msg = shift;
     $msg = "W: $msg";
-    if (-t STDERR) {    ## no critic (InputOutput::ProhibitInteractiveTest)
+    if (stderr_is_tty()) {
         $msg = colored($msg, 'bold yellow');
     }
     print STDERR "$msg\n";
@@ -144,11 +161,11 @@ sub error {
     # are stripping here
     chomp(my $msg = shift);
     $msg = "E: $msg";
-    if (-t STDERR) {    ## no critic (InputOutput::ProhibitInteractiveTest)
+    if (stderr_is_tty()) {
         $msg = colored($msg, 'bold red');
     }
     if ($verbosity_level == 3) {
-        croak $msg;     # produces a backtrace
+        croak $msg;    # produces a backtrace
     } else {
         die "$msg\n";
     }
@@ -569,7 +586,7 @@ sub print_progress {
         return;
     }
     my $perc = shift;
-    if (!-t STDERR) {    ## no critic (InputOutput::ProhibitInteractiveTest)
+    if (!stderr_is_tty()) {
         return;
     }
     if ($perc eq "done") {
@@ -671,8 +688,9 @@ sub run_progress {
             if (defined $newstatus) {
                 $status = $newstatus;
             }
-            ## no critic (InputOutput::ProhibitInteractiveTest)
-            if (defined $status and $verbosity_level == 1 and -t STDERR) {
+            if (    defined $status
+                and $verbosity_level == 1
+                and stderr_is_tty()) {
                 # \e[2K clears everything on the current line (i.e. the
                 # progress bar)
                 print STDERR "\e[2K$status: ";
