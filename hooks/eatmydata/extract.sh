@@ -32,7 +32,8 @@ env --chdir="$tmpdir" APT_CONFIG="$tmpfile" apt-get download --print-uris eatmyd
 			echo "$tmpdir/$fname already exists" >&2
 			exit 1
 		fi
-		env --chdir="$tmpdir" APT_CONFIG="$tmpfile" /usr/lib/apt/apt-helper download-file "$uri" "$fname" Checksum-FileSize:"$size" "$hash"
+		[ -z "$hash" ] && hash="Checksum-FileSize:$size"
+		env --chdir="$tmpdir" APT_CONFIG="$tmpfile" /usr/lib/apt/apt-helper download-file "$uri" "$fname" "$hash"
 		case "$fname" in
 			eatmydata_*_all.deb)
 				mkdir -p "$rootdir/usr/bin"
@@ -55,9 +56,14 @@ done
 rm "$tmpfile"
 rmdir "$tmpdir"
 
-mv "$rootdir/usr/bin/dpkg" "$rootdir/usr/bin/dpkg.orig"
+mv "$rootdir/usr/bin/dpkg" "$rootdir/usr/bin/dpkg.distrib"
 cat << END > "$rootdir/usr/bin/dpkg"
 #!/bin/sh
-exec /usr/bin/eatmydata /usr/bin/dpkg.orig "\$@"
+exec /usr/bin/eatmydata /usr/bin/dpkg.distrib "\$@"
 END
 chmod +x "$rootdir/usr/bin/dpkg"
+cat << END  >> "$rootdir/var/lib/dpkg/diversions"
+/usr/bin/dpkg
+/usr/bin/dpkg.distrib
+:
+END
