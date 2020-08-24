@@ -3090,6 +3090,31 @@ END
 	fi
 done
 
+if [ -e shared/cover_db.img ]; then
+	# produce report inside the VM to make sure that the versions match or
+	# otherwise we might get:
+	# Can't read shared/cover_db/runs/1598213854.252.64287/cover.14 with Sereal: Sereal: Error: Bad Sereal header: Not a valid Sereal document. at offset 1 of input at srl_decoder.c line 600 at /usr/lib/x86_64-linux-gnu/perl5/5.30/Devel/Cover/DB/IO/Sereal.pm line 34, <$fh> chunk 1.
+	cat << END > shared/test.sh
+cover -nogcov -report html_basic cover_db
+mkdir -p report
+for f in common.js coverage.html cover.css css.js mmdebstrap--branch.html mmdebstrap--condition.html mmdebstrap.html mmdebstrap--subroutine.html standardista-table-sorting.js; do
+	cp -a cover_db/\$f report
+done
+cover -delete cover_db
+END
+	if [ "$HAVE_QEMU" = "yes" ]; then
+		./run_qemu.sh
+	elif [ "$mode" = "root" ]; then
+		./run_null.sh SUDO
+	else
+		./run_null.sh
+	fi
+
+	echo
+	echo open file://$(pwd)/shared/report/coverage.html in a browser
+	echo
+fi
+
 if [ "$((i-1))" -ne "$total" ]; then
 	echo "unexpected number of tests: got $((i-1)) but expected $total" >&2
 	exit 1
@@ -3106,24 +3131,6 @@ fi
 if [ "$((skipped+runtests))" -ne "$total" ]; then
 	echo "sum of skipped and executed tests is not equal to $total" >&2
 	exit 1
-fi
-
-if [ "$HAVE_QEMU" = "yes" ]; then
-	guestfish add-ro shared/cover_db.img : run : mount /dev/sda / : tar-out / - \
-		| tar -C shared/cover_db --extract
-fi
-
-if [ -e shared/cover_db/runs ]; then
-	cover -nogcov -report html_basic shared/cover_db
-	mkdir -p report
-	for f in common.js coverage.html cover.css css.js mmdebstrap--branch.html mmdebstrap--condition.html mmdebstrap.html mmdebstrap--subroutine.html standardista-table-sorting.js; do
-		cp -a shared/cover_db/$f report
-	done
-	cover -delete shared/cover_db
-
-	echo
-	echo open file://$(pwd)/report/coverage.html in a browser
-	echo
 fi
 
 rm shared/test.sh shared/tar1.txt shared/tar2.txt shared/pkglist.txt shared/doc-debian.tar.list shared/mmdebstrap shared/taridshift
