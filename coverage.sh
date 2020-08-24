@@ -72,7 +72,7 @@ if [ ! -e shared/taridshift ] || [ taridshift -nt shared/taridshift ]; then
 fi
 
 starttime=
-total=148
+total=149
 skipped=0
 runtests=0
 i=1
@@ -1995,7 +1995,6 @@ else
 	./run_null.sh SUDO
 	runtests=$((runtests+1))
 fi
-exit 0
 
 print_header "mode=root,variant=apt: test special hooks using helpers"
 cat << END > shared/test.sh
