@@ -1310,7 +1310,11 @@ sub run_setup() {
         );
         # we need /var/lib/dpkg in case we need to write to /var/lib/dpkg/arch
         push @directories, '/var/lib/dpkg';
-        if (not defined $dpkgversion or $dpkgversion < "1.20.0") {
+        # since we do not know the dpkg version inside the chroot at this
+        # point, we can only omit it in chrootless mode
+        if (   $options->{mode} ne 'chrootless'
+            or not defined $dpkgversion
+            or $dpkgversion < "1.20.0") {
             push @directories, '/etc/dpkg/dpkg.cfg.d/';
         }
         # if dpkg and apt operate from the outside we need some more
@@ -1318,7 +1322,11 @@ sub run_setup() {
         # the chroot
         if ($options->{mode} eq 'chrootless') {
             push @directories, '/var/log/apt';
-            if (not defined $dpkgversion or $dpkgversion < "1.20.0") {
+            # since we do not know the dpkg version inside the chroot at this
+            # point, we can only omit it in chrootless mode
+            if (   $options->{mode} ne 'chrootless'
+                or not defined $dpkgversion
+                or $dpkgversion < "1.20.0") {
                 push @directories, '/var/lib/dpkg/triggers',
                   '/var/lib/dpkg/info', '/var/lib/dpkg/alternatives',
                   '/var/lib/dpkg/updates';
@@ -1424,7 +1432,11 @@ sub run_setup() {
 
     # /var/lib/dpkg/available is required to exist or otherwise package
     # removals will fail
-    if (not defined $dpkgversion or $dpkgversion < "1.20.0") {
+    # since we do not know the dpkg version inside the chroot at this point, we
+    # can only omit it in chrootless mode
+    if (   $options->{mode} ne 'chrootless'
+        or not defined $dpkgversion
+        or $dpkgversion < "1.20.0") {
         open my $fh, '>', "$options->{root}/var/lib/dpkg/available"
           or error "failed to open(): $!";
         close $fh;
@@ -1432,7 +1444,11 @@ sub run_setup() {
 
     # /var/lib/dpkg/cmethopt is used by dselect
     # see #930788
-    if (not defined $dpkgversion or $dpkgversion < "1.20.0") {
+    # since we do not know the dpkg version inside the chroot at this point, we
+    # can only omit it in chrootless mode
+    if (   $options->{mode} ne 'chrootless'
+        or not defined $dpkgversion
+        or $dpkgversion < "1.20.0") {
         open my $fh, '>', "$options->{root}/var/lib/dpkg/cmethopt"
           or error "failed to open(): $!";
         print $fh "apt apt\n";
