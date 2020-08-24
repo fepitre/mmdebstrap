@@ -20,6 +20,7 @@ if ! chroot "$rootdir" dpkg-query --list libeatmydata1; then
 	rm "$rootdir$libdir"/libeatmydata.so*
 fi
 
-mv "$rootdir/usr/bin/dpkg.orig" "$rootdir/usr/bin/dpkg"
+rm "$rootdir/usr/bin/dpkg"
+chroot "$rootdir" dpkg-divert --local --rename --remove /usr/bin/dpkg
 
 sync
