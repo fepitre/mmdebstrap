@@ -37,7 +37,7 @@ use Cwd qw(abs_path);
 require "syscall.ph";    ## no critic (Modules::RequireBarewordIncludes)
 use Fcntl qw(S_IFCHR S_IFBLK FD_CLOEXEC F_GETFD F_SETFD);
 use List::Util qw(any none);
-use POSIX qw(SIGINT SIGHUP SIGPIPE SIGTERM SIG_BLOCK SIG_UNBLOCK);
+use POSIX qw(SIGINT SIGHUP SIGPIPE SIGTERM SIG_BLOCK SIG_UNBLOCK strftime);
 use Carp;
 use Term::ANSIColor;
 use Socket;
@@ -3322,6 +3322,275 @@ sub hooklistener {
     return;
 }
 
+# parse files of the format found in /usr/share/distro-info/ and return two
+# lists: the first contains codenames of end-of-life distros and the second
+# list contains codenames of currently active distros
+sub parse_distro_info {
+    my $file    = shift;
+    my @eol     = ();
+    my @current = ();
+    my $today   = POSIX::strftime "%Y-%m-%d", localtime;
+    open my $fh, '<', $file or error "cannot open $file: $!";
+    my $i = 0;
+    while (my $line = <$fh>) {
+        chomp($line);
+        $i++;
+        my @cells = split /,/, $line;
+        if (scalar @cells < 4) {
+            error "cannot parse line $i of $file";
+        }
+        if (
+            $i == 1
+            and (  scalar @cells < 6
+                or $cells[0] ne 'version'
+                or $cells[1] ne 'codename'
+                or $cells[2] ne 'series'
+                or $cells[3] ne 'created'
+                or $cells[4] ne 'release'
+                or $cells[5] ne 'eol')
+        ) {
+            error "cannot find correct header in $file";
+        }
+        if ($i == 1) {
+            next;
+        }
+        if (scalar @cells == 6) {
+            if ($cells[5] !~ m/^\d\d\d\d-\d\d-\d\d$/) {
+                error "invalid eof date format in $file:$i: $cells[5]";
+            }
+            # since the date format is iso8601, we can use lexicographic string
+            # comparison to compare dates
+            if ($cells[5] lt $today) {
+                push @eol, $cells[2];
+            } else {
+                push @current, $cells[2];
+            }
+        } else {
+            push @current, $cells[2];
+        }
+    }
+    close $fh;
+    return ([@eol], [@current]);
+}
+
+sub get_suite_by_vendor {
+    my %suite_by_vendor = (
+        'debian' => {},
+        'ubuntu' => {},
+        'tanglu' => {},
+        'kali'   => {},
+    );
+
+    # pre-fill with some known values
+    foreach my $suite (
+        'potato', 'woody',   'sarge',  'etch',
+        'lenny',  'squeeze', 'wheezy', 'jessie'
+    ) {
+        $suite_by_vendor{'debian'}->{$suite} = 1;
+    }
+    foreach my $suite (
+        'unstable', 'stable',   'oldstable', 'stretch',
+        'buster',   'bullseye', 'bookworm'
+    ) {
+        $suite_by_vendor{'debian'}->{$suite} = 0;
+    }
+    foreach my $suite ('aequorea', 'bartholomea', 'chromodoris', 'dasyatis') {
+        $suite_by_vendor{'tanglu'}->{$suite} = 0;
+    }
+    foreach my $suite ('kali-dev', 'kali-rolling', 'kali-bleeding-edge') {
+        $suite_by_vendor{'kali'}->{$suite} = 0;
+    }
+    foreach
+      my $suite ('trusty', 'xenial', 'zesty', 'artful', 'bionic', 'cosmic') {
+        $suite_by_vendor{'ubuntu'}->{$suite} = 0;
+    }
+    # if the Debian package distro-info-data is installed, then we can use it,
+    # to get better data about new distros or EOL distros
+    if (-e '/usr/share/distro-info/debian.csv') {
+        my ($eol, $current)
+          = parse_distro_info('/usr/share/distro-info/debian.csv');
+        foreach my $suite (@{$eol}) {
+            $suite_by_vendor{'debian'}->{$suite} = 1;
+        }
+        foreach my $suite (@{$current}) {
+            $suite_by_vendor{'debian'}->{$suite} = 0;
+        }
+    }
+    if (-e '/usr/share/distro-info/ubuntu.csv') {
+        my ($eol, $current)
+          = parse_distro_info('/usr/share/distro-info/ubuntu.csv');
+        foreach my $suite (@{$eol}, @{$current}) {
+            $suite_by_vendor{'ubuntu'}->{$suite} = 0;
+        }
+    }
+    # if debootstrap is installed we infer distro names from the symlink
+    # targets of the scripts in /usr/share/debootstrap/scripts/
+    my $debootstrap_scripts = '/usr/share/debootstrap/scripts/';
+    if (-d $debootstrap_scripts) {
+        opendir(my $dh, $debootstrap_scripts)
+          or error "Can't opendir($debootstrap_scripts): $!";
+        while (my $suite = readdir $dh) {
+            # this is only a heuristic -- don't overwrite anything but instead
+            # just update anything that was missing
+            if (!-l "$debootstrap_scripts/$suite") {
+                next;
+            }
+            my $target = readlink "$debootstrap_scripts/$suite";
+            if ($target eq "sid"
+                and not exists $suite_by_vendor{'debian'}->{$suite}) {
+                $suite_by_vendor{'debian'}->{$suite} = 0;
+            } elsif ($target eq "gutsy"
+                and not exists $suite_by_vendor{'ubuntu'}->{$suite}) {
+                $suite_by_vendor{'ubuntu'}->{$suite} = 0;
+            } elsif ($target eq "aequorea"
+                and not exists $suite_by_vendor{'tanglu'}->{$suite}) {
+                $suite_by_vendor{'tanglu'}->{$suite} = 0;
+            } elsif ($target eq "kali"
+                and not exists $suite_by_vendor{'kali'}->{$suite}) {
+                $suite_by_vendor{'kali'}->{$suite} = 0;
+            }
+        }
+        closedir($dh);
+    }
+
+    return %suite_by_vendor;
+}
+
+# try to guess the right keyring path for the given suite
+sub get_keyring_by_suite {
+    my $query           = shift;
+    my $suite_by_vendor = shift;
+
+    my $debianvendor;
+    my $ubuntuvendor;
+    eval {
+        require Dpkg::Vendor::Debian;
+        require Dpkg::Vendor::Ubuntu;
+        $debianvendor = Dpkg::Vendor::Debian->new();
+        $ubuntuvendor = Dpkg::Vendor::Ubuntu->new();
+    };
+
+    my $keyring_by_vendor = sub {
+        my $vendor = shift;
+        my $eol    = shift;
+        if ($vendor eq 'debian') {
+            if ($eol) {
+                if (defined $debianvendor) {
+                    return $debianvendor->run_hook(
+                        'archive-keyrings-historic');
+                } else {
+                    return
+                      '/usr/share/keyrings/debian-archive-removed-keys.gpg';
+                }
+            } else {
+                if (defined $debianvendor) {
+                    return $debianvendor->run_hook('archive-keyrings');
+                } else {
+                    return '/usr/share/keyrings/debian-archive-keyring.gpg';
+                }
+            }
+        } elsif ($vendor eq 'ubuntu') {
+            if (defined $ubuntuvendor) {
+                return $ubuntuvendor->run_hook('archive-keyrings');
+            } else {
+                return '/usr/share/keyrings/ubuntu-archive-keyring.gpg';
+            }
+        } elsif ($vendor eq 'tanglu') {
+            return '/usr/share/keyrings/tanglu-archive-keyring.gpg';
+        } elsif ($vendor eq 'kali') {
+            return '/usr/share/keyrings/kali-archive-keyring.gpg';
+        } else {
+            error "unknown vendor: $vendor";
+        }
+    };
+    my %keyrings = ();
+    foreach my $vendor (keys %{$suite_by_vendor}) {
+        foreach my $suite (keys %{ $suite_by_vendor->{$vendor} }) {
+            my $keyring = $keyring_by_vendor->(
+                $vendor, $suite_by_vendor->{$vendor}->{$suite});
+            debug "suite $suite with keyring $keyring";
+            $keyrings{$suite} = $keyring;
+        }
+    }
+
+    if (exists $keyrings{$query}) {
+        return $keyrings{$query};
+    } else {
+        return;
+    }
+}
+
+sub get_sourceslist_by_suite {
+    my $suite           = shift;
+    my $arch            = shift;
+    my $signedby        = shift;
+    my $compstr         = shift;
+    my $suite_by_vendor = shift;
+
+    my @debstable    = keys %{ $suite_by_vendor->{'debian'} };
+    my @ubuntustable = keys %{ $suite_by_vendor->{'ubuntu'} };
+    my @tanglustable = keys %{ $suite_by_vendor->{'tanglu'} };
+    my @kali         = keys %{ $suite_by_vendor->{'kali'} };
+
+    my $mirror    = 'http://deb.debian.org/debian';
+    my $secmirror = 'http://security.debian.org/debian-security';
+    if (any { $_ eq $suite } @ubuntustable) {
+        if (any { $_ eq $arch } ('amd64', 'i386')) {
+            $mirror    = 'http://archive.ubuntu.com/ubuntu';
+            $secmirror = 'http://security.ubuntu.com/ubuntu';
+        } else {
+            $mirror    = 'http://ports.ubuntu.com/ubuntu-ports';
+            $secmirror = 'http://ports.ubuntu.com/ubuntu-ports';
+        }
+        if (-e '/usr/share/debootstrap/scripts/gutsy') {
+            # try running the debootstrap script but ignore errors
+            my $script = 'set -eu;
+            default_mirror() { echo $1; };
+            mirror_style() { :; };
+            download_style() { :; };
+            finddebs_style() { :; };
+            variants() { :; };
+            keyring() { :; };
+            doing_variant() { false; };
+            . /usr/share/debootstrap/scripts/gutsy;';
+            open my $fh, '-|', 'env', "ARCH=$arch", "SUITE=$suite",
+              'sh', '-c', $script // last;
+            chomp(
+                my $output = do { local $/; <$fh> }
+            );
+            close $fh;
+            if ($? == 0 && $output ne '') {
+                $mirror = $output;
+            }
+        }
+    } elsif (any { $_ eq $suite } @tanglustable) {
+        $mirror = 'http://archive.tanglu.org/tanglu';
+    } elsif (any { $_ eq $suite } @kali) {
+        $mirror = 'https://http.kali.org/kali';
+    }
+    my $sourceslist = '';
+    $sourceslist .= "deb$signedby $mirror $suite $compstr\n";
+    if (any { $_ eq $suite } @ubuntustable) {
+        $sourceslist .= "deb$signedby $mirror $suite-updates $compstr\n";
+        $sourceslist .= "deb$signedby $secmirror $suite-security $compstr\n";
+    } elsif (any { $_ eq $suite } @tanglustable) {
+        $sourceslist .= "deb$signedby $secmirror $suite-updates $compstr\n";
+    } elsif (any { $_ eq $suite } @debstable
+        and none { $_ eq $suite } ('testing', 'unstable', 'sid')) {
+        $sourceslist .= "deb$signedby $mirror $suite-updates $compstr\n";
+        if (any { $_ eq $suite } ('bullseye')) {
+            # starting from bullseye use
+            # https://lists.debian.org/87r26wqr2a.fsf@43-1.org
+            $sourceslist
+              .= "deb$signedby $secmirror $suite-security" . " $compstr\n";
+        } else {
+            $sourceslist
+              .= "deb$signedby $secmirror $suite/updates" . " $compstr\n";
+        }
+    }
+    return $sourceslist;
+}
+
 sub guess_sources_format {
     my $content    = shift;
     my $is_deb822  = 0;
@@ -3989,70 +4258,11 @@ sub main() {
             # if the currently selected apt keyrings do not contain the
             # necessary key material for the chosen suite, then attempt adding
             # a signed-by option
-            my $signedby = '';
+            my $signedby        = '';
+            my %suite_by_vendor = get_suite_by_vendor();
             {
-                # try to guess the right keyring path for the given suite
-                my $debianvendor;
-                my $ubuntuvendor;
-                eval {
-                    require Dpkg::Vendor::Debian;
-                    require Dpkg::Vendor::Ubuntu;
-                    $debianvendor = Dpkg::Vendor::Debian->new();
-                    $ubuntuvendor = Dpkg::Vendor::Ubuntu->new();
-                };
-                my $keyring;
-                if (
-                    any { $_ eq $suite } (
-                        'potato', 'woody',   'sarge', 'etch',
-                        'lenny',  'squeeze', 'wheezy'
-                    )
-                ) {
-                    if (defined $debianvendor) {
-                        $keyring = $debianvendor->run_hook(
-                            'archive-keyrings-historic');
-                    } else {
-                        $keyring
-                          = '/usr/share/keyrings/'
-                          . 'debian-archive-removed-keys.gpg';
-                    }
-                } elsif (
-                    any { $_ eq $suite }
-                    ('aequorea', 'bartholomea', 'chromodoris', 'dasyatis')
-                ) {
-                    $keyring
-                      = '/usr/share/keyrings/tanglu-archive-keyring.gpg';
-                } elsif (
-                    any { $_ eq $suite }
-                    ('kali-dev', 'kali-rolling', 'kali-bleeding-edge')
-                ) {
-                    $keyring = '/usr/share/keyrings/kali-archive-keyring.gpg';
-                } elsif (
-                    any { $_ eq $suite } (
-                        'trusty', 'xenial', 'zesty', 'artful', 'bionic',
-                        'cosmic'
-                    )
-                ) {
-                    if (defined $ubuntuvendor) {
-                        $keyring = $ubuntuvendor->run_hook('archive-keyrings');
-                    } else {
-                        $keyring
-                          = '/usr/share/keyrings/'
-                          . 'ubuntu-archive-keyring.gpg';
-                    }
-                } elsif (
-                    any { $_ eq $suite } (
-                        'unstable', 'stable', 'oldstable', 'jessie',
-                        'stretch',  'buster', 'bullseye',  'bookworm'
-                    )
-                ) {
-                    if (defined $debianvendor) {
-                        $keyring = $debianvendor->run_hook('archive-keyrings');
-                    } else {
-                        $keyring
-                          = '/usr/share/keyrings/'
-                          . 'debian-archive-keyring.gpg';
-                    }
-                } else {
+                my $keyring = get_keyring_by_suite($suite, \%suite_by_vendor);
+                if (!defined $keyring) {
                     last;
                 }
 
@@ -4248,66 +4458,9 @@ sub main() {
                     }
                 }
             } else {
-                my @debstable = (
-                    'oldoldstable', 'oldstable', 'stable',   'jessie',
-                    'stretch',      'buster',    'bullseye', 'bookworm'
-                );
-                my @ubuntustable
-                  = ('trusty', 'xenial', 'zesty', 'artful', 'bionic',
-                    'cosmic');
-                my @tanglustable
-                  = ('aequorea', 'bartholomea', 'chromodoris', 'dasyatis');
-                my @kali = ('kali-dev', 'kali-rolling', 'kali-bleeding-edge');
-
-                my $mirror    = 'http://deb.debian.org/debian';
-                my $secmirror = 'http://security.debian.org/debian-security';
-                if (any { $_ eq $suite } @ubuntustable) {
-                    if (
-                        any { $_ eq $options->{nativearch} }
-                        ('amd64', 'i386')
-                    ) {
-                        $mirror    = 'http://archive.ubuntu.com/ubuntu';
-                        $secmirror = 'http://security.ubuntu.com/ubuntu';
-                    } else {
-                        $mirror    = 'http://ports.ubuntu.com/ubuntu-ports';
-                        $secmirror = 'http://ports.ubuntu.com/ubuntu-ports';
-                    }
-                } elsif (any { $_ eq $suite } @tanglustable) {
-                    $mirror = 'http://archive.tanglu.org/tanglu';
-                } elsif (any { $_ eq $suite } @kali) {
-                    $mirror = 'https://http.kali.org/kali';
-                }
-                my $sourceslist = '';
-                $sourceslist .= "deb$signedby $mirror $suite $compstr\n";
-                if (any { $_ eq $suite } @ubuntustable) {
-                    $sourceslist
-                      .= "deb$signedby $mirror $suite-updates $compstr\n";
-                    $sourceslist
-                      .= "deb$signedby $secmirror $suite-security $compstr\n";
-                } elsif (any { $_ eq $suite } @tanglustable) {
-                    $sourceslist
-                      .= "deb$signedby $secmirror $suite-updates $compstr\n";
-                } elsif (any { $_ eq $suite } @debstable) {
-                    $sourceslist
-                      .= "deb$signedby $mirror $suite-updates $compstr\n";
-                    if (
-                        any { $_ eq $suite } (
-                            'oldoldstable', 'oldstable',
-                            'stable',       'jessie',
-                            'stretch',      'buster'
-                        )
-                    ) {
-                        $sourceslist
-                          .= "deb$signedby $secmirror $suite/updates"
-                          . " $compstr\n";
-                    } else {
-                        # starting from bullseye use
-                        # https://lists.debian.org/87r26wqr2a.fsf@43-1.org
-                        $sourceslist
-                          .= "deb$signedby $secmirror $suite-security"
-                          . " $compstr\n";
-                    }
-                }
+                my $sourceslist
+                  = get_sourceslist_by_suite($suite, $options->{nativearch},
+                    $signedby, $compstr, \%suite_by_vendor);
                 push @{$sourceslists},
                   {
                     type    => 'one-line',
