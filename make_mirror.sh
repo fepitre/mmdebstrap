@@ -237,9 +237,9 @@ END
 		| grep-dctrl --no-field-names --show-field=Package --exact-match \
 			\( --field=Essential yes --or --field=Priority required \
 			--or --field=Priority important --or --field=Priority standard \
-			--or --field=Package build-essential \) --and --not --field Package python )
+			\) --and --not --field Package python )
 
-	pkgs="$(echo $pkgs) build-essential busybox gpg"
+	pkgs="$(echo $pkgs) build-essential busybox gpg eatmydata"
 
 	APT_CONFIG="$rootdir/etc/apt/apt.conf" apt-get --yes install $pkgs
 

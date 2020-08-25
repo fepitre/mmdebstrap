@@ -73,9 +73,20 @@ fi
 if [ ! -e shared/tarfilter ] || [ tarfilter -nt shared/tarfilter ]; then
 	cp -a tarfilter shared
 fi
+mkdir -p shared/hooks
+if [ ! -e shared/hooks/setup00-merged-usr.sh ] || [ hooks/setup00-merged-usr.sh -nt shared/hooks/setup00-merged-usr.sh ]; then
+	cp -a hooks/setup00-merged-usr.sh shared/hooks/setup00-merged-usr.sh
+fi
+mkdir -p shared/hooks/eatmydata
+if [ ! -e shared/hooks/eatmydata/extract.sh ] || [ hooks/eatmydata/extract.sh -nt shared/hooks/eatmydata/extract.sh ]; then
+	cp -a hooks/eatmydata/extract.sh shared/hooks/eatmydata/extract.sh
+fi
+if [ ! -e shared/hooks/eatmydata/customize.sh ] || [ hooks/eatmydata/customize.sh -nt shared/hooks/eatmydata/customize.sh ]; then
+	cp -a hooks/eatmydata/customize.sh shared/hooks/eatmydata/customize.sh
+fi
 
 starttime=
-total=149
+total=150
 skipped=0
 runtests=0
 i=1
@@ -1802,20 +1813,40 @@ else
 	runtests=$((runtests+1))
 fi
 
-print_header "mode=root,variant=apt: test --setup-hook"
+print_header "mode=root,variant=apt: test merged-usr via --setup-hook"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-cat << 'SCRIPT' > customize.sh
-#!/bin/sh
-for d in sbin lib; do ln -s usr/\$d "\$1/\$d"; mkdir -p "\$1/usr/\$d"; done
-SCRIPT
-chmod +x customize.sh
-$CMD --mode=root --variant=apt --setup-hook='ln -s usr/bin "\$1/bin"; mkdir -p "\$1/usr/bin"' --setup-hook=./customize.sh $DEFAULT_DIST /tmp/debian-chroot $mirror
+$CMD --mode=root --variant=apt \
+	--setup-hook=./hooks/setup00-merged-usr.sh \
+	--customize-hook='[ -L "\$1"/bin -a -L "\$1"/sbin -a -L "\$1"/lib ]' \
+	$DEFAULT_DIST /tmp/debian-chroot $mirror
 tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort > tar2.txt
-{ sed -e 's/^\.\/bin\//.\/usr\/bin\//;s/^\.\/lib\//.\/usr\/lib\//;s/^\.\/sbin\//.\/usr\/sbin\//;' tar1.txt; echo ./bin; echo ./lib; echo ./sbin; } | sort -u | diff -u - tar2.txt
-rm customize.sh
+{
+	sed -e 's/^\.\/bin\//.\/usr\/bin\//;s/^\.\/lib\//.\/usr\/lib\//;s/^\.\/sbin\//.\/usr\/sbin\//;' tar1.txt | {
+		case $HOSTARCH in
+		amd64) sed -e 's/^\.\/lib32\//.\/usr\/lib32\//;s/^\.\/lib64\//.\/usr\/lib64\//;s/^\.\/libx32\//.\/usr\/libx32\//;';;
+		ppc64el) sed -e 's/^\.\/lib64\//.\/usr\/lib64\//;';;
+		*) cat;;
+		esac
+	};
+	echo ./bin;
+	echo ./lib;
+	echo ./sbin;
+	case $HOSTARCH in
+	amd64)
+		echo ./lib32;
+		echo ./lib64;
+		echo ./libx32;
+		echo ./usr/lib32/;
+		echo ./usr/libx32/;
+		;;
+	ppc64el)
+		echo ./lib64;
+		;;
+	esac
+} | sort -u | diff -u - tar2.txt
 rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
@@ -1989,6 +2020,40 @@ for h in hookA hookB; do
 	done
 	rmdir /tmp/\$h
 done
+rm -r /tmp/debian-chroot
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+	runtests=$((runtests+1))
+else
+	./run_null.sh SUDO
+	runtests=$((runtests+1))
+fi
+
+print_header "mode=root,variant=apt: test eatmydata via --hook-dir"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+cat << SCRIPT > checkeatmydata.sh
+#!/bin/sh
+set -exu
+cat << EOF | diff - "\\\$1"/usr/bin/dpkg
+#!/bin/sh
+exec /usr/bin/eatmydata /usr/bin/dpkg.distrib "\\\\\\\$@"
+EOF
+[ -e "\\\$1"/usr/bin/eatmydata ]
+SCRIPT
+chmod +x checkeatmydata.sh
+$CMD --mode=root --variant=apt \
+	--customize-hook=./checkeatmydata.sh \
+	--essential-hook=./checkeatmydata.sh \
+	--extract-hook='printf "\\177ELF\\002\\001\\001\\000" | cmp --bytes=8 - "\$1"/usr/bin/dpkg' \
+	--hook-dir=./hooks/eatmydata \
+	--customize-hook='printf "\\177ELF\\002\\001\\001\\000" | cmp --bytes=8 - "\$1"/usr/bin/dpkg' \
+	 $DEFAULT_DIST /tmp/debian-chroot $mirror
+tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
+rm checkeatmydata.sh
 rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
