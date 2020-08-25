@@ -2356,9 +2356,11 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-$CMD --mode=root --variant=apt --logfile=log $DEFAULT_DIST /tmp/debian-chroot $mirror
 # we check the full log to also prevent debug printfs to accidentally make it into a commit
-cat << LOG | diff -u - log
+$CMD --mode=root --variant=apt --logfile=log $DEFAULT_DIST /tmp/debian-chroot $mirror
+# omit the last line which should contain the runtime
+head --lines=-1 log > trimmed
+cat << LOG | diff -u - trimmed
 I: chroot architecture $HOSTARCH is equal to the host's architecture
 I: automatically chosen format: directory
 I: running apt-get update...
@@ -2367,9 +2369,10 @@ I: extracting archives...
 I: installing packages...
 I: cleaning package lists and apt cache...
 LOG
+tail --lines=1 log | grep '^I: success in .* seconds$'
 tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
 rm -r /tmp/debian-chroot
-rm log
+rm log trimmed
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh

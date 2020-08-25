@@ -41,6 +41,7 @@ use POSIX qw(SIGINT SIGHUP SIGPIPE SIGTERM SIG_BLOCK SIG_UNBLOCK strftime);
 use Carp;
 use Term::ANSIColor;
 use Socket;
+use Time::HiRes;
 use version;
 
 ## no critic (InputOutput::RequireBriefOpen)
@@ -3699,6 +3700,8 @@ sub approx_disk_usage {
 }
 
 sub main() {
+    my $before = Time::HiRes::time;
+
     umask 022;
 
     if (scalar @ARGV >= 7 && $ARGV[0] eq "--hook-helper") {
@@ -5247,6 +5250,11 @@ sub main() {
 
     if ($got_signal) {
         $exitstatus = 1;
+    }
+
+    if ($exitstatus == 0) {
+        my $duration = Time::HiRes::time - $before;
+        info "success in " . (sprintf "%.04f", $duration) . " seconds";
     }
 
     exit $exitstatus;
