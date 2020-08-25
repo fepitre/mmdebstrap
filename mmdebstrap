@@ -6188,14 +6188,8 @@ B<mmdebstrap> treats any warning from "apt-get update" as an error. Fixing
 this will require apt to provide a machine readable status interface. See
 Debian bugs #778357, #776152, #696335, and #745735.
 
-Special hooks either require C<tar> or C<sh> and C<cat> be present inside the
-chroot or otherwise there is no support for absolute symlinks. This limitation
-can be dropped for the B<root> and B<unshare> modes as well as for the
-B<setup> hook in all modes if code is added that supports resolving paths with
-absolute symlinks even inside the chroot directory reliably. Due to how
-symlinks are handled by B<fakechroot> and B<proot>, the requirement of having
-C<tar> or C<sh> and C<cat> inside the chroot can never be dropped for these
-modes.
+Using --variant=standard is broken since August 03 3030 until python becomes
+installable again. See Debian bug #968217.
 
 =head1 SEE ALSO
 
