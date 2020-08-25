@@ -105,8 +105,6 @@ print_header() {
 	i=$((i+1))
 }
 
-nativearch=$(dpkg --print-architecture)
-
 # choose the timestamp of the unstable Release file, so that we get
 # reproducible results for the same mirror timestamp
 SOURCE_DATE_EPOCH=$(date --date="$(grep-dctrl -s Date -n '' "$mirrordir/dists/$DEFAULT_DIST/Release")" +%s)
