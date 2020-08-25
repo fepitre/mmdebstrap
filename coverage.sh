@@ -20,7 +20,7 @@ fi
 
 perlcritic --severity 4 --verbose 8 mmdebstrap
 
-black --check taridshift
+black --check taridshift tarfilter
 
 mirrordir="./shared/cache/debian"
 
@@ -69,6 +69,9 @@ if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
 fi
 if [ ! -e shared/taridshift ] || [ taridshift -nt shared/taridshift ]; then
 	cp -a taridshift shared
+fi
+if [ ! -e shared/tarfilter ] || [ tarfilter -nt shared/tarfilter ]; then
+	cp -a tarfilter shared
 fi
 
 starttime=
@@ -1727,11 +1730,11 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C.UTF-8
 echo no-pager > /tmp/config
-$CMD --mode=root --variant=apt --dpkgopt="path-exclude=/usr/share/doc/*" --dpkgopt=/tmp/config $DEFAULT_DIST /tmp/debian-chroot $mirror
-printf 'path-exclude=/usr/share/doc/*\nno-pager\n' | cmp /tmp/debian-chroot/etc/dpkg/dpkg.cfg.d/99mmdebstrap -
+$CMD --mode=root --variant=apt --dpkgopt="path-exclude=/usr/share/doc/*" --dpkgopt=/tmp/config --dpkgopt="path-include=/usr/share/doc/dpkg/copyright" $DEFAULT_DIST /tmp/debian-chroot $mirror
+printf 'path-exclude=/usr/share/doc/*\nno-pager\npath-include=/usr/share/doc/dpkg/copyright\n' | cmp /tmp/debian-chroot/etc/dpkg/dpkg.cfg.d/99mmdebstrap -
 rm /tmp/debian-chroot/etc/dpkg/dpkg.cfg.d/99mmdebstrap
 tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort > tar2.txt
-grep -v '^./usr/share/doc/.' tar1.txt | diff -u - tar2.txt
+{ grep -v '^./usr/share/doc/.' tar1.txt; echo ./usr/share/doc/dpkg/; echo ./usr/share/doc/dpkg/copyright; } | sort | diff -u - tar2.txt
 rm -r /tmp/debian-chroot /tmp/config
 END
 if [ "$HAVE_QEMU" = "yes" ]; then

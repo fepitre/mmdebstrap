@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+#
+# This script is in the public domain
+#
+# This script accepts a tarball on standard input and filters it according to
+# the same rules used by dpkg --path-exclude and --path-include, using command
+# line options of the same name. The result is then printed on standard output.
+#
+# A tool like this should be written in C but libarchive has issues:
+# https://github.com/libarchive/libarchive/issues/587
+# https://github.com/libarchive/libarchive/pull/1288/ (needs 3.4.1)
+# Should these issues get fixed, then a good template is tarfilter.c in the
+# examples directory of libarchive.
+#
+# We are not using Perl either, because Archive::Tar slurps the whole tarball
+# into memory.
+#
+# We could also use Go but meh...
+# https://stackoverflow.com/a/59542307/784669
+
+import tarfile
+import sys
+import argparse
+from fnmatch import fnmatch
+import re
+
+
+class FilterAction(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        items = getattr(namespace, "filter", [])
+        items.append((self.dest, values))
+        setattr(namespace, "filter", items)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="filter a tarball")
+    parser.add_argument(
+        "--path-exclude",
+        metavar="pattern",
+        action=FilterAction,
+        help="Exclude path matching the given shell pattern.",
+    )
+    parser.add_argument(
+        "--path-include",
+        metavar="pattern",
+        action=FilterAction,
+        help="Re-include a pattern after a previous exclusion.",
+    )
+    args = parser.parse_args()
+    if not hasattr(args, "filter"):
+        from shutil import copyfileobj
+
+        copyfileobj(sys.stdin.buffer, sys.stdout.buffer)
+        exit()
+
+    # same logic as in dpkg/src/filters.c/filter_should_skip()
+    def filter_should_skip(member):
+        skip = False
+        if not args.filter:
+            return False
+        for (t, f) in args.filter:
+            if fnmatch(member.name[1:], f):
+                if t == "path_include":
+                    skip = False
+                else:
+                    skip = True
+        if skip and (member.isdir() or member.issym()):
+            for (t, f) in args.filter:
+                if t != "path_include":
+                    continue
+                prefix = re.sub(r"^([^*?[\\]*).*", r"\1", f)
+                prefix = prefix.rstrip("/")
+                if member.name[1:].startswith(prefix):
+                    if member.name == "./usr/share/doc/doc-debian":
+                        print("foo", prefix, "bar", file=sys.stderr)
+                    return False
+        return skip
+
+    # starting with Python 3.8, the default format became PAX_FORMAT, so this
+    # is only for compatibility with older versions of Python 3
+    with tarfile.open(fileobj=sys.stdin.buffer, mode="r|*") as in_tar, tarfile.open(
+        fileobj=sys.stdout.buffer, mode="w|", format=tarfile.PAX_FORMAT
+    ) as out_tar:
+        for member in in_tar:
+            if filter_should_skip(member):
+                continue
+            if member.isfile():
+                with in_tar.extractfile(member) as file:
+                    out_tar.addfile(member, file)
+            else:
+                out_tar.addfile(member)
+
+
+if __name__ == "__main__":
+    main()

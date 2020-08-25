@@ -2018,28 +2018,100 @@ sub run_extract() {
     my $total   = scalar @{$essential_pkgs};
     foreach my $deb (@{$essential_pkgs}) {
         $counter += 1;
+
+        my $tarfilter;
+        my @tarfilterargs;
+        # if the path-excluded option was added to the dpkg config,
+        # insert the tarfilter between dpkg-deb and tar
+        if (-e "$options->{root}/etc/dpkg/dpkg.cfg.d/99mmdebstrap") {
+            open(my $fh, '<',
+                "$options->{root}/etc/dpkg/dpkg.cfg.d/99mmdebstrap")
+              or error "cannot open /etc/dpkg/dpkg.cfg.d/99mmdebstrap: $!";
+            my @matches = grep { /^path-(?:exclude|include)=/ } <$fh>;
+            close $fh;
+            chop @matches;    # remove trailing newline
+            @tarfilterargs = map { "--" . $_ } @matches;
+        }
+        if (scalar @tarfilterargs > 0) {
+            if (-x "./tarfilter") {
+                $tarfilter = "./tarfilter";
+            } else {
+                $tarfilter = "mmtarfilter";
+            }
+        }
+
+        my $dpkg_writer;
+        my $tar_reader;
+        my $filter_reader;
+        my $filter_writer;
+        if (scalar @tarfilterargs > 0) {
+            pipe $filter_reader, $dpkg_writer   or error "pipe failed: $!";
+            pipe $tar_reader,    $filter_writer or error "pipe failed: $!";
+        } else {
+            pipe $tar_reader, $dpkg_writer or error "pipe failed: $!";
+        }
         # not using dpkg-deb --extract as that would replace the
         # merged-usr symlinks with plain directories
-        pipe my $rfh, my $wfh;
+        # not using dpkg --unpack because that would try running preinst
+        # maintainer scripts
         my $pid1 = fork() // error "fork() failed: $!";
         if ($pid1 == 0) {
-            open(STDOUT, '>&', $wfh) or error "cannot open STDOUT: $!";
+            open(STDOUT, '>&', $dpkg_writer) or error "cannot open STDOUT: $!";
+            close($tar_reader) or error "cannot close tar_reader: $!";
+            if (scalar @tarfilterargs > 0) {
+                close($filter_reader)
+                  or error "cannot close filter_reader: $!";
+                close($filter_writer)
+                  or error "cannot close filter_writer: $!";
+            }
             debug("running dpkg-deb --fsys-tarfile $options->{root}/$deb");
             eval { Devel::Cover::set_coverage("none") } if $is_covering;
             exec 'dpkg-deb', '--fsys-tarfile', "$options->{root}/$deb";
         }
-        my $pid2 = fork() // error "fork() failed: $!";
-        if ($pid2 == 0) {
-            open(STDIN, '<&', $rfh) or error "cannot open STDIN: $!";
+        my $pid2;
+        if (scalar @tarfilterargs > 0) {
+            $pid2 = fork() // error "fork() failed: $!";
+            if ($pid2 == 0) {
+                open(STDIN, '<&', $filter_reader)
+                  or error "cannot open STDIN: $!";
+                open(STDOUT, '>&', $filter_writer)
+                  or error "cannot open STDOUT: $!";
+                close($dpkg_writer) or error "cannot close dpkg_writer: $!";
+                close($tar_reader)  or error "cannot close tar_reader: $!";
+                debug("running $tarfilter " . (join " ", @tarfilterargs));
+                eval { Devel::Cover::set_coverage("none") } if $is_covering;
+                exec $tarfilter, @tarfilterargs;
+            }
+        }
+        my $pid3 = fork() // error "fork() failed: $!";
+        if ($pid3 == 0) {
+            open(STDIN, '<&', $tar_reader) or error "cannot open STDIN: $!";
+            close($dpkg_writer) or error "cannot close dpkg_writer: $!";
+            if (scalar @tarfilterargs > 0) {
+                close($filter_reader)
+                  or error "cannot close filter_reader: $!";
+                close($filter_writer)
+                  or error "cannot close filter_writer: $!";
+            }
             debug(  "running tar -C $options->{root}"
                   . " --keep-directory-symlink --extract --file -");
             eval { Devel::Cover::set_coverage("none") } if $is_covering;
             exec 'tar', '-C', $options->{root},
               '--keep-directory-symlink', '--extract', '--file', '-';
         }
+        close($dpkg_writer) or error "cannot close dpkg_writer: $!";
+        close($tar_reader)  or error "cannot close tar_reader: $!";
+        if (scalar @tarfilterargs > 0) {
+            close($filter_reader) or error "cannot close filter_reader: $!";
+            close($filter_writer) or error "cannot close filter_writer: $!";
+        }
         waitpid($pid1, 0);
         $? == 0 or error "dpkg-deb --fsys-tarfile failed: $?";
-        waitpid($pid2, 0);
+        if (scalar @tarfilterargs > 0) {
+            waitpid($pid2, 0);
+            $? == 0 or error "tarfilter failed: $?";
+        }
+        waitpid($pid3, 0);
         $? == 0 or error "tar --extract failed: $?";
         print_progress($counter / $total * 100);
     }
@@ -2311,36 +2383,6 @@ sub run_essential() {
                 $options
             );
         }
-
-        # if the path-excluded option was added to the dpkg config,
-        # reinstall all packages
-        if ((!$options->{dryrun})
-            and -e "$options->{root}/etc/dpkg/dpkg.cfg.d/99mmdebstrap") {
-            open(my $fh, '<',
-                "$options->{root}/etc/dpkg/dpkg.cfg.d/99mmdebstrap")
-              or error "cannot open /etc/dpkg/dpkg.cfg.d/99mmdebstrap: $!";
-            my $num_matches = grep { /^path-exclude=/ } <$fh>;
-            close $fh;
-            if ($num_matches > 0) {
-                # without --skip-same-version, dpkg will install the given
-                # packages even though they are already installed
-                info "re-installing packages because of path-exclude...";
-                run_chroot(
-                    sub {
-                        run_dpkg_progress({
-                                ARGV => [
-                                    @{$chrootcmd},    'env',
-                                    '--unset=TMPDIR', 'dpkg',
-                                    '--install',      '--force-depends'
-                                ],
-                                PKGS => $essential_pkgs,
-                            });
-                    },
-                    $options
-                );
-            }
-        }
-
     } else {
         error "unknown mode: $options->{mode}";
     }
