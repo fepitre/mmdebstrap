@@ -35,6 +35,7 @@ rm -f shared/cover_db.img
 : "${DEFAULT_DIST:=unstable}"
 : "${HAVE_QEMU:=yes}"
 : "${RUN_MA_SAME_TESTS:=yes}"
+: "${ONLINE:=no}"
 
 HOSTARCH=$(dpkg --print-architecture)
 
@@ -86,7 +87,7 @@ if [ ! -e shared/hooks/eatmydata/customize.sh ] || [ hooks/eatmydata/customize.s
 fi
 
 starttime=
-total=150
+total=151
 skipped=0
 runtests=0
 i=1
@@ -3158,6 +3159,40 @@ END
 		runtests=$((runtests+1))
 	fi
 done
+
+print_header "mode=$defaultmode,variant=apt: test ubuntu focal"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+if ! /usr/lib/apt/apt-helper download-file http://archive.ubuntu.com/ubuntu/dists/focal/Release /dev/null && grep "QEMU Virtual CPU" /proc/cpuinfo; then
+	if [ ! -e /mmdebstrap-testenv ]; then
+		echo "this test modifies the system and should only be run inside a container" >&2
+		exit 1
+	fi
+	ip link set dev ens3 up
+	ip addr add 10.0.2.15/24 dev ens3
+	ip route add default via 10.0.2.2 dev ens3
+	echo "nameserver 10.0.2.3" > /etc/resolv.conf
+fi
+$CMD --mode=$defaultmode --variant=apt --customize-hook='grep UBUNTU_CODENAME=focal "\$1/etc/os-release"' focal /dev/null
+END
+if [ "$ONLINE" = "yes" ]; then
+	if [ "$HAVE_QEMU" = "yes" ]; then
+		./run_qemu.sh
+		runtests=$((runtests+1))
+	elif [ "$defaultmode" = "root" ]; then
+		./run_null.sh SUDO
+		runtests=$((runtests+1))
+	else
+		./run_null.sh
+		runtests=$((runtests+1))
+	fi
+else
+	echo "HOSTARCH != amd64 -- Skipping test..." >&2
+	skipped=$((skipped+1))
+fi
+
 
 if [ -e shared/cover_db.img ]; then
 	# produce report inside the VM to make sure that the versions match or
