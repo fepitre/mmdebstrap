@@ -112,12 +112,20 @@ mmdebstrap with debootstrap in several scenarios. To run the testsuite, run:
 To also generate perl Devel::Cover data, omit the `CMD` environment variable.
 But that will also take a lot longer.
 
-The make_mirror.sh script will be a no-op if nothing changed in Debian
-unstable. You don't need to run make_mirror.sh before every invocation of
-coverage.sh. When you make changes to make_mirror.sh and want to regenerate the
-cache, run:
+The `make_mirror.sh` script will be a no-op if nothing changed in Debian
+unstable. You don't need to run `make_mirror.sh` before every invocation of
+`coverage.sh`. When you make changes to `make_mirror.sh` and want to regenerate
+the cache, run:
 
     touch -d yesterday shared/cache/debian/dists/unstable/Release
+
+The script `coverage.sh` does not need an active internet connection by
+default. An online connection is only needed by the `make_mirror.sh` script
+which fills a local cache with a few minimal Debian mirror copies.
+
+By default, `coverage.sh` will skip running a single test which tries creating
+a Ubuntu Focal chroot. To not skip that test, run `coverage.sh` with the
+environment variable `ONLINE=yes`.
 
 Bugs
 ====
