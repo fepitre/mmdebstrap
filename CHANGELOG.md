@@ -1,3 +1,25 @@
+0.7.0
+-----------------
+
+ - the hook system (setup, extract, essential, customize and hook-dir) is made
+   public and is now a documented interface
+ - tarball is also created if the output is a named pipe or character special
+ - add --format option to control the output format independent of the output
+   filename or in cases where output is directed to stdout
+ - generate ext2 filesystems if output file ends with .ext2 or --format=ext2
+ - add --skip option to prevent some automatic actions from being carried out
+ - implement dpkg-realpath in perl so that we don't need to run tar inside the
+   chroot anymore for modes other than fakechroot and proot
+ - add ready-to-use hook scripts for eatmydata, merged-usr and busybox
+ - add tarfilter tool
+ - use distro-info-data and debootstrap to help with suite name and keyring
+   discovery
+ - no longer needs to install twice when --depkgopt=path-exclude is given
+ - variant=custom and hooks can be used as a debootstrap wrapper
+ - use File::Find instead of "du" to avoid different results on different
+   filesystems
+ - many, many bugfixes and documentation enhancements
+
 0.6.1 (2020-03-08)
 ------------------
 
