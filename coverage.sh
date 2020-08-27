@@ -546,8 +546,8 @@ runuser -u user -- $CMD --mode=unshare --variant=apt --include=iputils-ping $DEF
 # make sure that xattrs are set in the original tarball
 mkdir /tmp/debian-chroot
 tar --xattrs --xattrs-include='*' --directory /tmp/debian-chroot -xf /tmp/debian-chroot.tar ./bin/ping
-echo "/tmp/debian-chroot/bin/ping cap_net_raw=ep" > expected
-getcap /tmp/debian-chroot/bin/ping | diff -u expected -
+echo "/tmp/debian-chroot/bin/ping cap_net_raw=ep" > /tmp/expected
+getcap /tmp/debian-chroot/bin/ping | diff -u /tmp/expected -
 rm /tmp/debian-chroot/bin/ping
 rmdir /tmp/debian-chroot/bin
 rmdir /tmp/debian-chroot
@@ -573,17 +573,17 @@ tar --numeric-owner -tvf /tmp/debian-chroot-shifted.tar \
 	| diff -u /tmp/debian-chroot.txt -
 mkdir /tmp/debian-chroot
 tar --xattrs --xattrs-include='*' --directory /tmp/debian-chroot -xf /tmp/debian-chroot-shifted.tar
-echo "100000 100000" > expected
-stat --format="%u %g" /tmp/debian-chroot/bin/ping | diff -u expected -
-echo "/tmp/debian-chroot/bin/ping cap_net_raw=ep" > expected
-getcap /tmp/debian-chroot/bin/ping | diff -u expected -
-echo "0 0" > expected
+echo "100000 100000" > /tmp/expected
+stat --format="%u %g" /tmp/debian-chroot/bin/ping | diff -u /tmp/expected -
+echo "/tmp/debian-chroot/bin/ping cap_net_raw=ep" > /tmp/expected
+getcap /tmp/debian-chroot/bin/ping | diff -u /tmp/expected -
+echo "0 0" > /tmp/expected
 runuser -u user -- $CMD --unshare-helper /usr/sbin/chroot /tmp/debian-chroot stat --format="%u %g" /bin/ping \
-	| diff -u expected -
-echo "/bin/ping cap_net_raw=ep" > expected
+	| diff -u /tmp/expected -
+echo "/bin/ping cap_net_raw=ep" > /tmp/expected
 runuser -u user -- $CMD --unshare-helper /usr/sbin/chroot /tmp/debian-chroot getcap /bin/ping \
-	| diff -u expected -
-rm /tmp/debian-chroot.tar /tmp/debian-chroot-shifted.tar /tmp/debian-chroot.txt /tmp/debian-chroot-shiftedback.tar expected
+	| diff -u /tmp/expected -
+rm /tmp/debian-chroot.tar /tmp/debian-chroot-shifted.tar /tmp/debian-chroot.txt /tmp/debian-chroot-shiftedback.tar /tmp/expected
 rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
@@ -1670,16 +1670,16 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-mkdir -p emptydir
-touch emptyfile
+mkdir -p /tmp/emptydir
+touch /tmp/emptyfile
 # this overwrites the apt keyring options and should fail
 ret=0
-$CMD --mode=root --variant=apt --keyring=./emptydir --keyring=./emptyfile $DEFAULT_DIST /tmp/debian-chroot "deb $mirror $DEFAULT_DIST main" || ret=\$?
+$CMD --mode=root --variant=apt --keyring=/tmp/emptydir --keyring=/tmp/emptyfile $DEFAULT_DIST /tmp/debian-chroot "deb $mirror $DEFAULT_DIST main" || ret=\$?
 # make sure that no [signedby=...] managed to make it into the sources.list
 echo "deb $mirror $DEFAULT_DIST main" | cmp /tmp/debian-chroot/etc/apt/sources.list -
 rm -r /tmp/debian-chroot
-rmdir emptydir
-rm emptyfile
+rmdir /tmp/emptydir
+rm /tmp/emptyfile
 if [ "\$ret" = 0 ]; then
 	echo expected failure but got exit \$ret >&2
 	exit 1
@@ -1861,12 +1861,12 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-cat << 'SCRIPT' > customize.sh
+cat << 'SCRIPT' > /tmp/essential.sh
 #!/bin/sh
 echo tzdata tzdata/Zones/Europe select Berlin | chroot "\$1" debconf-set-selections
 SCRIPT
-chmod +x customize.sh
-$CMD --mode=root --variant=apt --include=tzdata --essential-hook='echo tzdata tzdata/Areas select Europe | chroot "\$1" debconf-set-selections' --essential-hook=./customize.sh $DEFAULT_DIST /tmp/debian-chroot $mirror
+chmod +x /tmp/essential.sh
+$CMD --mode=root --variant=apt --include=tzdata --essential-hook='echo tzdata tzdata/Areas select Europe | chroot "\$1" debconf-set-selections' --essential-hook=/tmp/essential.sh $DEFAULT_DIST /tmp/debian-chroot $mirror
 echo Europe/Berlin | cmp /tmp/debian-chroot/etc/timezone
 tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort \
 	| grep -v '^./etc/localtime' \
@@ -1877,7 +1877,7 @@ tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort \
 	| grep -v '^./var/lib/dpkg/info/tzdata.' \
 	| grep -v '^./var/lib/apt/extended_states$' \
 	| diff -u tar1.txt -
-rm customize.sh
+rm /tmp/essential.sh
 rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
@@ -1893,19 +1893,19 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-cat << 'SCRIPT' > customize.sh
+cat << 'SCRIPT' > /tmp/customize.sh
 #!/bin/sh
 chroot "\$1" whoami > "\$1/output2"
 chroot "\$1" pwd >> "\$1/output2"
 SCRIPT
-chmod +x customize.sh
-$CMD --mode=root --variant=apt --customize-hook='chroot "\$1" sh -c "whoami; pwd" > "\$1/output1"' --customize-hook=./customize.sh $DEFAULT_DIST /tmp/debian-chroot $mirror
+chmod +x /tmp/customize.sh
+$CMD --mode=root --variant=apt --customize-hook='chroot "\$1" sh -c "whoami; pwd" > "\$1/output1"' --customize-hook=/tmp/customize.sh $DEFAULT_DIST /tmp/debian-chroot $mirror
 printf "root\n/\n" | cmp /tmp/debian-chroot/output1
 printf "root\n/\n" | cmp /tmp/debian-chroot/output2
 rm /tmp/debian-chroot/output1
 rm /tmp/debian-chroot/output2
 tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
-rm customize.sh
+rm /tmp/customize.sh
 rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
@@ -2034,7 +2034,7 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-cat << SCRIPT > checkeatmydata.sh
+cat << SCRIPT > /tmp/checkeatmydata.sh
 #!/bin/sh
 set -exu
 cat << EOF | diff - "\\\$1"/usr/bin/dpkg
@@ -2043,16 +2043,16 @@ exec /usr/bin/eatmydata /usr/bin/dpkg.distrib "\\\\\\\$@"
 EOF
 [ -e "\\\$1"/usr/bin/eatmydata ]
 SCRIPT
-chmod +x checkeatmydata.sh
+chmod +x /tmp/checkeatmydata.sh
 $CMD --mode=root --variant=apt \
-	--customize-hook=./checkeatmydata.sh \
-	--essential-hook=./checkeatmydata.sh \
+	--customize-hook=/tmp/checkeatmydata.sh \
+	--essential-hook=/tmp/checkeatmydata.sh \
 	--extract-hook='printf "\\177ELF\\002\\001\\001\\000" | cmp --bytes=8 - "\$1"/usr/bin/dpkg' \
 	--hook-dir=./hooks/eatmydata \
 	--customize-hook='printf "\\177ELF\\002\\001\\001\\000" | cmp --bytes=8 - "\$1"/usr/bin/dpkg' \
 	 $DEFAULT_DIST /tmp/debian-chroot $mirror
 tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
-rm checkeatmydata.sh
+rm /tmp/checkeatmydata.sh
 rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
@@ -2358,10 +2358,10 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C.UTF-8
 # we check the full log to also prevent debug printfs to accidentally make it into a commit
-$CMD --mode=root --variant=apt --logfile=log $DEFAULT_DIST /tmp/debian-chroot $mirror
+$CMD --mode=root --variant=apt --logfile=/tmp/log $DEFAULT_DIST /tmp/debian-chroot $mirror
 # omit the last line which should contain the runtime
-head --lines=-1 log > trimmed
-cat << LOG | diff -u - trimmed
+head --lines=-1 /tmp/log > /tmp/trimmed
+cat << LOG | diff -u - /tmp/trimmed
 I: chroot architecture $HOSTARCH is equal to the host's architecture
 I: automatically chosen format: directory
 I: running apt-get update...
@@ -2370,10 +2370,10 @@ I: extracting archives...
 I: installing packages...
 I: cleaning package lists and apt cache...
 LOG
-tail --lines=1 log | grep '^I: success in .* seconds$'
+tail --lines=1 /tmp/log | grep '^I: success in .* seconds$'
 tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
 rm -r /tmp/debian-chroot
-rm log trimmed
+rm /tmp/log /tmp/trimmed
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
