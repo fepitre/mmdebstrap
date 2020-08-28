@@ -3075,6 +3075,7 @@ sub hooklistener {
                 ($len, $msg) = unpack("nA5", $buf);
             }
             if ($msg eq "adios") {
+                debug "received message: adios";
                 # setup finished, so we break out of the loop
                 if ($len != 0) {
                     error "expected no payload but got $len bytes";
@@ -3364,6 +3365,7 @@ sub hooklistener {
         }
     };
     if ($@) {
+        debug("hooklistener errored out: $@");
         # inform the other side that something went wrong
         print STDOUT (pack("n", 0) . "error")
           or error "cannot write to socket: $!";
