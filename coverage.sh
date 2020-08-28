@@ -2074,7 +2074,7 @@ ln -s /real /tmp/root/link
 mkdir /tmp/root/real
 run_testA() {
   echo content > /tmp/foo
-  { { { $CMD --hook-helper /tmp/root root setup env 1 upload /tmp/foo \$1 < /tmp/myfifo 3>&-; echo \$? >&3;
+  { { { $CMD --hook-helper /tmp/root root setup env 1 upload /tmp/foo \$1 < /tmp/myfifo 3>&-; echo \$? >&3; printf "\\000\\000adios";
       } | $CMD --hook-listener 3>&- >/tmp/myfifo; echo \$?; } 3>&1;
   } | { read xs1; [ "\$xs1" -eq 0 ]; read xs2; [ "\$xs2" -eq 0 ]; }
   echo content | diff -u - /tmp/root/real/foo
