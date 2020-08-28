@@ -2275,12 +2275,9 @@ END
 	if [ "$HAVE_QEMU" = "yes" ]; then
 		./run_qemu.sh
 		runtests=$((runtests+1))
-	elif [ "$mode" = "root" ]; then
-		./run_null.sh SUDO
-		runtests=$((runtests+1))
 	else
-		./run_null.sh
-		runtests=$((runtests+1))
+		echo "HAVE_QEMU != yes -- Skipping test..." >&2
+		skipped=$((skipped+1))
 	fi
 done
 
@@ -2765,12 +2762,9 @@ END
 	if [ "$HAVE_QEMU" = "yes" ]; then
 		./run_qemu.sh
 		runtests=$((runtests+1))
-	elif [ "$mode" = "root" ]; then
-		./run_null.sh SUDO
-		runtests=$((runtests+1))
 	else
-		./run_null.sh
-		runtests=$((runtests+1))
+		echo "HAVE_QEMU != yes -- Skipping test..." >&2
+		skipped=$((skipped+1))
 	fi
 done
 
