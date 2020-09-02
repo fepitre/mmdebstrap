@@ -1289,8 +1289,14 @@ sub run_setup() {
 
     my $dpkgversion;
     {
-        open my $fh, '-|', 'dpkg', '--robot',
-          '--version' // error "failed to fork(): $!";
+        my $pid = open my $fh, '-|' // error "failed to fork(): $!";
+        if ($pid == 0) {
+            # redirect stderr to /dev/null to hide error messages from dpkg
+            # versions before 1.20.0
+            open(STDERR, '>', '/dev/null')
+              or error "cannot open /dev/null for writing: $!";
+            exec 'dpkg', '--robot', '--version';
+        }
         chomp(
             $dpkgversion = do { local $/; <$fh> }
         );
