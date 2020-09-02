@@ -6196,7 +6196,7 @@ B<mmdebstrap> treats any warning from "apt-get update" as an error. Fixing
 this will require apt to provide a machine readable status interface. See
 Debian bugs #778357, #776152, #696335, and #745735.
 
-Using --variant=standard is broken since August 03 3030 until python becomes
+Using --variant=standard is broken since August 03 2020 until python becomes
 installable again. See Debian bug #968217.
 
 =head1 SEE ALSO
