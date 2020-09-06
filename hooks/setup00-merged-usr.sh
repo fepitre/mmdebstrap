@@ -16,6 +16,7 @@ if [ -e /usr/share/debootstrap/functions ]; then
 	MERGED_USR="yes"
 	setup_merged_usr
 else
+	link_dir=""
 	case $ARCH in
 	    hurd-*) exit 0;;
 	    amd64) link_dir="lib32 lib64 libx32" ;;
