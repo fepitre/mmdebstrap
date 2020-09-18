@@ -1,4 +1,9 @@
-0.7.0
+0.7.1 (2020-09-18)
+------------------
+
+ - bugfix release
+
+0.7.0 (2020-08-27)
 -----------------
 
  - the hook system (setup, extract, essential, customize and hook-dir) is made
