@@ -3953,6 +3953,20 @@ sub main() {
         error "invalid format. Choose from " . (join ', ', @valid_formats);
     }
 
+    foreach my $tool ('dpkg', 'dpkg-deb', 'apt-get', 'apt-cache', 'apt-config',
+        'tar') {
+        my $found = 0;
+        foreach my $path (split /:/, $ENV{PATH}) {
+            if (-f "$path/$tool" && -x _ ) {
+                $found = 1;
+                last;
+            }
+        }
+        if (!$found) {
+            error "cannot find $tool";
+        }
+    }
+
     my $check_fakechroot_running = sub {
         # test if we are inside fakechroot already
         # We fork a child process because setting FAKECHROOT_DETECT seems to
