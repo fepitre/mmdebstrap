@@ -4611,8 +4611,11 @@ sub main() {
             $format = 'ext2';
             # check if the installed version of genext2fs supports tarballs on
             # stdin
-            (undef, my $filename)
-              = tempfile("mmdebstrap.ext2.XXXXXXXXXXXX", OPEN => 0);
+            (undef, my $filename) = tempfile(
+                "mmdebstrap.ext2.XXXXXXXXXXXX",
+                OPEN   => 0,
+                TMPDIR => 1
+            );
             open my $fh, '|-', 'genext2fs', '-B', '1024', '-b', '8', '-N',
               '11', '-a', '-', $filename // error "failed to fork(): $!";
             # write 10240 null-bytes to genext2fs -- this represents an empty
