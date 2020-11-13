@@ -20,7 +20,7 @@ fi
 
 perlcritic --severity 4 --verbose 8 mmdebstrap
 
-black --check taridshift tarfilter
+black --check taridshift tarfilter proxysolver
 
 mirrordir="./shared/cache/debian"
 
@@ -74,6 +74,9 @@ fi
 if [ ! -e shared/tarfilter ] || [ tarfilter -nt shared/tarfilter ]; then
 	cp -a tarfilter shared
 fi
+if [ ! -e shared/proxysolver ] || [ proxysolver -nt shared/proxysolver ]; then
+	cp -a proxysolver shared
+fi
 mkdir -p shared/hooks
 if [ ! -e shared/hooks/setup00-merged-usr.sh ] || [ hooks/setup00-merged-usr.sh -nt shared/hooks/setup00-merged-usr.sh ]; then
 	cp -a hooks/setup00-merged-usr.sh shared/hooks/setup00-merged-usr.sh
@@ -87,7 +90,7 @@ if [ ! -e shared/hooks/eatmydata/customize.sh ] || [ hooks/eatmydata/customize.s
 fi
 
 starttime=
-total=151
+total=157
 skipped=0
 runtests=0
 i=1
@@ -2444,6 +2447,68 @@ else
 	./run_null.sh
 	runtests=$((runtests+1))
 fi
+
+# test that the user can drop archives into /var/cache/apt/archives as well as
+# into /var/cache/apt/archives/partial
+for variant in extract custom essential apt minbase buildd important standard; do
+	case "$variant" in
+		custom)
+			# we cannot try try it in other variants than
+			# chrootless unless we pass a package list including
+			# dpkg and friends
+			continue
+			;;
+		standard)
+			# python is priority:standard but uninstallable since
+			# August 03 2020, see Debian bug #968217
+			continue
+			;;
+	esac
+	print_header "mode=$defaultmode,variant=$variant: compare output with pre-seeded /var/cache/apt/archives"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+export SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH
+$CMD --include=doc-debian --mode=$defaultmode --variant=$variant \
+	--setup-hook='mkdir -p "\$1"/var/cache/apt/archives/partial' \
+	--setup-hook='touch "\$1"/var/cache/apt/archives/lock' \
+	--setup-hook='chmod 0640 "\$1"/var/cache/apt/archives/lock' \
+	$DEFAULT_DIST - $mirror > orig.tar
+# somehow, when trying to create a tarball from the 9p mount, tar throws the
+# following error: tar: ./doc-debian_6.4_all.deb: File shrank by 132942 bytes; padding with zeros
+# to reproduce, try: tar --directory /mnt/cache/debian/pool/main/d/doc-debian/ --create --file - . | tar --directory /tmp/ --extract --file -
+# this will be different:
+# md5sum /mnt/cache/debian/pool/main/d/doc-debian/*.deb /tmp/*.deb
+# another reason to copy the files into a new directory is, that we can use shell globs
+tmpdir=\$(mktemp -d)
+cp /mnt/cache/debian/pool/main/b/busybox/busybox_*"_$HOSTARCH.deb" /mnt/cache/debian/pool/main/a/apt/apt_*"_$HOSTARCH.deb" "\$tmpdir"
+$CMD --include=doc-debian --mode=$defaultmode --variant=$variant \
+	--setup-hook='mkdir -p "\$1"/var/cache/apt/archives/partial' \
+	--setup-hook='sync-in "'"\$tmpdir"'" /var/cache/apt/archives/partial' \
+	$DEFAULT_DIST - $mirror > test1.tar
+cmp orig.tar test1.tar
+$CMD --include=doc-debian --mode=$defaultmode --variant=$variant --skip=download/empty \
+	--customize-hook='touch "\$1"/var/cache/apt/archives/partial' \
+	--setup-hook='mkdir -p "\$1"/var/cache/apt/archives/' \
+	--setup-hook='sync-in "'"\$tmpdir"'" /var/cache/apt/archives/' \
+	--setup-hook='chmod 0755 "\$1"/var/cache/apt/archives/' \
+	$DEFAULT_DIST - $mirror > test2.tar
+cmp orig.tar test2.tar
+rm "\$tmpdir"/*.deb
+rmdir "\$tmpdir"
+END
+	if [ "$HAVE_QEMU" = "yes" ]; then
+		./run_qemu.sh
+		runtests=$((runtests+1))
+	elif [ "$defaultmode" = "root" ]; then
+		./run_null.sh SUDO
+		runtests=$((runtests+1))
+	else
+		./run_null.sh
+		runtests=$((runtests+1))
+	fi
+done
 
 print_header "mode=$defaultmode,variant=apt: create directory --dry-run"
 cat << END > shared/test.sh

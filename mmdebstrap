@@ -33,7 +33,7 @@ use File::Path qw(make_path remove_tree);
 use File::Temp qw(tempfile tempdir);
 use File::Basename;
 use File::Find;
-use Cwd qw(abs_path);
+use Cwd qw(abs_path getcwd);
 require "syscall.ph";    ## no critic (Modules::RequireBarewordIncludes)
 use Fcntl qw(S_IFCHR S_IFBLK FD_CLOEXEC F_GETFD F_SETFD);
 use List::Util qw(any none);
@@ -781,11 +781,34 @@ sub run_dpkg_progress {
 }
 
 sub run_apt_progress {
-    my $options  = shift;
-    my @debs     = @{ $options->{PKGS} // [] };
+    my $options = shift;
+    my @debs    = @{ $options->{PKGS} // [] };
+    my $tmpedsp;
+    if (exists $options->{EDSP_RES}) {
+        (undef, $tmpedsp) = tempfile(
+            "mmdebstrap.edsp.XXXXXXXXXXXX",
+            OPEN   => 0,
+            TMPDIR => 1
+        );
+    }
     my $get_exec = sub {
+        my @prefix     = ();
+        my @opts       = ();
+        my $solverpath = "/usr/lib/mmdebstrap/solvers";
+        if (-e "./proxysolver") {
+            # for development purposes, use the current directory if it
+            # contains a file called proxysolver
+            $solverpath = getcwd();
+        }
+        if (exists $options->{EDSP_RES}) {
+            push @prefix, 'env', "APT_EDSP_DUMP_FILENAME=$tmpedsp";
+            push @opts, "-oDir::Bin::solvers=$solverpath",
+              '--solver=proxysolver';
+        }
         return (
+            @prefix,
             @{ $options->{ARGV} },
+            @opts,
             "-oAPT::Status-Fd=$_[0]",
             # prevent apt from messing up the terminal and allow dpkg to
             # receive SIGINT and quit immediately without waiting for
@@ -820,6 +843,35 @@ sub run_apt_progress {
         }
     };
     run_progress $get_exec, $line_handler, $line_has_error, $options->{CHDIR};
+    if (exists $options->{EDSP_RES}) {
+        info "parsing EDSP results...";
+        open my $fh, '<', $tmpedsp
+          or error "failed to open $tmpedsp for reading: $!";
+        my $inst = 0;
+        my $pkg;
+        my $ver;
+        while (my $line = <$fh>) {
+            chomp $line;
+            if ($line ne "") {
+                if ($line =~ /^Install: \d+/) {
+                    $inst = 1;
+                } elsif ($line =~ /^Package: (.*)/) {
+                    $pkg = $1;
+                } elsif ($line =~ /^Version: (.*)/) {
+                    $ver = $1;
+                }
+                next;
+            }
+            if ($inst == 1 && defined $pkg && defined $ver) {
+                push @{ $options->{EDSP_RES} }, [$pkg, $ver];
+            }
+            $inst = 0;
+            undef $pkg;
+            undef $ver;
+        }
+        close $fh;
+        unlink $tmpedsp;
+    }
     return;
 }
 
@@ -1250,7 +1302,8 @@ sub setup {
 
     run_update($options);
 
-    (my $pkgs_to_install, my $essential_pkgs) = run_download($options);
+    (my $pkgs_to_install, my $essential_pkgs, my $cached_debs)
+      = run_download($options);
 
     if (   $options->{mode} ne 'chrootless'
         or $options->{variant} eq 'extract') {
@@ -1270,7 +1323,7 @@ sub setup {
             $chrootcmd = run_prepare($options);
         }
 
-        run_essential($options, $essential_pkgs, $chrootcmd);
+        run_essential($options, $essential_pkgs, $chrootcmd, $cached_debs);
 
         run_hooks('essential', $options);
 
@@ -1685,6 +1738,10 @@ sub run_setup() {
         ## no critic (Variables::RequireLocalizedPunctuationVars)
         $ENV{"APT_CONFIG"} = "$tmpfile";
     }
+    # we have to make the config file world readable so that a possible
+    # /usr/lib/apt/solvers/apt process which is run by the _apt user is also
+    # able to read it
+    chmod 0666, "$tmpfile" or error "cannot chmod $tmpfile: $!";
     if ($verbosity_level >= 3) {
         0 == system('apt-get', '--version')
           or error "apt-get --version failed: $?";
@@ -1787,6 +1844,44 @@ sub run_download() {
     if ($options->{variant} eq 'buildd') {
         push @pkgs_to_install, 'build-essential';
     }
+
+    # We use /var/cache/apt/archives/ to figure out which packages apt chooses
+    # to install. That's why the directory must be empty if:
+    #  - /var/cache/apt/archives exists, and
+    #  - no simulation run is done, and
+    #  - the variant is not extract or custom or the number to be
+    #    installed packages not zero
+    my @cached_debs = ();
+    my @dl_debs     = ();
+    if (
+        !$options->{dryrun}
+        && ((none { $_ eq $options->{variant} } ('extract', 'custom'))
+            || scalar @pkgs_to_install != 0)
+        && -d "$options->{root}/var/cache/apt/archives/"
+    ) {
+        my $apt_archives = "/var/cache/apt/archives/";
+        opendir my $dh, "$options->{root}/$apt_archives"
+          or error "cannot read $apt_archives";
+        while (my $deb = readdir $dh) {
+            if ($deb !~ /\.deb$/) {
+                next;
+            }
+            if (!-f "$options->{root}/$apt_archives/$deb") {
+                next;
+            }
+            push @cached_debs, $deb;
+        }
+        closedir $dh;
+        if (scalar @cached_debs > 0) {
+            if (any { $_ eq 'download/empty' } @{ $options->{skip} }) {
+                info "skipping download/empty as requested";
+            } else {
+                error("/var/cache/apt/archives/ inside the chroot contains: "
+                      . (join ', ', (sort @cached_debs)));
+            }
+        }
+    }
+
     # To figure out the right package set for the apt variant we can use:
     #     $ apt-get dist-upgrade -o dir::state::status=/dev/null
     # This is because that variants only contain essential packages and
@@ -1799,9 +1894,15 @@ sub run_download() {
             return ([], []);
         }
 
+        my %result = ();
         if ($options->{dryrun}) {
             info "simulate downloading packages with apt...";
         } else {
+            # if there are already packages in /var/cache/apt/archives/, we
+            # need to use our proxysolver to obtain the solution chosen by apt
+            if (scalar @cached_debs > 0) {
+                $result{EDSP_RES} = \@dl_debs;
+            }
             info "downloading packages with apt...";
         }
         run_apt_progress({
@@ -1813,6 +1914,7 @@ sub run_download() {
                     'install'
                 ],
                 PKGS => [@pkgs_to_install],
+                %result
             });
     } elsif ($options->{variant} eq 'apt') {
         # if we just want to install Essential:yes packages, apt and their
@@ -1828,9 +1930,15 @@ sub run_download() {
         #                  remind me in 5+ years that I said that after I wrote
         #                  in the bugreport: "Are you crazy?!? Nobody in his
         #                  right mind would even suggest depending on it!")
+        my %result = ();
         if ($options->{dryrun}) {
             info "simulate downloading packages with apt...";
         } else {
+            # if there are already packages in /var/cache/apt/archives/, we
+            # need to use our proxysolver to obtain the solution chosen by apt
+            if (scalar @cached_debs > 0) {
+                $result{EDSP_RES} = \@dl_debs;
+            }
             info "downloading packages with apt...";
         }
         run_apt_progress({
@@ -1841,6 +1949,7 @@ sub run_download() {
                     $options->{dryrun} ? '-oAPT::Get::Simulate=true' : (),
                     'dist-upgrade'
                 ],
+                %result
             });
     } elsif (
         any { $_ eq $options->{variant} } (
@@ -1941,9 +2050,15 @@ sub run_download() {
             debug "   $pkg";
         }
 
+        my %result = ();
         if ($options->{dryrun}) {
             info "simulate downloading packages with apt...";
         } else {
+            # if there are already packages in /var/cache/apt/archives/, we
+            # need to use our proxysolver to obtain the solution chosen by apt
+            if (scalar @cached_debs > 0) {
+                $result{EDSP_RES} = \@dl_debs;
+            }
             info "downloading packages with apt...";
         }
         run_apt_progress({
@@ -1955,45 +2070,78 @@ sub run_download() {
                     'install'
                 ],
                 PKGS => [keys %ess_pkgs],
+                %result
             });
     } else {
         error "unknown variant: $options->{variant}";
     }
 
-    # collect the .deb files that were downloaded by apt
     my @essential_pkgs;
-    if (!$options->{dryrun}) {
-        my $apt_archives = "/var/cache/apt/archives/";
-        opendir my $dh, "$options->{root}/$apt_archives"
-          or error "cannot read $apt_archives";
-        while (my $deb = readdir $dh) {
-            if ($deb !~ /\.deb$/) {
-                next;
+    if (scalar @cached_debs > 0 && scalar @dl_debs > 0) {
+        my $archives = "/var/cache/apt/archives/";
+        # for each package in @dl_debs, check if it's in
+        # /var/cache/apt/archives/ and add it to @essential_pkgs
+        foreach my $p (@dl_debs) {
+            my ($pkg, $ver_epoch) = @{$p};
+            # apt appends the architecture at the end of the package name
+            ($pkg, my $arch) = split ':', $pkg, 2;
+            # apt replaces the colon by its percent encoding %3a
+            my $ver = $ver_epoch;
+            $ver =~ s/:/%3a/;
+            # the architecture returned by apt is the native architecture.
+            # Since we don't know whether the package is architecture
+            # independent or not, we first try with the native arch and then
+            # with "all" and only error out if neither exists.
+            if (-e "$options->{root}/$archives/${pkg}_${ver}_$arch.deb") {
+                push @essential_pkgs, "$archives/${pkg}_${ver}_$arch.deb";
+            } elsif (-e "$options->{root}/$archives/${pkg}_${ver}_all.deb") {
+                push @essential_pkgs, "$archives/${pkg}_${ver}_all.deb";
+            } else {
+                error(  "cannot find package for $pkg:$arch (= $ver_epoch) "
+                      . "in /var/cache/apt/archives/");
             }
-            $deb = "$apt_archives/$deb";
-            if (!-f "$options->{root}/$deb") {
-                next;
-            }
-            push @essential_pkgs, $deb;
         }
-        closedir $dh;
-
-        if (scalar @essential_pkgs == 0) {
-            # check if a file:// URI was used
-            open(my $pipe_apt, '-|', 'apt-get', 'indextargets', '--format',
-                '$(URI)', 'Created-By: Packages')
-              or error "cannot start apt-get indextargets: $!";
-            while (my $uri = <$pipe_apt>) {
-                if ($uri =~ /^file:\/\//) {
-                    error "nothing got downloaded -- use copy:// instead of"
-                      . " file://";
+    } else {
+        # collect the .deb files that were downloaded by apt from the content
+        # of /var/cache/apt/archives/
+        if (!$options->{dryrun}) {
+            my $apt_archives = "/var/cache/apt/archives/";
+            opendir my $dh, "$options->{root}/$apt_archives"
+              or error "cannot read $apt_archives";
+            while (my $deb = readdir $dh) {
+                if ($deb !~ /\.deb$/) {
+                    next;
                 }
+                $deb = "$apt_archives/$deb";
+                if (!-f "$options->{root}/$deb") {
+                    next;
+                }
+                push @essential_pkgs, $deb;
             }
-            error "nothing got downloaded";
+            closedir $dh;
+
+            if (scalar @essential_pkgs == 0) {
+                # check if a file:// URI was used
+                open(my $pipe_apt, '-|', 'apt-get', 'indextargets', '--format',
+                    '$(URI)', 'Created-By: Packages')
+                  or error "cannot start apt-get indextargets: $!";
+                while (my $uri = <$pipe_apt>) {
+                    if ($uri =~ /^file:\/\//) {
+                        error
+                          "nothing got downloaded -- use copy:// instead of"
+                          . " file://";
+                    }
+                }
+                error "nothing got downloaded";
+            }
         }
     }
+    # Unpack order matters. Since we create this list using two different
+    # methods but we want both methods to have the same result, we sort the
+    # list before returning it.
+    @essential_pkgs = sort @essential_pkgs;
 
-    return (\@pkgs_to_install, \@essential_pkgs);
+    return (\@pkgs_to_install, \@essential_pkgs, \@cached_debs);
 }
 
 sub run_extract() {
@@ -2316,6 +2464,7 @@ sub run_essential() {
     my $options        = shift;
     my $essential_pkgs = shift;
     my $chrootcmd      = shift;
+    my $cached_debs    = shift;
 
     if (scalar @{$essential_pkgs} == 0) {
         info "no essential packages -- skipping...";
@@ -2385,9 +2534,17 @@ sub run_essential() {
         error "unknown mode: $options->{mode}";
     }
 
-    foreach my $deb (@{$essential_pkgs}) {
-        unlink "$options->{root}/$deb"
-          or error "cannot unlink $deb: $!";
+    if (any { $_ eq 'essential/unlink' } @{ $options->{skip} }) {
+        info "skipping essential/unlink as requested";
+    } else {
+        foreach my $deb (@{$essential_pkgs}) {
+            # do not unlink those packages that were in /var/cache/apt/archive
+            # before the download phase
+            next
+              if any { "/var/cache/apt/archives/$_" eq $deb } @{$cached_debs};
+            unlink "$options->{root}/$deb"
+              or error "cannot unlink $deb: $!";
+        }
     }
 
     return;
@@ -2468,10 +2625,34 @@ sub run_install() {
             $? == 0 or error "apt-get indextargets failed";
 
             if (scalar @pkgs_to_install_from_outside > 0) {
+                my @cached_debs = ();
+                my @dl_debs     = ();
+                # /var/cache/apt/archives/ might not be empty either because
+                # the user used hooks to populate it or because skip options
+                # like essential/unlink or check/empty were used.
+                {
+                    my $apt_archives = "/var/cache/apt/archives/";
+                    opendir my $dh, "$options->{root}/$apt_archives"
+                      or error "cannot read $apt_archives";
+                    while (my $deb = readdir $dh) {
+                        if ($deb !~ /\.deb$/) {
+                            next;
+                        }
+                        if (!-f "$options->{root}/$apt_archives/$deb") {
+                            next;
+                        }
+                        push @cached_debs, $deb;
+                    }
+                    closedir $dh;
+                }
+                my %result = ();
                 if ($options->{dryrun}) {
                     info 'simulate downloading '
                       . (join ', ', @pkgs_to_install_from_outside) . "...";
                 } else {
+                    if (scalar @cached_debs > 0) {
+                        $result{EDSP_RES} = \@dl_debs;
+                    }
                     info 'downloading '
                       . (join ', ', @pkgs_to_install_from_outside) . "...";
                 }
@@ -2486,26 +2667,60 @@ sub run_install() {
                             'install'
                         ],
                         PKGS => [@pkgs_to_install_from_outside],
+                        %result
                     });
                 if ($options->{dryrun}) {
                     info 'simulate installing '
                       . (join ', ', @pkgs_to_install_from_outside) . "...";
                 } else {
                     my @debs_to_install;
-                    my $apt_archives = "/var/cache/apt/archives/";
-                    opendir my $dh, "$options->{root}/$apt_archives"
-                      or error "cannot read $apt_archives";
-                    while (my $deb = readdir $dh) {
-                        if ($deb !~ /\.deb$/) {
-                            next;
+                    if (scalar @cached_debs > 0 && scalar @dl_debs > 0) {
+                        my $archives = "/var/cache/apt/archives/";
+                        my $prefix   = "$options->{root}/$archives";
+                        # for each package in @dl_debs, check if it's in
+                        # /var/cache/apt/archives/ and add it to
+                        # @debs_to_install
+                        foreach my $p (@dl_debs) {
+                            my ($pkg, $ver_epoch) = @{$p};
+                            # apt appends the architecture at the end of the
+                            # package name
+                            ($pkg, my $arch) = split ':', $pkg, 2;
+                            # apt replaces the colon by its percent encoding
+                            my $ver = $ver_epoch;
+                            $ver =~ s/:/%3a/;
+                            # the architecture returned by apt is the native
+                            # architecture. Since we don't know whether the
+                            # package is architecture independent or not, we
+                            # first try with the native arch and then
+                            # with "all" and only error out if neither exists.
+                            if (-e "$prefix/${pkg}_${ver}_$arch.deb") {
+                                push @debs_to_install,
+                                  "$archives/${pkg}_${ver}_$arch.deb";
+                            } elsif (-e "$prefix/${pkg}_${ver}_all.deb") {
+                                push @debs_to_install,
+                                  "$archives/${pkg}_${ver}_all.deb";
+                            } else {
+                                error(  "cannot find package for "
+                                      . "$pkg:$arch (= $ver_epoch) "
+                                      . "in /var/cache/apt/archives/");
+                            }
                         }
-                        $deb = "$apt_archives/$deb";
-                        if (!-f "$options->{root}/$deb") {
-                            next;
+                    } else {
+                        my $apt_archives = "/var/cache/apt/archives/";
+                        opendir my $dh, "$options->{root}/$apt_archives"
+                          or error "cannot read $apt_archives";
+                        while (my $deb = readdir $dh) {
+                            if ($deb !~ /\.deb$/) {
+                                next;
+                            }
+                            $deb = "$apt_archives/$deb";
+                            if (!-f "$options->{root}/$deb") {
+                                next;
+                            }
+                            push @debs_to_install, $deb;
                         }
-                        push @debs_to_install, $deb;
+                        closedir $dh;
                     }
-                    closedir $dh;
                     if (scalar @debs_to_install == 0) {
                         warning "nothing got downloaded -- maybe the packages"
                           . " were already installed?";
@@ -2524,6 +2739,11 @@ sub run_install() {
                                 PKGS => \@debs_to_install,
                             });
                         foreach my $deb (@debs_to_install) {
+                            # do not unlink those packages that were in
+                            # /var/cache/apt/archive before the install phase
+                            next
+                              if any { "/var/cache/apt/archives/$_" eq $deb }
+                            @cached_debs;
                             unlink "$options->{root}/$deb"
                               or error "cannot unlink $deb: $!";
                         }
