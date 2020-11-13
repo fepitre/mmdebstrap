@@ -3068,9 +3068,12 @@ sub hookhelper {
                     # open a tar process that extracts the tarfile that we
                     # supply it with on stdin to the output directory inside
                     # the chroot
-                    open $fh, '|-', @cmdprefix, @tarcmd, '--xattrs-include=*',
-                      '--directory', $directory, '--extract', '--file',
-                      '-' // error "failed to fork(): $!";
+                    my @cmd = (
+                        @cmdprefix, @tarcmd, '--xattrs-include=*',
+                        '--directory', $directory, '--extract', '--file', '-'
+                    );
+                    debug("helper: running " . (join " ", @cmd));
+                    open($fh, '|-', @cmd) // error "failed to fork(): $!";
                 } else {
                     error "unknown command: $command";
                 }
@@ -3078,26 +3081,26 @@ sub hookhelper {
                 if ($command eq 'copy-in') {
                     # instruct the parent process to create a tarball of the
                     # requested path outside the chroot
-                    debug "sending mktar";
+                    debug "helper: sending mktar";
                     print STDOUT (
                         pack("n", length $ARGV[$i]) . "mktar" . $ARGV[$i]);
                 } elsif ($command eq 'sync-in') {
                     # instruct the parent process to create a tarball of the
                     # content of the requested path outside the chroot
-                    debug "sending mktac";
+                    debug "helper: sending mktac";
                     print STDOUT (
                         pack("n", length $ARGV[$i]) . "mktac" . $ARGV[$i]);
                 } elsif (any { $_ eq $command } ('upload', 'tar-in')) {
                     # instruct parent process to open a tarball of the
                     # requested path outside the chroot for reading
-                    debug "sending openr";
+                    debug "helper: sending openr";
                     print STDOUT (
                         pack("n", length $ARGV[$i]) . "openr" . $ARGV[$i]);
                 } else {
                     error "unknown command: $command";
                 }
                 STDOUT->flush();
-                debug "waiting for okthx";
+                debug "helper: waiting for okthx";
                 checkokthx \*STDIN;
 
                 # handle "write" messages from the parent process and feed
@@ -3111,13 +3114,13 @@ sub hookhelper {
                         error "received eof on socket";
                     }
                     my ($len, $msg) = unpack("nA5", $buf);
-                    debug "received message: $msg";
+                    debug "helper: received message: $msg";
                     if ($msg eq "close") {
                         # finish the loop
                         if ($len != 0) {
                             error "expected no payload but got $len bytes";
                         }
-                        debug "sending okthx";
+                        debug "helper: sending okthx";
                         print STDOUT (pack("n", 0) . "okthx")
                           or error "cannot write to socket: $!";
                         STDOUT->flush();
@@ -3137,7 +3140,7 @@ sub hookhelper {
                     # write the payload to the tar process
                     print $fh $content
                       or error "cannot write to tar process: $!";
-                    debug "sending okthx";
+                    debug "helper: sending okthx";
                     print STDOUT (pack("n", 0) . "okthx")
                       or error "cannot write to socket: $!";
                     STDOUT->flush();
@@ -3206,17 +3209,23 @@ sub hookhelper {
                     # Open a tar process that creates a tarfile of everything
                     # inside the requested directory inside the chroot and
                     # writes it to stdout.
-                    open $fh, '-|', @cmdprefix, @tarcmd, '--directory',
-                      $directory, '--create', '--file', '-',
-                      '.' // error "failed to fork(): $!";
+                    my @cmd = (
+                        @cmdprefix, @tarcmd, '--directory',
+                        $directory, '--create', '--file', '-', '.'
+                    );
+                    debug("helper: running " . (join " ", @cmd));
+                    open($fh, '-|', @cmd) // error "failed to fork(): $!";
                 } elsif (any { $_ eq $command } ('copy-out', 'tar-out')) {
                     # Open a tar process that creates a tarfile of the
                     # requested directory inside the chroot and writes it to
                     # stdout. To emulate the behaviour of cp, change to the
                     # dirname of the requested path first.
-                    open $fh, '-|', @cmdprefix, @tarcmd, '--directory',
-                      dirname($directory), '--create', '--file', '-',
-                      basename($directory) // error "failed to fork(): $!";
+                    my @cmd = (
+                        @cmdprefix, @tarcmd, '--directory',
+                        dirname($directory), '--create', '--file', '-',
+                        basename($directory));
+                    debug("helper: running " . (join " ", @cmd));
+                    open($fh, '-|', @cmd) // error "failed to fork(): $!";
                 } else {
                     error "unknown command: $command";
                 }
@@ -3224,20 +3233,20 @@ sub hookhelper {
                 if (any { $_ eq $command } ('copy-out', 'sync-out')) {
                     # instruct the parent process to extract a tarball to a
                     # certain path outside the chroot
-                    debug "sending untar";
+                    debug "helper: sending untar";
                     print STDOUT (
                         pack("n", length $outpath) . "untar" . $outpath);
                 } elsif (any { $_ eq $command } ('download', 'tar-out')) {
                     # instruct parent process to open a tarball of the
                     # requested path outside the chroot for writing
-                    debug "sending openw";
+                    debug "helper: sending openw";
                     print STDOUT (
                         pack("n", length $outpath) . "openw" . $outpath);
                 } else {
                     error "unknown command: $command";
                 }
                 STDOUT->flush();
-                debug "waiting for okthx";
+                debug "helper: waiting for okthx";
                 checkokthx \*STDIN;
 
                 # read from the tar process and send as payload to the parent
@@ -3247,20 +3256,20 @@ sub hookhelper {
                     my $ret = read($fh, my $cont, 4096)
                       // error "cannot read from pipe: $!";
                     if ($ret == 0) { last; }
-                    debug "sending write";
+                    debug "helper: sending write";
                     # send to parent
                     print STDOUT pack("n", $ret) . "write" . $cont;
                     STDOUT->flush();
-                    debug "waiting for okthx";
+                    debug "helper: waiting for okthx";
                     checkokthx \*STDIN;
                     if ($ret < 4096) { last; }
                 }
 
                 # signal to the parent process that we are done
-                debug "sending close";
+                debug "helper: sending close";
                 print STDOUT pack("n", 0) . "close";
                 STDOUT->flush();
-                debug "waiting for okthx";
+                debug "helper: waiting for okthx";
                 checkokthx \*STDIN;
 
                 close $fh;
@@ -3291,17 +3300,17 @@ sub hooklistener {
             my $msg = "error";
             my $len = -1;
             {
-                debug "reading next command";
+                debug "listener: reading next command";
                 my $ret = read(STDIN, my $buf, 2 + 5)
                   // error "cannot read from socket: $!";
-                debug "finished reading command";
+                debug "listener: finished reading command";
                 if ($ret == 0) {
                     error "received eof on socket";
                 }
                 ($len, $msg) = unpack("nA5", $buf);
             }
             if ($msg eq "adios") {
-                debug "received message: adios";
+                debug "listener: received message: adios";
                 # setup finished, so we break out of the loop
                 if ($len != 0) {
                     error "expected no payload but got $len bytes";
@@ -3309,7 +3318,7 @@ sub hooklistener {
                 last;
             } elsif ($msg eq "openr") {
                 # handle the openr message
-                debug "received message: openr";
+                debug "listener: received message: openr";
                 my $infile;
                 {
                     my $ret = read(STDIN, $infile, $len)
@@ -3322,7 +3331,7 @@ sub hooklistener {
                 if (!-e $infile) {
                     error "$infile does not exist";
                 }
-                debug "sending okthx";
+                debug "listener: sending okthx";
                 print STDOUT (pack("n", 0) . "okthx")
                   or error "cannot write to socket: $!";
                 STDOUT->flush();
@@ -3336,25 +3345,25 @@ sub hooklistener {
                     my $ret = read($fh, my $cont, 4096)
                       // error "cannot read from pipe: $!";
                     if ($ret == 0) { last; }
-                    debug "sending write";
+                    debug "listener: sending write";
                     # send to child
                     print STDOUT pack("n", $ret) . "write" . $cont;
                     STDOUT->flush();
-                    debug "waiting for okthx";
+                    debug "listener: waiting for okthx";
                     checkokthx \*STDIN;
                     if ($ret < 4096) { last; }
                 }
 
                 # signal to the child process that we are done
-                debug "sending close";
+                debug "listener: sending close";
                 print STDOUT pack("n", 0) . "close";
                 STDOUT->flush();
-                debug "waiting for okthx";
+                debug "listener: waiting for okthx";
                 checkokthx \*STDIN;
 
                 close $fh;
             } elsif ($msg eq "openw") {
-                debug "received message: openw";
+                debug "listener: received message: openw";
                 # payload is the output directory
                 my $outfile;
                 {
@@ -3383,7 +3392,7 @@ sub hooklistener {
                         error "cannot create $outdir";
                     }
                 }
-                debug "sending okthx";
+                debug "listener: sending okthx";
                 print STDOUT (pack("n", 0) . "okthx")
                   or error "cannot write to socket: $!";
                 STDOUT->flush();
@@ -3404,13 +3413,13 @@ sub hooklistener {
                         error "received eof on socket";
                     }
                     my ($len, $msg) = unpack("nA5", $buf);
-                    debug "received message: $msg";
+                    debug "listener: received message: $msg";
                     if ($msg eq "close") {
                         # finish the loop
                         if ($len != 0) {
                             error "expected no payload but got $len bytes";
                         }
-                        debug "sending okthx";
+                        debug "listener: sending okthx";
                         print STDOUT (pack("n", 0) . "okthx")
                           or error "cannot write to socket: $!";
                         STDOUT->flush();
@@ -3431,7 +3440,7 @@ sub hooklistener {
                     # write the payload to the file handle
                     print $fh $content
                       or error "cannot write to file handle: $!";
-                    debug "sending okthx";
+                    debug "listener: sending okthx";
                     print STDOUT (pack("n", 0) . "okthx")
                       or error "cannot write to socket: $!";
                     STDOUT->flush();
@@ -3439,7 +3448,7 @@ sub hooklistener {
                 close $fh;
             } elsif (any { $_ eq $msg } ('mktar', 'mktac')) {
                 # handle the mktar message
-                debug "received message: $msg";
+                debug "listener: received message: $msg";
                 my $indir;
                 {
                     my $ret = read(STDIN, $indir, $len)
@@ -3452,7 +3461,7 @@ sub hooklistener {
                 if (!-e $indir) {
                     error "$indir does not exist";
                 }
-                debug "sending okthx";
+                debug "listener: sending okthx";
                 print STDOUT (pack("n", 0) . "okthx")
                   or error "cannot write to socket: $!";
                 STDOUT->flush();
@@ -3460,15 +3469,22 @@ sub hooklistener {
                 # Open a tar process creating a tarfile of the instructed
                 # path. To emulate the behaviour of cp, change to the
                 # dirname of the requested path first.
-                open my $fh, '-|', 'tar', '--numeric-owner', '--xattrs',
-                  '--format=pax',
-                  '--pax-option=exthdr.name=%d/PaxHeaders/%f,'
-                  . 'delete=atime,delete=ctime',
-                  '--directory',
-                  $msg eq 'mktar' ? dirname($indir) : $indir,
-                  '--create', '--file', '-',
-                  $msg eq 'mktar' ? basename($indir) : '.'
-                  // error "failed to fork(): $!";
+                my @cmd = (
+                    'tar',
+                    '--numeric-owner',
+                    '--xattrs',
+                    '--format=pax',
+                    '--pax-option=exthdr.name=%d/PaxHeaders/%f,'
+                      . 'delete=atime,delete=ctime',
+                    '--directory',
+                    $msg eq 'mktar' ? dirname($indir) : $indir,
+                    '--create',
+                    '--file',
+                    '-',
+                    $msg eq 'mktar' ? basename($indir) : '.'
+                );
+                debug("listener: running " . (join " ", @cmd));
+                open(my $fh, '-|', @cmd) // error "failed to fork(): $!";
 
                 # read from the tar process and send as payload to the child
                 # process
@@ -3477,20 +3493,20 @@ sub hooklistener {
                     my $ret = read($fh, my $cont, 4096)
                       // error "cannot read from pipe: $!";
                     if ($ret == 0) { last; }
-                    debug "sending write";
+                    debug "listener: sending write ($ret bytes)";
                     # send to child
                     print STDOUT pack("n", $ret) . "write" . $cont;
                     STDOUT->flush();
-                    debug "waiting for okthx";
+                    debug "listener: waiting for okthx";
                     checkokthx \*STDIN;
                     if ($ret < 4096) { last; }
                 }
 
                 # signal to the child process that we are done
-                debug "sending close";
+                debug "listener: sending close";
                 print STDOUT pack("n", 0) . "close";
                 STDOUT->flush();
-                debug "waiting for okthx";
+                debug "listener: waiting for okthx";
                 checkokthx \*STDIN;
 
                 close $fh;
@@ -3498,7 +3514,7 @@ sub hooklistener {
                     error "tar failed";
                 }
             } elsif ($msg eq "untar") {
-                debug "received message: untar";
+                debug "listener: received message: untar";
                 # payload is the output directory
                 my $outdir;
                 {
@@ -3526,7 +3542,7 @@ sub hooklistener {
                         error "cannot create $outdir";
                     }
                 }
-                debug "sending okthx";
+                debug "listener: sending okthx";
                 print STDOUT (pack("n", 0) . "okthx")
                   or error "cannot write to socket: $!";
                 STDOUT->flush();
@@ -3549,13 +3565,13 @@ sub hooklistener {
                         error "received eof on socket";
                     }
                     my ($len, $msg) = unpack("nA5", $buf);
-                    debug "received message: $msg";
+                    debug "listener: received message: $msg";
                     if ($msg eq "close") {
                         # finish the loop
                         if ($len != 0) {
                             error "expected no payload but got $len bytes";
                         }
-                        debug "sending okthx";
+                        debug "listener: sending okthx";
                         print STDOUT (pack("n", 0) . "okthx")
                           or error "cannot write to socket: $!";
                         STDOUT->flush();
@@ -3576,7 +3592,7 @@ sub hooklistener {
                     # write the payload to the tar process
                     print $fh $content
                       or error "cannot write to tar process: $!";
-                    debug "sending okthx";
+                    debug "listener: sending okthx";
                     print STDOUT (pack("n", 0) . "okthx")
                       or error "cannot write to socket: $!";
                     STDOUT->flush();
