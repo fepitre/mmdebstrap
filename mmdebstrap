@@ -3295,6 +3295,7 @@ sub hooklistener {
     # errors without goto labels or much code duplication: the error handler
     # has to send an "error" message to the other side
     eval {
+        $verbosity_level = $ARGV[1];
         while (1) {
             # get the next message
             my $msg = "error";
@@ -3955,7 +3956,7 @@ sub main() {
 
     # this is the counterpart to --hook-helper and will receive and carry
     # out its instructions
-    if (scalar @ARGV == 1 && $ARGV[0] eq "--hook-listener") {
+    if (scalar @ARGV == 2 && $ARGV[0] eq "--hook-listener") {
         hooklistener();
         exit 0;
     }
@@ -5316,7 +5317,7 @@ sub main() {
         if ($is_covering) {
             @prefix = ($EXECUTABLE_NAME, "-MDevel::Cover=-silent,-nogcov");
         }
-        exec @prefix, $PROGRAM_NAME, "--hook-listener";
+        exec @prefix, $PROGRAM_NAME, "--hook-listener", $verbosity_level;
     }
     waitpid($lpid, 0);
     if ($? != 0) {
