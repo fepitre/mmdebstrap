@@ -6116,7 +6116,7 @@ specifying the remaining four hook options individually for each file in the
 directory. If there are more than one script for a stage, then they are added
 alphabetically. This is useful in cases, where a user wants to run the same
 hooks frequently. For example, given a directory C<./hooks> with two scripts
-C<setup01-foo.sh> and C<setup01-bar.sh>, this call:
+C<setup01-foo.sh> and C<setup02-bar.sh>, this call:
 
     mmdebstrap --customize=./scriptA --hook-dir=./hooks --setup=./scriptB
 
