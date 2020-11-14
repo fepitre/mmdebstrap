@@ -1958,11 +1958,30 @@ sub run_download() {
         )
     ) {
         my %ess_pkgs;
-        open(my $pipe_apt, '-|', 'apt-get', 'indextargets', '--format',
-            '$(FILENAME)', 'Created-By: Packages')
-          or error "cannot start apt-get indextargets: $!";
-        while (my $fname = <$pipe_apt>) {
-            chomp $fname;
+        my %ess_pkgs_target;
+        my @pkgs_to_install_target;
+        my $num_indices = 0;
+        open(
+            my $pipe_apt,
+            '-|',
+            'apt-get',
+            'indextargets',
+            '--format',
+            ('$(CODENAME)' . "\t" . '$(SUITE)' . "\t" . '$(FILENAME)'),
+            'Created-By: Packages'
+        ) or error "cannot start apt-get indextargets: $!";
+        while (my $line = <$pipe_apt>) {
+            chomp $line;
+            $num_indices++;
+            my ($codename, $suite, $fname) = split /\t/, $line, 3;
+            my $suite_matches = 0;
+            if (
+                defined $options->{suite}
+                and
+                ($options->{suite} eq $codename or $options->{suite} eq $suite)
+            ) {
+                $suite_matches = 1;
+            }
             open(my $pipe_cat, '-|', '/usr/lib/apt/apt-helper', 'cat-file',
                 $fname)
               or error "cannot start apt-helper cat-file: $!";
@@ -1995,6 +2014,9 @@ sub run_download() {
                     # processing and we can handle it now
                     if ($ess eq 'yes') {
                         $ess_pkgs{$pkgname} = ();
+                        if ($suite_matches) {
+                            $ess_pkgs_target{$pkgname} = ();
+                        }
                     } elsif ($options->{variant} eq 'essential') {
                         # for this variant we are only interested in the
                         # essential packages
@@ -2013,6 +2035,9 @@ sub run_download() {
                                 ('important', 'required', 'buildd', 'minbase')
                             ) {
                                 push @pkgs_to_install, $pkgname;
+                                if ($suite_matches) {
+                                    push @pkgs_to_install_target, $pkgname;
+                                }
                             }
                         } elsif ($prio eq 'important') {
                             if (
@@ -2020,11 +2045,17 @@ sub run_download() {
                                 ('required', 'buildd', 'minbase')
                             ) {
                                 push @pkgs_to_install, $pkgname;
+                                if ($suite_matches) {
+                                    push @pkgs_to_install_target, $pkgname;
+                                }
                             }
                         } elsif ($prio eq 'required') {
                             # required packages are part of all sets except
                             # essential and apt
                             push @pkgs_to_install, $pkgname;
+                            if ($suite_matches) {
+                                push @pkgs_to_install_target, $pkgname;
+                            }
                         } else {
                             error "unknown priority: $prio";
                         }
@@ -2044,6 +2075,33 @@ sub run_download() {
         }
         close $pipe_apt;
         $? == 0 or error "apt-get indextargets failed: $?";
+
+        # comparing the size of both arrays is sufficient because items are
+        # either only added to one or to both
+        if (defined $options->{suite} and $num_indices > 1) {
+            if (scalar keys %ess_pkgs_target > 0
+                and keys %ess_pkgs != %ess_pkgs_target) {
+                info(   "multiple sources defined, using those matching "
+                      . "'$options->{suite}' to find essential packages");
+                %ess_pkgs = %ess_pkgs_target;
+            }
+            if (scalar @pkgs_to_install_target > 0
+                and @pkgs_to_install != @pkgs_to_install_target) {
+                if ($options->{variant} eq 'essential') {
+                    error "logic error";
+                } elsif (
+                    any { $_ eq $options->{variant} }
+                    ('standard', 'important', 'required', 'buildd', 'minbase')
+                ) {
+                    info(   "multiple sources defined -- using those matching "
+                          . "'$options->{suite}' to find packages for variant "
+                          . "'$options->{variant}'");
+                    @pkgs_to_install = @pkgs_to_install_target;
+                } else {
+                    error "unknown variant: $options->{variant}";
+                }
+            }
+        }
 
         debug "Identified the following Essential:yes packages:";
         foreach my $pkg (sort keys %ess_pkgs) {
@@ -4512,9 +4570,9 @@ sub main() {
     }
 
     {
-        my $suite;
+        $options->{suite} = undef;
         if (scalar @ARGV > 0) {
-            $suite = shift @ARGV;
+            $options->{suite} = shift @ARGV;
             if (scalar @ARGV > 0) {
                 $options->{target} = shift @ARGV;
             } else {
@@ -4527,7 +4585,7 @@ sub main() {
         }
 
         my $sourceslists = [];
-        if (!defined $suite) {
+        if (!defined $options->{suite}) {
             # If no suite was specified, then the whole sources.list has to
             # come from standard input
             info "Reading sources.list from standard input...";
@@ -4572,7 +4630,8 @@ sub main() {
             my $signedby        = '';
             my %suite_by_vendor = get_suite_by_vendor();
             {
-                my $keyring = get_keyring_by_suite($suite, \%suite_by_vendor);
+                my $keyring
+                  = get_keyring_by_suite($options->{suite}, \%suite_by_vendor);
                 if (!defined $keyring) {
                     last;
                 }
@@ -4724,7 +4783,11 @@ sub main() {
                               };
                         }
                     } elsif ($arg =~ /:\/\//) {
-                        my $content = "deb$signedby $arg $suite $compstr\n";
+                        my $content = join ' ',
+                          (
+                            "deb$signedby",
+                            $arg, $options->{suite}, "$compstr\n"
+                          );
                         # if last entry is of same type and without filename,
                         # then append
                         if (   scalar @{$sourceslists} > 0
@@ -4770,7 +4833,8 @@ sub main() {
                 }
             } else {
                 my $sourceslist
-                  = get_sourceslist_by_suite($suite, $options->{nativearch},
+                  = get_sourceslist_by_suite($options->{suite},
+                    $options->{nativearch},
                     $signedby, $compstr, \%suite_by_vendor);
                 push @{$sourceslists},
                   {
