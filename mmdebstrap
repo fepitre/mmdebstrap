@@ -6346,8 +6346,7 @@ If you don't want this behaviour, you can override it by manually specifying a
 mirror in various different ways:
 
     $ mmdebstrap stable stable-chroot.tar http://deb.debian.org/debian
-    $ mmdebstrap stable stable-chroot.tar \
-        "deb http://deb.debian.org/debian stable main"
+    $ mmdebstrap stable stable-chroot.tar "deb http://deb.debian.org/debian stable main"
     $ mmdebstrap stable stable-chroot.tar /path/to/sources.list
     $ mmdebstrap stable stable-chroot.tar - < /path/to/sources.list
 
@@ -6412,8 +6411,7 @@ Use as replacement for autopkgtest-build-qemu and vmdb2:
 
     $ mmdebstrap --variant=important --include=linux-image-amd64 \
         --customize-hook='chroot "$1" passwd --delete root' \
-        --customize-hook='chroot "$1" useradd --home-dir /home/user
-            --create-home user' \
+        --customize-hook='chroot "$1" useradd --home-dir /home/user --create-home user' \
         --customize-hook='chroot "$1" passwd --delete user' \
         --customize-hook='echo host > "$1/etc/hostname"' \
         --customize-hook='echo "127.0.0.1 localhost host" > "$1/etc/hosts"' \
