@@ -1825,7 +1825,7 @@ sub run_update() {
 sub run_download() {
     my $options = shift;
 
-    my @pkgs_to_install;
+    my %pkgs_to_install;
     for my $incl (@{ $options->{include} }) {
         for my $pkg (split /[,\s]+/, $incl) {
             # strip leading and trailing whitespace
@@ -1834,15 +1834,11 @@ sub run_download() {
             if ($pkg eq '') {
                 next;
             }
-            # do not append component if it's already in the list
-            if (any { $_ eq $pkg } @pkgs_to_install) {
-                next;
-            }
-            push @pkgs_to_install, $pkg;
+            $pkgs_to_install{$pkg} = ();
         }
     }
     if ($options->{variant} eq 'buildd') {
-        push @pkgs_to_install, 'build-essential';
+        $pkgs_to_install{'build-essential'} = ();
     }
 
     # We use /var/cache/apt/archives/ to figure out which packages apt chooses
@@ -1856,7 +1852,7 @@ sub run_download() {
     if (
         !$options->{dryrun}
         && ((none { $_ eq $options->{variant} } ('extract', 'custom'))
-            || scalar @pkgs_to_install != 0)
+            || scalar keys %pkgs_to_install != 0)
         && -d "$options->{root}/var/cache/apt/archives/"
     ) {
         my $apt_archives = "/var/cache/apt/archives/";
@@ -1889,7 +1885,7 @@ sub run_download() {
     # (essential variant) then we have to compute the package set ourselves.
     # Same if we want to install priority based variants.
     if (any { $_ eq $options->{variant} } ('extract', 'custom')) {
-        if (scalar @pkgs_to_install == 0) {
+        if (scalar keys %pkgs_to_install == 0) {
             info "nothing to download -- skipping...";
             return ([], []);
         }
@@ -1913,7 +1909,7 @@ sub run_download() {
                     $options->{dryrun} ? '-oAPT::Get::Simulate=true' : (),
                     'install'
                 ],
-                PKGS => [@pkgs_to_install],
+                PKGS => [keys %pkgs_to_install],
                 %result
             });
     } elsif ($options->{variant} eq 'apt') {
@@ -1959,7 +1955,7 @@ sub run_download() {
     ) {
         my %ess_pkgs;
         my %ess_pkgs_target;
-        my @pkgs_to_install_target;
+        my %pkgs_to_install_target;
         my $num_indices = 0;
         open(
             my $pipe_apt,
@@ -2034,9 +2030,9 @@ sub run_download() {
                                 none { $_ eq $options->{variant} }
                                 ('important', 'required', 'buildd', 'minbase')
                             ) {
-                                push @pkgs_to_install, $pkgname;
+                                $pkgs_to_install{$pkgname} = ();
                                 if ($suite_matches) {
-                                    push @pkgs_to_install_target, $pkgname;
+                                    $pkgs_to_install_target{$pkgname} = ();
                                 }
                             }
                         } elsif ($prio eq 'important') {
@@ -2044,17 +2040,17 @@ sub run_download() {
                                 none { $_ eq $options->{variant} }
                                 ('required', 'buildd', 'minbase')
                             ) {
-                                push @pkgs_to_install, $pkgname;
+                                $pkgs_to_install{$pkgname} = ();
                                 if ($suite_matches) {
-                                    push @pkgs_to_install_target, $pkgname;
+                                    $pkgs_to_install_target{$pkgname} = ();
                                 }
                             }
                         } elsif ($prio eq 'required') {
                             # required packages are part of all sets except
                             # essential and apt
-                            push @pkgs_to_install, $pkgname;
+                            $pkgs_to_install{$pkgname} = ();
                             if ($suite_matches) {
-                                push @pkgs_to_install_target, $pkgname;
+                                $pkgs_to_install_target{$pkgname} = ();
                             }
                         } else {
                             error "unknown priority: $prio";
@@ -2085,8 +2081,8 @@ sub run_download() {
                       . "'$options->{suite}' to find essential packages");
                 %ess_pkgs = %ess_pkgs_target;
             }
-            if (scalar @pkgs_to_install_target > 0
-                and @pkgs_to_install != @pkgs_to_install_target) {
+            if (scalar keys %pkgs_to_install_target > 0
+                and keys %pkgs_to_install != keys %pkgs_to_install_target) {
                 if ($options->{variant} eq 'essential') {
                     error "logic error";
                 } elsif (
@@ -2096,7 +2092,7 @@ sub run_download() {
                     info(   "multiple sources defined -- using those matching "
                           . "'$options->{suite}' to find packages for variant "
                           . "'$options->{variant}'");
-                    @pkgs_to_install = @pkgs_to_install_target;
+                    %pkgs_to_install = %pkgs_to_install_target;
                 } else {
                     error "unknown variant: $options->{variant}";
                 }
@@ -2199,7 +2195,7 @@ sub run_download() {
     # list before returning it.
     @essential_pkgs = sort @essential_pkgs;
 
-    return (\@pkgs_to_install, \@essential_pkgs, \@cached_debs);
+    return ([keys %pkgs_to_install], \@essential_pkgs, \@cached_debs);
 }
 
 sub run_extract() {
