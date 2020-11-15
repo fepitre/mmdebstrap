@@ -3931,14 +3931,59 @@ sub get_sourceslist_by_suite {
     } elsif (any { $_ eq $suite } @debstable
         and none { $_ eq $suite } ('testing', 'unstable', 'sid')) {
         $sourceslist .= "deb$signedby $mirror $suite-updates $compstr\n";
-        if (any { $_ eq $suite } ('bullseye')) {
-            # starting from bullseye use
-            # https://lists.debian.org/87r26wqr2a.fsf@43-1.org
-            $sourceslist
-              .= "deb$signedby $secmirror $suite-security" . " $compstr\n";
+        # the security mirror changes, starting with bullseye
+        # https://lists.debian.org/87r26wqr2a.fsf@43-1.org
+        my $distro_info = '/usr/share/distro-info/debian.csv';
+        if (-f $distro_info) {
+            open my $fh, '<', $distro_info
+              or error "cannot open $distro_info: $!";
+            my $i = 0;
+            my $matching_version;
+            while (my $line = <$fh>) {
+                chomp($line);
+                $i++;
+                my @cells = split /,/, $line;
+                if (scalar @cells < 4) {
+                    error "cannot parse line $i of $distro_info";
+                }
+                if (
+                    $i == 1
+                    and (  scalar @cells < 6
+                        or $cells[0] ne 'version'
+                        or $cells[1] ne 'codename'
+                        or $cells[2] ne 'series'
+                        or $cells[3] ne 'created'
+                        or $cells[4] ne 'release'
+                        or $cells[5] ne 'eol')
+                ) {
+                    error "cannot find correct header in $distro_info";
+                }
+                if ($i == 1) {
+                    next;
+                }
+                if (lc $cells[1] eq $suite or lc $cells[2] eq $suite) {
+                    $matching_version = $cells[0];
+                    last;
+                }
+            }
+            close $fh;
+            if ($matching_version >= 11) {
+                # starting from bullseye use
+                $sourceslist
+                  .= "deb$signedby $secmirror $suite-security" . " $compstr\n";
+            } else {
+                $sourceslist
+                  .= "deb$signedby $secmirror $suite/updates" . " $compstr\n";
+            }
         } else {
-            $sourceslist
-              .= "deb$signedby $secmirror $suite/updates" . " $compstr\n";
+            if (any { $_ eq $suite } ('bullseye', 'bookworm')) {
+                # starting from bullseye use
+                $sourceslist
+                  .= "deb$signedby $secmirror $suite-security" . " $compstr\n";
+            } else {
+                $sourceslist
+                  .= "deb$signedby $secmirror $suite/updates" . " $compstr\n";
+            }
         }
     }
     return $sourceslist;
