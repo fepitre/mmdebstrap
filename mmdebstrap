@@ -6448,6 +6448,17 @@ Build a non-Debian chroot like Ubuntu bionic:
     $ mmdebstrap --aptopt='Dir::Etc::Trusted
        "/usr/share/keyrings/ubuntu-keyring-2012-archive.gpg"' bionic bionic.tar
 
+If, for some reason, you cannot use a caching proxy like apt-cacher or
+apt-cacher-ng, you can use the B<sync-in> and B<sync-out> special hooks to
+synchronize a directory outside the chroot with F</var/cache/apt/archives>
+inside the chroot.
+
+    $ mmdebstrap --variant=apt --skip=download/empty --skip=essential/unlink \
+        --setup-hook='mkdir -p ./cache "$1"/var/cache/apt/archives/' \
+        --setup-hook='sync-in ./cache /var/cache/apt/archives/' \
+        --customize-hook='sync-out /var/cache/apt/archives ./cache' \
+        unstable /dev/null
+
 =head1 ENVIRONMENT VARIABLES
 
 =over 8
