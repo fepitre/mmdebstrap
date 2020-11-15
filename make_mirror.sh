@@ -533,12 +533,10 @@ END
 	# fail to run.
 	guestfish -N "$tmpdir/debian-$DEFAULT_DIST.img"=disk:3G -- \
 		part-disk /dev/sda mbr : \
-		part-set-bootable /dev/sda 1 true : \
 		mkfs ext2 /dev/sda1 : \
 		mount /dev/sda1 / : \
 		tar-in "$tmpdir/debian-chroot.tar" / : \
 		command /sbin/ldconfig : \
-		extlinux / : \
 		copy-in "$tmpdir/extlinux.conf" / : \
 		mkdir-p /etc/systemd/system/multi-user.target.wants : \
 		ln-s ../mmdebstrap.service /etc/systemd/system/multi-user.target.wants/mmdebstrap.service : \
@@ -547,8 +545,13 @@ END
 		copy-in "$tmpdir/mini-httpd" /etc/default : \
 		copy-in "$tmpdir/hosts" /etc/ : \
 		touch /mmdebstrap-testenv : \
+		upload /usr/lib/SYSLINUX/mbr.bin /mbr.bin : \
+		copy-file-to-device /mbr.bin /dev/sda size:440 : \
+		rm /mbr.bin : \
+		extlinux / : \
 		sync : \
 		umount / : \
+		part-set-bootable /dev/sda 1 true : \
 		shutdown
 	qemu-img convert -O qcow2 "$tmpdir/debian-$DEFAULT_DIST.img" "$newcachedir/debian-$DEFAULT_DIST.qcow"
 	cleanuptmpdir
