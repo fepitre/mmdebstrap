@@ -1454,7 +1454,7 @@ else
 	runtests=$((runtests+1))
 fi
 
-print_header "mode=$defaultmode,variant=apt: test armhf without qemu support"
+print_header "mode=$defaultmode,variant=apt: test arm64 without qemu support"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
@@ -1465,7 +1465,7 @@ if [ ! -e /mmdebstrap-testenv ]; then
 fi
 apt-get remove --yes qemu-user-static binfmt-support qemu-user
 ret=0
-$CMD --mode=$defaultmode --variant=apt --architectures=armhf $DEFAULT_DIST /tmp/debian-chroot.tar $mirror || ret=\$?
+$CMD --mode=$defaultmode --variant=apt --architectures=arm64 $DEFAULT_DIST /tmp/debian-chroot.tar $mirror || ret=\$?
 if [ "\$ret" = 0 ]; then
 	echo expected failure but got exit \$ret >&2
 	exit 1
@@ -1546,13 +1546,13 @@ fi
 #   - does not have any dependencies
 #   - installs only few files
 #   - doesn't change its name regularly (like gcc-*-base)
-print_header "mode=root,variant=apt: test --include=libmagic-mgc:armhf"
+print_header "mode=root,variant=apt: test --include=libmagic-mgc:arm64"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-$CMD --mode=root --variant=apt --architectures=amd64,armhf --include=libmagic-mgc:armhf $DEFAULT_DIST /tmp/debian-chroot $mirror
-{ echo "amd64"; echo "armhf"; } | cmp /tmp/debian-chroot/var/lib/dpkg/arch -
+$CMD --mode=root --variant=apt --architectures=amd64,arm64 --include=libmagic-mgc:arm64 $DEFAULT_DIST /tmp/debian-chroot $mirror
+{ echo "amd64"; echo "arm64"; } | cmp /tmp/debian-chroot/var/lib/dpkg/arch -
 rm /tmp/debian-chroot/var/lib/dpkg/arch
 rm /tmp/debian-chroot/var/lib/apt/extended_states
 rm /tmp/debian-chroot/var/lib/dpkg/info/libmagic-mgc.list
@@ -1587,13 +1587,13 @@ else
 	skipped=$((skipped+1))
 fi
 
-print_header "mode=root,variant=apt: test --include=libmagic-mgc:armhf with multiple --arch options"
+print_header "mode=root,variant=apt: test --include=libmagic-mgc:arm64 with multiple --arch options"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-$CMD --mode=root --variant=apt --architectures=amd64 --architectures=armhf --include=libmagic-mgc:armhf $DEFAULT_DIST /tmp/debian-chroot $mirror
-{ echo "amd64"; echo "armhf"; } | cmp /tmp/debian-chroot/var/lib/dpkg/arch -
+$CMD --mode=root --variant=apt --architectures=amd64 --architectures=arm64 --include=libmagic-mgc:arm64 $DEFAULT_DIST /tmp/debian-chroot $mirror
+{ echo "amd64"; echo "arm64"; } | cmp /tmp/debian-chroot/var/lib/dpkg/arch -
 rm /tmp/debian-chroot/var/lib/dpkg/arch
 rm /tmp/debian-chroot/var/lib/apt/extended_states
 rm /tmp/debian-chroot/var/lib/dpkg/info/libmagic-mgc.list
@@ -3016,7 +3016,7 @@ else
 	runtests=$((runtests+1))
 fi
 
-print_header "mode=chrootless,variant=custom: install libmagic-mgc on armhf"
+print_header "mode=chrootless,variant=custom: install libmagic-mgc on arm64"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
@@ -3030,7 +3030,7 @@ if [ "\$(id -u)" -eq 0 ] && ! id -u user > /dev/null 2>&1; then
 fi
 prefix=
 [ "\$(id -u)" -eq 0 ] && prefix="runuser -u user --"
-\$prefix $CMD --mode=chrootless --variant=custom --architectures=armhf --include=libmagic-mgc $DEFAULT_DIST /tmp/debian-chroot $mirror
+\$prefix $CMD --mode=chrootless --variant=custom --architectures=arm64 --include=libmagic-mgc $DEFAULT_DIST /tmp/debian-chroot $mirror
 # delete contents of libmagic-mgc
 rm /tmp/debian-chroot/usr/lib/file/magic.mgc
 rm /tmp/debian-chroot/usr/share/doc/libmagic-mgc/README.Debian
@@ -3134,7 +3134,7 @@ fi
 # create directory in sudo mode
 
 for mode in root unshare fakechroot proot; do
-	print_header "mode=$mode,variant=apt: create armhf tarball"
+	print_header "mode=$mode,variant=apt: create arm64 tarball"
 	if [ "$HOSTARCH" != amd64 ]; then
 		echo "HOSTARCH != amd64 -- Skipping test..." >&2
 		skipped=$((skipped+1))
@@ -3181,19 +3181,18 @@ fi
 prefix=
 [ "\$(id -u)" -eq 0 ] && [ "$mode" != "root" ] && prefix="runuser -u user --"
 [ "$mode" = "fakechroot" ] && prefix="\$prefix fakechroot fakeroot"
-\$prefix $CMD --mode=$mode --variant=apt --architectures=armhf $DEFAULT_DIST /tmp/debian-chroot.tar $mirror
+\$prefix $CMD --mode=$mode --variant=apt --architectures=arm64 $DEFAULT_DIST /tmp/debian-chroot.tar $mirror
 # we ignore differences between architectures by ignoring some files
 # and renaming others
 # in fakechroot mode, we use a fake ldconfig, so we have to
 # artificially add some files
 # in proot mode, some extra files are put there by proot
 { tar -tf /tmp/debian-chroot.tar \
-	| grep -v '^\./lib/ld-linux-armhf\.so\.3$' \
-	| grep -v '^\./lib/arm-linux-gnueabihf/ld-linux\.so\.3$' \
-	| grep -v '^\./lib/arm-linux-gnueabihf/ld-linux-armhf\.so\.3$' \
-	| grep -v '^\./usr/share/doc/[^/]\+/changelog\(\.Debian\)\?\.armhf\.gz$' \
-	| sed 's/arm-linux-gnueabihf/x86_64-linux-gnu/' \
-	| sed 's/armhf/amd64/';
+	| grep -v '^\./lib/ld-linux-aarch64\.so\.1$' \
+	| grep -v '^\./lib/aarch64-linux-gnu/ld-linux-aarch64\.so\.1$' \
+	| grep -v '^\./usr/share/doc/[^/]\+/changelog\(\.Debian\)\?\.arm64\.gz$' \
+	| sed 's/aarch64-linux-gnu/x86_64-linux-gnu/' \
+	| sed 's/arm64/amd64/';
 	[ "$mode" = "fakechroot" ] && printf "./etc/ld.so.cache\n./var/cache/ldconfig/\n./etc/.pwd.lock\n";
 } | sort > tar2.txt
 { cat tar1.txt \

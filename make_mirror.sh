@@ -355,7 +355,7 @@ touch "$newcachedir/mmdebstrapcache"
 
 HOSTARCH=$(dpkg --print-architecture)
 if [ "$HOSTARCH" = amd64 ]; then
-	arches="amd64 armhf i386"
+	arches="amd64 arm64 i386"
 else
 	arches="$HOSTARCH"
 fi
@@ -441,8 +441,8 @@ if [ "$HAVE_QEMU" = "yes" ]; then
 			;;
 	esac
 	if [ "$HOSTARCH" = amd64 ] && [ "$RUN_MA_SAME_TESTS" = "yes" ]; then
-		arches=amd64,armhf
-		pkgs="$pkgs,libfakechroot:armhf,libfakeroot:armhf"
+		arches=amd64,arm64
+		pkgs="$pkgs,libfakechroot:arm64,libfakeroot:arm64"
 	else
 		arches=$HOSTARCH
 	fi
