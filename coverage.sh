@@ -213,8 +213,12 @@ diff -u status1 status2
 rm status1 status2
 rm /tmp/debian-$dist-debootstrap/var/lib/dpkg/status /tmp/debian-$dist-mm/var/lib/dpkg/status
 # debootstrap exposes the hosts's kernel version
-rm /tmp/debian-$dist-debootstrap/etc/apt/apt.conf.d/01autoremove-kernels \
-	/tmp/debian-$dist-mm/etc/apt/apt.conf.d/01autoremove-kernels
+if [ -e /tmp/debian-$dist-debootstrap/etc/apt/apt.conf.d/01autoremove-kernels ]; then
+	rm /tmp/debian-$dist-debootstrap/etc/apt/apt.conf.d/01autoremove-kernels
+fi
+if [ -e /tmp/debian-$dist-mm/etc/apt/apt.conf.d/01autoremove-kernels ]; then
+	rm /tmp/debian-$dist-mm/etc/apt/apt.conf.d/01autoremove-kernels
+fi
 # who creates /run/mount?
 if [ -e "/tmp/debian-$dist-debootstrap/run/mount/utab" ]; then
 	rm "/tmp/debian-$dist-debootstrap/run/mount/utab"
