@@ -26,7 +26,7 @@ trap cleanup INT TERM EXIT
 
 # the path to debian-$DEFAULT_DIST.qcow must be absolute or otherwise qemu will
 # look for the path relative to debian-$DEFAULT_DIST-overlay.qcow
-qemu-img create -f qcow2 -b "$(realpath $cachedir)/debian-$DEFAULT_DIST.qcow" "$tmpdir/debian-$DEFAULT_DIST-overlay.qcow"
+qemu-img create -f qcow2 -b "$(realpath $cachedir)/debian-$DEFAULT_DIST.qcow" -F qcow2 "$tmpdir/debian-$DEFAULT_DIST-overlay.qcow"
 # to connect to serial use:
 #   minicom -D 'unix#/tmp/ttyS0'
 qemu-system-x86_64 \
