@@ -430,6 +430,9 @@ if [ "$HAVE_QEMU" = "yes" ]; then
 	if [ "$HAVE_PROOT" = "yes" ]; then
 		pkgs="$pkgs,proot"
 	fi
+	if [ ! -e ./mmdebstrap ]; then
+		pkgs="$pkgs,mmdebstrap"
+	fi
 	case "$HOSTARCH" in
 		amd64|arm64|i386)
 			pkgs="$pkgs,linux-image-$HOSTARCH"
