@@ -3263,7 +3263,7 @@ if [ "$ONLINE" = "yes" ]; then
 		runtests=$((runtests+1))
 	fi
 else
-	echo "HOSTARCH != amd64 -- Skipping test..." >&2
+	echo "ONLINE != yes -- Skipping test..." >&2
 	skipped=$((skipped+1))
 fi
 
