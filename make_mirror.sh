@@ -338,6 +338,8 @@ components=main
 : "${HAVE_QEMU:=yes}"
 : "${RUN_MA_SAME_TESTS:=yes}"
 : "${HAVE_PROOT:=yes}"
+# by default, use the mmdebstrap executable in the current directory
+: "${CMD:=./mmdebstrap}"
 
 if [ -e "$oldmirrordir/dists/$DEFAULT_DIST/Release" ]; then
 	http_code=$(curl --output /dev/null --silent --location --head --time-cond "$oldmirrordir/dists/$DEFAULT_DIST/Release" --write-out '%{http_code}' "$mirror/dists/$DEFAULT_DIST/Release")
@@ -446,7 +448,7 @@ if [ "$HAVE_QEMU" = "yes" ]; then
 	else
 		arches=$HOSTARCH
 	fi
-	./mmdebstrap --variant=apt --architectures=$arches --include="$pkgs" \
+	$CMD --variant=apt --architectures=$arches --include="$pkgs" \
 		$DEFAULT_DIST - "$mirror" > "$tmpdir/debian-chroot.tar"
 
 	cat << END > "$tmpdir/extlinux.conf"
