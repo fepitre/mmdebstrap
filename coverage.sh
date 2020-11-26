@@ -2543,7 +2543,10 @@ rm /tmp/debian-chroot/var/lib/dpkg/status
 # the rest should be empty directories that we can rmdir recursively
 find /tmp/debian-chroot -depth -print0 | xargs -0 rmdir
 END
-if [ "$HAVE_QEMU" = "yes" ]; then
+if true; then
+	echo "skipping test because of #973305" >&2
+	skipped=$((skipped+1))
+elif [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 	runtests=$((runtests+1))
 elif [ "$defaultmode" = "root" ]; then
@@ -2559,6 +2562,11 @@ fi
 for variant in extract custom essential apt; do
 	for mode in root unshare fakechroot proot chrootless; do
 		print_header "mode=$mode,variant=$variant: create tarball --dry-run"
+		if true; then
+			echo "skipping test because of #973305" >&2
+			skipped=$((skipped+1))
+			continue
+		fi
 		if [ "$mode" = "unshare" ] && [ "$HAVE_UNSHARE" != "yes" ]; then
 			echo "HAVE_UNSHARE != yes -- Skipping test..." >&2
 			skipped=$((skipped+1))
@@ -2917,7 +2925,11 @@ prefix=
 [ "\$(id -u)" -eq 0 ] && prefix="runuser -u user --"
 \$prefix $CMD --mode=chrootless --variant=custom --include=bsdutils,coreutils,debianutils,diffutils,dpkg,findutils,grep,gzip,hostname,init-system-helpers,ncurses-base,ncurses-bin,perl-base,sed,tar $DEFAULT_DIST /dev/null $mirror
 END
-if [ "$HAVE_QEMU" = "yes" ]; then
+if true; then
+	echo "skipping test because of #973325" >&2
+	skipped=$((skipped+1))
+	continue
+elif [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 	runtests=$((runtests+1))
 else
