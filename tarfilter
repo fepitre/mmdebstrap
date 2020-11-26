@@ -33,7 +33,13 @@ class FilterAction(argparse.Action):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="filter a tarball")
+    parser = argparse.ArgumentParser(
+        description="""\
+Filters a tarball on standard input by the same rules as the dpkg --path-exclude
+and --path-include options and writes resulting tarball to standard output. See
+dpkg(1) for information on how these two options work in detail.
+"""
+    )
     parser.add_argument(
         "--path-exclude",
         metavar="pattern",

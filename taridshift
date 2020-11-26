@@ -20,14 +20,24 @@
 
 import tarfile
 import sys
+import argparse
 
 
 def main():
-    if len(sys.argv) < 2:
-        print("usage: %s idshift" % sys.argv[0], file=sys.stderr)
-        exit(1)
-
-    idshift = int(sys.argv[1])
+    parser = argparse.ArgumentParser(
+        description="""\
+Accepts a tarball on standard input and prints a tarball on standard output
+with the same contents but all uid and gid ownership information shifted by the
+value given as first command line argument.
+"""
+    )
+    parser.add_argument(
+        "idshift",
+        metavar="NUM",
+        type=int,
+        help="Integer value by which to shift the uid and gid of each entry",
+    )
+    args = parser.parse_args()
 
     # starting with Python 3.8, the default format became PAX_FORMAT, so this
     # is only for compatibility with older versions of Python 3
@@ -35,15 +45,15 @@ def main():
         fileobj=sys.stdout.buffer, mode="w|", format=tarfile.PAX_FORMAT
     ) as out_tar:
         for member in in_tar:
-            if idshift < 0 and -idshift > member.uid:
+            if args.idshift < 0 and -args.idshift > member.uid:
                 print("uid cannot be negative", file=sys.stderr)
                 exit(1)
-            if idshift < 0 and -idshift > member.gid:
+            if args.idshift < 0 and -args.idshift > member.gid:
                 print("gid cannot be negative", file=sys.stderr)
                 exit(1)
 
-            member.uid += idshift
-            member.gid += idshift
+            member.uid += args.idshift
+            member.gid += args.idshift
             if member.isfile():
                 with in_tar.extractfile(member) as file:
                     out_tar.addfile(member, file)
