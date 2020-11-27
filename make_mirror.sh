@@ -536,7 +536,16 @@ END
 	# In case the rootfs was prepared in fakechroot mode, ldconfig has to
 	# run to populate /etc/ld.so.cache or otherwise fakechroot tests will
 	# fail to run.
-	guestfish -N "$tmpdir/debian-$DEFAULT_DIST.img"=disk:3G -- \
+	#
+	# The disk size is sufficient in most cases. Sometimes, gcc will do
+	# an upload with unstripped executables to make tracking down ICEs much
+	# easier (see #872672, #894014). During times with unstripped gcc, the
+	# buildd variant will not be 400MB but 1.3GB large and needs a 10G
+	# disk.
+	if [ -z ${DISK_SIZE+x} ]; then
+		DISK_SIZE=3G
+	fi
+	guestfish -N "$tmpdir/debian-$DEFAULT_DIST.img"=disk:$DISK_SIZE -- \
 		part-disk /dev/sda mbr : \
 		mkfs ext2 /dev/sda1 : \
 		mount /dev/sda1 / : \
