@@ -2628,10 +2628,6 @@ sub run_install() {
         any { $_ eq $options->{mode} }
         ('root', 'unshare', 'fakechroot', 'proot')
     ) {
-        # run essential hooks
-        if ($options->{variant} ne 'custom') {
-        }
-
         if ($options->{variant} ne 'custom'
             and scalar @{$pkgs_to_install} > 0) {
             # some packages have to be installed from the outside before
