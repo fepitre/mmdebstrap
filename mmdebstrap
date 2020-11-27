@@ -3925,8 +3925,17 @@ sub get_sourceslist_by_suite {
         $sourceslist .= "deb$signedby $mirror $suite-updates $compstr\n";
         # the security mirror changes, starting with bullseye
         # https://lists.debian.org/87r26wqr2a.fsf@43-1.org
-        my $distro_info = '/usr/share/distro-info/debian.csv';
-        if (-f $distro_info) {
+        my $bullseye_or_later = 0;
+        my $distro_info       = '/usr/share/distro-info/debian.csv';
+        eval { require Debian::DistroInfo; };
+        if (!$@) {
+            # libdistro-info-perl is installed
+            my $debinfo = DebianDistroInfo->new();
+            if ($debinfo->version($suite, 0) >= 11) {
+                $bullseye_or_later = 1;
+            }
+        } elsif (-f $distro_info) {
+            # distro-info-data is installed
             open my $fh, '<', $distro_info
               or error "cannot open $distro_info: $!";
             my $i = 0;
@@ -3960,22 +3969,21 @@ sub get_sourceslist_by_suite {
             }
             close $fh;
             if ($matching_version >= 11) {
-                # starting from bullseye use
-                $sourceslist
-                  .= "deb$signedby $secmirror $suite-security" . " $compstr\n";
-            } else {
-                $sourceslist
-                  .= "deb$signedby $secmirror $suite/updates" . " $compstr\n";
+                $bullseye_or_later = 1;
             }
         } else {
+            # neither libdistro-info-perl nor distro-info-data is installed
             if (any { $_ eq $suite } ('bullseye', 'bookworm')) {
-                # starting from bullseye use
-                $sourceslist
-                  .= "deb$signedby $secmirror $suite-security" . " $compstr\n";
-            } else {
-                $sourceslist
-                  .= "deb$signedby $secmirror $suite/updates" . " $compstr\n";
+                $bullseye_or_later = 1;
             }
+        }
+        if ($bullseye_or_later) {
+            # starting from bullseye use
+            $sourceslist
+              .= "deb$signedby $secmirror $suite-security" . " $compstr\n";
+        } else {
+            $sourceslist
+              .= "deb$signedby $secmirror $suite/updates" . " $compstr\n";
         }
     }
     return $sourceslist;
