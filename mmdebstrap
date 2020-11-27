@@ -4235,7 +4235,7 @@ sub main() {
     }
 
     foreach my $arg (@{ $options->{noop} }) {
-        info "The option --$arg is a no-op. It only exists for compatibility"
+        info "the option --$arg is a no-op. It only exists for compatibility"
           . " with some debootstrap wrappers.";
     }
 
@@ -4633,7 +4633,7 @@ sub main() {
         if (!defined $options->{suite}) {
             # If no suite was specified, then the whole sources.list has to
             # come from standard input
-            info "Reading sources.list from standard input...";
+            info "reading sources.list from standard input...";
             my $content = do {
                 local $/;
                 ## no critic (InputOutput::ProhibitExplicitStdin)
@@ -4784,7 +4784,7 @@ sub main() {
             if (scalar @ARGV > 0) {
                 for my $arg (@ARGV) {
                     if ($arg eq '-') {
-                        info 'Reading sources.list from standard input...';
+                        info 'reading sources.list from standard input...';
                         my $content = do {
                             local $/;
                             ## no critic (InputOutput::ProhibitExplicitStdin)
