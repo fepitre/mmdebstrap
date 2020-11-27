@@ -2527,9 +2527,9 @@ sub run_essential() {
 
     if ($options->{mode} eq 'chrootless') {
         if ($options->{dryrun}) {
-            info "simulate installing packages...";
+            info "simulate installing essential packages...";
         } else {
-            info "installing packages...";
+            info "installing essential packages...";
         }
         # FIXME: the dpkg config from the host is parsed before the command
         # line arguments are parsed and might break this mode
@@ -2567,9 +2567,9 @@ sub run_essential() {
         # into account and thus doesn't install them in the right order
         # And the --predep-package option is broken: #539133
         if ($options->{dryrun}) {
-            info "simulate installing packages...";
+            info "simulate installing essential packages...";
         } else {
-            info "installing packages...";
+            info "installing essential packages...";
             run_chroot(
                 sub {
                     run_dpkg_progress({
