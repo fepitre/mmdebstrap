@@ -5419,9 +5419,6 @@ sub main() {
         open(STDIN, '<&', $parentsock)
           or error "cannot open STDIN: $!";
 
-        # we execute ourselves under sh to avoid having to
-        # implement a clever parser of the quoting used in $script
-        # for the filenames
         my @prefix = ();
         if ($is_covering) {
             @prefix = ($EXECUTABLE_NAME, "-MDevel::Cover=-silent,-nogcov");
