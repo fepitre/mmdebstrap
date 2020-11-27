@@ -2,25 +2,27 @@
 
 set -eu
 
-TMPFILE=$(mktemp)
-perltidy < mmdebstrap > "$TMPFILE"
-ret=0
-diff -u mmdebstrap "$TMPFILE" || ret=$?
-if [ "$ret" -ne 0 ]; then
-	echo "perltidy failed" >&2
+if [ -e ./mmdebstrap -a -e ./taridshift -a -e ./tarfilter ]; then
+	TMPFILE=$(mktemp)
+	perltidy < ./mmdebstrap > "$TMPFILE"
+	ret=0
+	diff -u ./mmdebstrap "$TMPFILE" || ret=$?
+	if [ "$ret" -ne 0 ]; then
+		echo "perltidy failed" >&2
+		rm "$TMPFILE"
+		exit 1
+	fi
 	rm "$TMPFILE"
-	exit 1
+
+	if [ $(sed -e '/^__END__$/,$d' ./mmdebstrap | wc --max-line-length) -gt 79 ]; then
+		echo "exceeded maximum line length of 79 characters" >&2
+		exit 1
+	fi
+
+	perlcritic --severity 4 --verbose 8 ./mmdebstrap
+
+	black --check ./taridshift ./tarfilter
 fi
-rm "$TMPFILE"
-
-if [ $(sed -e '/^__END__$/,$d' mmdebstrap | wc --max-line-length) -gt 79 ]; then
-	echo "exceeded maximum line length of 79 characters" >&2
-	exit 1
-fi
-
-perlcritic --severity 4 --verbose 8 mmdebstrap
-
-black --check taridshift tarfilter proxysolver
 
 mirrordir="./shared/cache/debian"
 
@@ -66,27 +68,48 @@ fi
 
 # only copy if necessary
 if [ ! -e shared/mmdebstrap ] || [ mmdebstrap -nt shared/mmdebstrap ]; then
-	cp -a mmdebstrap shared
+	if [ -e ./mmdebstrap ]; then
+		cp -a mmdebstrap shared
+	else
+		cp -a /usr/bin/mmdebstrap shared
+	fi
 fi
 if [ ! -e shared/taridshift ] || [ taridshift -nt shared/taridshift ]; then
-	cp -a taridshift shared
+	if [ -e ./taridshift ]; then
+		cp -a ./taridshift shared
+	else
+		cp -a /usr/bin/mmtaridshift shared/taridshift
+	fi
 fi
 if [ ! -e shared/tarfilter ] || [ tarfilter -nt shared/tarfilter ]; then
-	cp -a tarfilter shared
-fi
-if [ ! -e shared/proxysolver ] || [ proxysolver -nt shared/proxysolver ]; then
-	cp -a proxysolver shared
+	if [ -e ./tarfilter ]; then
+		cp -a tarfilter shared
+	else
+		cp -a /usr/bin/mmtarfilter shared/tarfilter
+	fi
 fi
 mkdir -p shared/hooks
 if [ ! -e shared/hooks/setup00-merged-usr.sh ] || [ hooks/setup00-merged-usr.sh -nt shared/hooks/setup00-merged-usr.sh ]; then
-	cp -a hooks/setup00-merged-usr.sh shared/hooks/setup00-merged-usr.sh
+	if [ -e hooks/setup00-merged-usr.sh ]; then
+		cp -a hooks/setup00-merged-usr.sh shared/hooks/
+	else
+		cp -a /usr/share/mmdebstrap/hooks/setup00-merged-usr.sh shared/hooks/
+	fi
 fi
 mkdir -p shared/hooks/eatmydata
 if [ ! -e shared/hooks/eatmydata/extract.sh ] || [ hooks/eatmydata/extract.sh -nt shared/hooks/eatmydata/extract.sh ]; then
-	cp -a hooks/eatmydata/extract.sh shared/hooks/eatmydata/extract.sh
+	if [ -e hooks/eatmydata/extract.sh ]; then
+		cp -a hooks/eatmydata/extract.sh shared/hooks/eatmydata/
+	else
+		cp -a /usr/share/mmdebstrap/hooks/eatmydata/extract.sh shared/hooks/eatmydata/
+	fi
 fi
 if [ ! -e shared/hooks/eatmydata/customize.sh ] || [ hooks/eatmydata/customize.sh -nt shared/hooks/eatmydata/customize.sh ]; then
-	cp -a hooks/eatmydata/customize.sh shared/hooks/eatmydata/customize.sh
+	if [ -e hooks/eatmydata/customize.sh ]; then
+		cp -a hooks/eatmydata/customize.sh shared/hooks/eatmydata/
+	else
+		cp -a /usr/share/mmdebstrap/hooks/eatmydata/customize.sh shared/hooks/eatmydata/
+	fi
 fi
 
 starttime=
