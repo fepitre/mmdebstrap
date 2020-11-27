@@ -2686,20 +2686,6 @@ END
 			skipped=$((skipped+1))
 			continue
 		fi
-		case "$mode" in
-			proot)
-				case "$variant" in
-					important|debootstrap|-|standard)
-						# the systemd postint yields:
-						# chfn: PAM: System error
-						# adduser: `/usr/bin/chfn -f systemd Time Synchronization systemd-timesync' returned error code 1. Exiting.
-						# similar error with fakechroot https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=745082#75
-						# https://github.com/proot-me/PRoot/issues/156
-						continue
-						;;
-				esac
-				;;
-		esac
 		if [ "$mode" = "unshare" ] && [ "$HAVE_UNSHARE" != "yes" ]; then
 			echo "HAVE_UNSHARE != yes -- Skipping test..." >&2
 			skipped=$((skipped+1))
