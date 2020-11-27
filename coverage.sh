@@ -113,7 +113,7 @@ if [ ! -e shared/hooks/eatmydata/customize.sh ] || [ hooks/eatmydata/customize.s
 fi
 
 starttime=
-total=157
+total=164
 skipped=0
 runtests=0
 i=1
@@ -156,7 +156,8 @@ mirror="http://127.0.0.1/debian"
 for dist in stable testing unstable; do
 	for variant in minbase buildd -; do
 		if [ $dist != stable ] && [ $variant = - ]; then
-			# skipping because of #963788
+			echo "skipping test because of #963788" >&2
+			skipped=$((skipped+1))
 			continue
 		fi
 		print_header "mode=$defaultmode,variant=$variant: check against debootstrap $dist"
@@ -2488,6 +2489,8 @@ for variant in extract custom essential apt minbase buildd important standard; d
 		standard)
 			# python is priority:standard but uninstallable since
 			# August 03 2020, see Debian bug #968217
+			echo "skipping test because of #968217" >&2
+			skipped=$((skipped+1))
 			continue
 			;;
 	esac
@@ -2649,12 +2652,14 @@ done
 # test all variants
 
 for variant in essential apt required minbase buildd important debootstrap - standard; do
+	print_header "mode=root,variant=$variant: create tarball"
 	if [ "$variant" = standard ]; then
 		# python is priority:standard but uninstallable since August 03
 		# 2020, see Debian bug #968217
+		echo "skipping test because of #968217" >&2
+		skipped=$((skipped+1))
 		continue
 	fi
-	print_header "mode=root,variant=$variant: create tarball"
 	cat << END > shared/test.sh
 #!/bin/sh
 set -eu
@@ -2672,10 +2677,13 @@ END
 	fi
 	# check if the other modes produce the same result in each variant
 	for mode in unshare fakechroot proot; do
+		print_header "mode=$mode,variant=$variant: create tarball"
 		# fontconfig doesn't install reproducibly because differences
 		# in /var/cache/fontconfig/. See
 		# https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=864082
 		if [ "$variant" = standard ]; then
+			echo "skipping test because of #864082" >&2
+			skipped=$((skipped+1))
 			continue
 		fi
 		case "$mode" in
@@ -2692,7 +2700,6 @@ END
 				esac
 				;;
 		esac
-		print_header "mode=$mode,variant=$variant: create tarball"
 		if [ "$mode" = "unshare" ] && [ "$HAVE_UNSHARE" != "yes" ]; then
 			echo "HAVE_UNSHARE != yes -- Skipping test..." >&2
 			skipped=$((skipped+1))
@@ -2951,7 +2958,6 @@ END
 if true; then
 	echo "skipping test because of #973325" >&2
 	skipped=$((skipped+1))
-	continue
 elif [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 	runtests=$((runtests+1))
