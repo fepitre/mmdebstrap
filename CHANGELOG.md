@@ -1,3 +1,13 @@
+0.7.2 (2020-11-28)
+
+ - check whether tools like dpkg and apt are installed at startup
+ - make it possible to seed /var/cache/apt/archives with deb packages
+ - if a suite name was specified, use the matching apt index to figure out the
+   package set to install
+ - use Debian::DistroInfo or /usr/share/distro-info/debian.csv (if available)
+   to figure out the security mirror for bullseye and beyond
+ - use argparse in tarfilter and taridshift for proper --help output
+
 0.7.1 (2020-09-18)
 ------------------
 
