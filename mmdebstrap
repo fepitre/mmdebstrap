@@ -5677,8 +5677,12 @@ The I<SUITE> may be a valid release code name (eg, sid, stretch, jessie) or a
 symbolic name (eg, unstable, testing, stable, oldstable). Any suite name that
 works with apt on the given mirror will work. If no I<SUITE> was specified,
 then a single I<MIRROR> C<-> is added and thus the information of the desired
-suite has to come from standard input as part of a valid apt sources.list
-file.
+suite has to come from standard input as part of a valid apt sources.list file.
+If mmdebstrap is instructed to retrieve packages from multiple releases, then
+the value of the I<SUITE> argument will be used to determine which apt index to
+use for finding out the set of C<Essential:yes> packages and/or the set of
+packages with the right priority for the selected variant. See the section
+B<VARIANTS> for more information.
 
 All status output is printed to standard error unless B<--logfile> is used to
 redirect it to a file or B<--quiet> or B<--silent> is used to suppress any
@@ -5978,7 +5982,8 @@ Example: Run mmdebstrap with eatmydata
 B<mmdebstrap> tries hard to implement sensible defaults and will try to stop
 you before shooting yourself in the foot. This option is for when you are sure
 you know what you are doing and allows one to skip certain actions and safety
-checks.
+checks. See section B<OPERATION> for a list of possible arguments and their
+context.
 
 =item B<-q,--quiet>, B<-s,--silent>
 
@@ -6099,7 +6104,9 @@ B<mmdebstrap> because maintainer-scripts will be run without B<chroot(1)>.
 All package sets also include the direct and indirect hard dependencies (but
 not recommends) of the selected package sets. The variants B<minbase>,
 B<buildd> and B<->, resemble the package sets that debootstrap would install
-with the same I<--variant> argument.
+with the same I<--variant> argument. If multiple releases are passed as apt
+sources to B<mmdebstrap>, then the release with a name matching the I<SUITE>
+argument will be used to determine the C<Essential:yes> and priority values.
 
 =over 8
 
@@ -6248,8 +6255,8 @@ chroot.
 
 =item B<copy-out> I<pathinside> [I<pathinside> ...] I<pathoutside>
 
-Recursively copies one or more files and directories out of the chroot into,
-placing them into I<pathoutside> outside of the chroot.
+Recursively copies one or more files and directories recursively from
+I<pathinside> inside the chroot to I<pathoutside> outside of the chroot.
 
 =item B<copy-in> I<pathoutside> [I<pathoutside> ...] I<pathinside>
 
@@ -6301,6 +6308,136 @@ handles files and not directories. To copy a directory recursively into the
 chroot, use B<copy-in> or B<tar-in>. Its advantage is, that by being able to
 specify the full path on the inside, including the filename, the file on the
 inside can have a different name from the file on the outside.
+
+=back
+
+=head1 OPERATION
+
+This section gives an overview of the different steps to create a chroot.
+
+=over 8
+
+=item B<check>
+
+Upon startup, several checks are carried out, like:
+
+=over 4
+
+=item * whether required utilities (apt, dpkg, tar) are installed
+
+=item * which mode to use and whether prerequisites are met
+
+=item * whether the requested architecture can be executed (requires arch-test) using qemu binfmt_misc support. This requires arch-test and can be disabled using B<--skip=check/qemu>
+
+=item * how the apt sources can be assembled from I<SUITE>, I<MIRROR> and B<--components> and/or from standard input as deb822 or one-line format and whether the required GPG keys exist.
+
+=item * which output format to pick depending on the B<--format> argument or name of I<TARGET> or its type.
+
+=item * whether the output directory is empty. This check can be disabled using B<--skip=check/empty>
+
+=back
+
+=item B<setup>
+
+The following tasks are carried out:
+
+=over 4
+
+=item * create required directories
+
+=item * write out the temporary apt config file
+
+=item * populates F</etc/apt/apt.conf.d/99mmdebstrap> and F</etc/dpkg/dpkg.cfg.d/99mmdebstrap> with config options from B<--aptopt> and B<--dpkgopt>, respectively
+
+=item * write out F</etc/apt/sources.list>
+
+=item * copy over F</etc/resolv.conf> and F</etc/hostname>
+
+=item * populate F</dev> if mknod is possible
+
+=back
+
+=item B<setup-hook>
+
+Run B<--setup-hook> options and all F<setup*> scripts in B<--hook-dir>.
+
+=item B<update>
+
+Runs C<apt-get update> using the temporary apt configuration file created in
+the B<setup> step.
+
+=item B<download>
+
+Checks whether F</var/cache/apt/archives/> is empty. This can be disabled with
+B<--skip=download/empty>. In the B<extract> and B<custom> variants, C<apt-get
+--download-only install> is used to download all the packages requested via the
+B<--include> option. The B<apt> variant uses the fact that libapt treats the
+C<apt> packages as implicitly essential to download only all C<Essential:yes>
+packages plus apt using C<apt-get --download-only dist-upgrade>. In the
+remaining variants, all Packages files downloaded by the B<update> step are
+inspected to find the C<Essential:yes> package set as well as all packages of
+the required priority.
+
+=item B<extract>
+
+Extract the downloaded packages into the rootfs. This step is not carried out
+in chrootless mode if the variant is not B<extract>.
+
+=item B<extract-hook>
+
+Run B<--extract-hook> options and all F<extract*> scripts in B<--hook-dir>.
+
+=item B<prepare>
+
+In B<fakechroot> mode, environment variables C<LD_LIBRARY_PATH> will be set up
+correctly. If the chroot requires the qemu-user-static binary it will be copied
+in. For foreign B<fakechroot> environments, C<LD_LIBRARY_PATH> and
+C<QEMU_LD_PREFIX> are set up accordingly. This step is not carried out in
+>B<extract> mode and neither for the B<chrootless> variant.
+
+=item B<essential>
+
+Uses C<dpkg --install> to properly install all packages that have been
+extracted before. Removes all packages downloaded in the B<download> step,
+except those which were present in F</var/cache/apt/archives/> before (if any).
+This can be disabled using B<--skip=essential/unlink>. This step is not carried
+out in B<extract> mode.
+
+=item B<essential-hook>
+
+Run B<--essential-hook> options and all F<essential*> scripts in B<--hook-dir>.
+This step is not carried out in B<extract> mode.
+
+=item B<install>
+
+Install the apt package into the chroot, if necessary and then run apt from
+inside the chroot to install all remaining packages. This step is not carried
+out in B<extract> mode.
+
+=item B<customize-hook>
+
+Run B<--customize-hook> options and all F<customize*> scripts in B<--hook-dir>.
+This step is not carried out in B<extract> mode.
+
+=item B<cleanup>
+
+Performs cleanup tasks like:
+
+=over 4
+
+=item * Removes the package lists and apt cache. This can be disabled using B<--skip=cleanup/apt>.
+
+=item * Remove all files that were put into the chroot for setup purposes, like F</etc/apt/apt.conf.d/00mmdebstrap>, the temporary apt config and the qemu-user-static binary. This can be disabled using B<--skip=cleanup/mmdebstrap>.
+
+=item * Remove all files that make the result unreproducible, like apt and dpkg logs and caches or F</etc/machine-id>. This can be disabled using B<--skip=cleanup/reproducible>
+
+=item * Remove everything in F</tmp> inside the chroot. This can be disabled using B<--skip=cleanup/tmp>.
+
+=back
+
+For formats other than B<directory>, pack up the temporary chroot directory
+into a tarball, ext2 image or squashfs image and delete the temporary chroot
+directory.
 
 =back
 
