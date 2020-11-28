@@ -2500,6 +2500,10 @@ cat << END > shared/test.sh
 set -eu
 export LC_ALL=C.UTF-8
 export SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH
+if [ ! -e /mmdebstrap-testenv ]; then
+	echo "this test requires the cache directory to be mounted on /mnt and should only be run inside a container" >&2
+	exit 1
+fi
 $CMD --include=doc-debian --mode=$defaultmode --variant=$variant \
 	--setup-hook='mkdir -p "\$1"/var/cache/apt/archives/partial' \
 	--setup-hook='touch "\$1"/var/cache/apt/archives/lock' \
@@ -2531,12 +2535,9 @@ END
 	if [ "$HAVE_QEMU" = "yes" ]; then
 		./run_qemu.sh
 		runtests=$((runtests+1))
-	elif [ "$defaultmode" = "root" ]; then
-		./run_null.sh SUDO
-		runtests=$((runtests+1))
 	else
-		./run_null.sh
-		runtests=$((runtests+1))
+		echo "HAVE_QEMU != yes -- Skipping test..." >&2
+		skipped=$((skipped+1))
 	fi
 done
 
