@@ -88,6 +88,13 @@ if [ ! -e shared/tarfilter ] || [ tarfilter -nt shared/tarfilter ]; then
 		cp -a /usr/bin/mmtarfilter shared/tarfilter
 	fi
 fi
+if [ ! -e shared/proxysolver ] || [ proxysolver -nt shared/proxysolver ]; then
+	if [ -e ./proxysolver ]; then
+		cp -a proxysolver shared
+	else
+		cp -a /usr/lib/apt/solvers/mmdebstrap-dump-solution shared/proxysolver
+	fi
+fi
 mkdir -p shared/hooks
 if [ ! -e shared/hooks/setup00-merged-usr.sh ] || [ hooks/setup00-merged-usr.sh -nt shared/hooks/setup00-merged-usr.sh ]; then
 	if [ -e hooks/setup00-merged-usr.sh ]; then

@@ -792,18 +792,18 @@ sub run_apt_progress {
         );
     }
     my $get_exec = sub {
-        my @prefix     = ();
-        my @opts       = ();
-        my $solverpath = "/usr/lib/mmdebstrap/solvers";
-        if (-e "./proxysolver") {
-            # for development purposes, use the current directory if it
-            # contains a file called proxysolver
-            $solverpath = getcwd();
-        }
+        my @prefix = ();
+        my @opts   = ();
         if (exists $options->{EDSP_RES}) {
             push @prefix, 'env', "APT_EDSP_DUMP_FILENAME=$tmpedsp";
-            push @opts, "-oDir::Bin::solvers=$solverpath",
-              '--solver=proxysolver';
+            if (-e "./proxysolver") {
+                # for development purposes, use the current directory if it
+                # contains a file called proxysolver
+                push @opts, ("-oDir::Bin::solvers=" . getcwd()),
+                  '--solver=proxysolver';
+            } else {
+                push @opts, '--solver=mmdebstrap-dump-solution';
+            }
         }
         return (
             @prefix,
