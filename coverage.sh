@@ -113,7 +113,7 @@ if [ ! -e shared/hooks/eatmydata/customize.sh ] || [ hooks/eatmydata/customize.s
 fi
 
 starttime=
-total=164
+total=161
 skipped=0
 runtests=0
 i=1
