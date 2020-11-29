@@ -120,7 +120,7 @@ if [ ! -e shared/hooks/eatmydata/customize.sh ] || [ hooks/eatmydata/customize.s
 fi
 
 starttime=
-total=161
+total=165
 skipped=0
 runtests=0
 i=1
@@ -162,13 +162,12 @@ mirror="http://127.0.0.1/debian"
 
 for dist in stable testing unstable; do
 	for variant in minbase buildd -; do
+		print_header "mode=$defaultmode,variant=$variant: check against debootstrap $dist"
 		if [ $dist != stable ] && [ $variant = - ]; then
 			echo "skipping test because of #963788" >&2
 			skipped=$((skipped+1))
 			continue
 		fi
-		print_header "mode=$defaultmode,variant=$variant: check against debootstrap $dist"
-
 		cat << END > shared/test.sh
 #!/bin/sh
 set -eu
