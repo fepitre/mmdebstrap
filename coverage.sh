@@ -913,6 +913,16 @@ fi
 
 for mode in root unshare fakechroot proot; do
 	print_header "mode=$mode,variant=apt: test ext2 image"
+	if [ "$mode" = "unshare" ] && [ "$HAVE_UNSHARE" != "yes" ]; then
+		echo "HAVE_UNSHARE != yes -- Skipping test..." >&2
+		skipped=$((skipped+1))
+		continue
+	fi
+	if [ "$mode" = "proot" ] && [ "$HAVE_PROOT" != "yes" ]; then
+		echo "HAVE_PROOT != yes -- Skipping test..." >&2
+		skipped=$((skipped+1))
+		continue
+	fi
 	cat << END > shared/test.sh
 #!/bin/sh
 set -eu
