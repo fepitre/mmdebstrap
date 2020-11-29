@@ -2096,12 +2096,28 @@ EOF
 [ -e "\\\$1"/usr/bin/eatmydata ]
 SCRIPT
 chmod +x /tmp/checkeatmydata.sh
+# first four bytes: magic
+elfheader="\\177ELF"
+# fifth byte: bits
+case "\$(dpkg-architecture -qDEB_HOST_ARCH_BITS)" in
+	32) elfheader="\$elfheader\\001";;
+	64) elfheader="\$elfheader\\002";;
+	*) echo "bits not supported"; exit 1;;
+esac
+# sixth byte: endian
+case "\$(dpkg-architecture -qDEB_HOST_ARCH_ENDIAN)" in
+	little) elfheader="\$elfheader\\001";;
+	big) elfheader="\$elfheader\\002";;
+	*) echo "endian not supported"; exit 1;;
+esac
+# seventh and eigth byte: elf version (1) and abi (unset)
+elfheader="\$elfheader\\001\\000"
 $CMD --mode=root --variant=apt \
 	--customize-hook=/tmp/checkeatmydata.sh \
 	--essential-hook=/tmp/checkeatmydata.sh \
-	--extract-hook='printf "\\177ELF\\002\\001\\001\\000" | cmp --bytes=8 - "\$1"/usr/bin/dpkg' \
+	--extract-hook='printf "'"\$elfheader"'" | cmp --bytes=8 - "\$1"/usr/bin/dpkg' \
 	--hook-dir=./hooks/eatmydata \
-	--customize-hook='printf "\\177ELF\\002\\001\\001\\000" | cmp --bytes=8 - "\$1"/usr/bin/dpkg' \
+	--customize-hook='printf "'"\$elfheader"'" | cmp --bytes=8 - "\$1"/usr/bin/dpkg' \
 	 $DEFAULT_DIST /tmp/debian-chroot $mirror
 tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
 rm /tmp/checkeatmydata.sh
