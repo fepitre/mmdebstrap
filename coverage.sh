@@ -2486,22 +2486,14 @@ fi
 # test that the user can drop archives into /var/cache/apt/archives as well as
 # into /var/cache/apt/archives/partial
 for variant in extract custom essential apt minbase buildd important standard; do
-	case "$variant" in
-		custom)
-			# we cannot try try it in other variants than
-			# chrootless unless we pass a package list including
-			# dpkg and friends
-			continue
-			;;
-		standard)
-			# python is priority:standard but uninstallable since
-			# August 03 2020, see Debian bug #968217
-			echo "skipping test because of #968217" >&2
-			skipped=$((skipped+1))
-			continue
-			;;
-	esac
 	print_header "mode=$defaultmode,variant=$variant: compare output with pre-seeded /var/cache/apt/archives"
+	if [ "$variant" = "standard" ]; then
+		# python is priority:standard but uninstallable since
+		# August 03 2020, see Debian bug #968217
+		echo "skipping test because of #968217" >&2
+		skipped=$((skipped+1))
+		continue
+	fi
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
@@ -2511,7 +2503,11 @@ if [ ! -e /mmdebstrap-testenv ]; then
 	echo "this test requires the cache directory to be mounted on /mnt and should only be run inside a container" >&2
 	exit 1
 fi
-$CMD --include=doc-debian --mode=$defaultmode --variant=$variant \
+include="--include=doc-debian"
+if [ "$variant" = "custom" ]; then
+	include="\$include,base-files,base-passwd,coreutils,dash,diffutils,dpkg,libc-bin,sed"
+fi
+$CMD \$include --mode=$defaultmode --variant=$variant \
 	--setup-hook='mkdir -p "\$1"/var/cache/apt/archives/partial' \
 	--setup-hook='touch "\$1"/var/cache/apt/archives/lock' \
 	--setup-hook='chmod 0640 "\$1"/var/cache/apt/archives/lock' \
@@ -2524,12 +2520,12 @@ $CMD --include=doc-debian --mode=$defaultmode --variant=$variant \
 # another reason to copy the files into a new directory is, that we can use shell globs
 tmpdir=\$(mktemp -d)
 cp /mnt/cache/debian/pool/main/b/busybox/busybox_*"_$HOSTARCH.deb" /mnt/cache/debian/pool/main/a/apt/apt_*"_$HOSTARCH.deb" "\$tmpdir"
-$CMD --include=doc-debian --mode=$defaultmode --variant=$variant \
+$CMD \$include --mode=$defaultmode --variant=$variant \
 	--setup-hook='mkdir -p "\$1"/var/cache/apt/archives/partial' \
 	--setup-hook='sync-in "'"\$tmpdir"'" /var/cache/apt/archives/partial' \
 	$DEFAULT_DIST - $mirror > test1.tar
 cmp orig.tar test1.tar
-$CMD --include=doc-debian --mode=$defaultmode --variant=$variant --skip=download/empty \
+$CMD \$include --mode=$defaultmode --variant=$variant --skip=download/empty \
 	--customize-hook='touch "\$1"/var/cache/apt/archives/partial' \
 	--setup-hook='mkdir -p "\$1"/var/cache/apt/archives/' \
 	--setup-hook='sync-in "'"\$tmpdir"'" /var/cache/apt/archives/' \
