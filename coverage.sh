@@ -1887,6 +1887,12 @@ tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort > tar2.txt
 		echo ./usr/lib32/;
 		echo ./usr/libx32/;
 		;;
+	i386)
+		echo ./lib64;
+		echo ./libx32;
+		echo ./usr/lib64/;
+		echo ./usr/libx32/;
+		;;
 	ppc64el)
 		echo ./lib64;
 		;;

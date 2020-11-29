@@ -434,8 +434,11 @@ if [ "$HAVE_QEMU" = "yes" ]; then
 		pkgs="$pkgs,mmdebstrap"
 	fi
 	case "$HOSTARCH" in
-		amd64|arm64|i386)
+		amd64|arm64)
 			pkgs="$pkgs,linux-image-$HOSTARCH"
+			;;
+		i386)
+			pkgs="$pkgs,linux-image-686"
 			;;
 		ppc64el)
 			pkgs="$pkgs,linux-image-powerpc64le"
