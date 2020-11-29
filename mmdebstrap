@@ -3972,7 +3972,7 @@ sub get_sourceslist_by_suite {
                 }
             }
             close $fh;
-            if ($matching_version >= 11) {
+            if (defined $matching_version and $matching_version >= 11) {
                 $bullseye_or_later = 1;
             }
         } else {
