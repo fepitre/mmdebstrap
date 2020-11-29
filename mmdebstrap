@@ -1662,19 +1662,23 @@ sub run_setup() {
     }
 
     # allow network access from within
-    if (-e "/etc/resolv.conf") {
-        copy("/etc/resolv.conf", "$options->{root}/etc/resolv.conf")
-          or error "cannot copy /etc/resolv.conf: $!";
-    } else {
-        warning("Host system does not have a /etc/resolv.conf to copy into the"
-              . " rootfs.");
-    }
-    if (-e "/etc/hostname") {
-        copy("/etc/hostname", "$options->{root}/etc/hostname")
-          or error "cannot copy /etc/hostname: $!";
-    } else {
-        warning("Host system does not have a /etc/hostname to copy into the"
-              . " rootfs.");
+    foreach my $file ("/etc/resolv.conf", "/etc/hostname") {
+        if (-e $file) {
+            # this will create a new file with 644 permissions and copy
+            # contents only even if $file was a symlink
+            copy($file, "$options->{root}/$file")
+              or error "cannot copy $file: $!";
+            # if the source was a regular file, preserve the permissions
+            if (-f $file) {
+                my $mode = (stat($file))[2];
+                $mode &= oct(7777);    # mask off bits that aren't the mode
+                chmod $mode, "$options->{root}/$file"
+                  or error "cannot chmod $file: $!";
+            }
+        } else {
+            warning("Host system does not have a $file to copy into the"
+                  . " rootfs.");
+        }
     }
 
     if ($options->{havemknod}) {

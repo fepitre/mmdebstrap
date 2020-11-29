@@ -118,9 +118,8 @@ if [ ! -e shared/hooks/eatmydata/customize.sh ] || [ hooks/eatmydata/customize.s
 		cp -a /usr/share/mmdebstrap/hooks/eatmydata/customize.sh shared/hooks/eatmydata/
 	fi
 fi
-
 starttime=
-total=165
+total=166
 skipped=0
 runtests=0
 i=1
@@ -2451,6 +2450,123 @@ else
 	echo "HAVE_QEMU != yes -- Skipping test..." >&2
 	skipped=$((skipped+1))
 fi
+
+print_header "mode=$defaultmode,variant=custom: preserve mode of /etc/resolv.conf and /etc/hostname"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+if [ ! -e /mmdebstrap-testenv ]; then
+	echo "this test modifies the system and should only be run inside a container" >&2
+	exit 1
+fi
+for f in /etc/resolv.conf /etc/hostname; do
+	# preserve original content
+	cat "\$f" > "\$f.bak"
+	# in case \$f is a symlink, we replace it by a real file
+	if [ -L "\$f" ]; then
+		rm "\$f"
+		cp "\$f.bak" "\$f"
+	fi
+	chmod 644 "\$f"
+	[ "\$(stat --format=%A "\$f")" = "-rw-r--r--" ]
+done
+$CMD --variant=custom --mode=$defaultmode $DEFAULT_DIST /tmp/debian-chroot $mirror
+for f in /etc/resolv.conf /etc/hostname; do
+	[ "\$(stat --format=%A "/tmp/debian-chroot/\$f")" = "-rw-r--r--" ]
+done
+rm /tmp/debian-chroot/dev/console
+rm /tmp/debian-chroot/dev/fd
+rm /tmp/debian-chroot/dev/full
+rm /tmp/debian-chroot/dev/null
+rm /tmp/debian-chroot/dev/ptmx
+rm /tmp/debian-chroot/dev/random
+rm /tmp/debian-chroot/dev/stderr
+rm /tmp/debian-chroot/dev/stdin
+rm /tmp/debian-chroot/dev/stdout
+rm /tmp/debian-chroot/dev/tty
+rm /tmp/debian-chroot/dev/urandom
+rm /tmp/debian-chroot/dev/zero
+rm /tmp/debian-chroot/etc/apt/sources.list
+rm /tmp/debian-chroot/etc/fstab
+rm /tmp/debian-chroot/etc/hostname
+rm /tmp/debian-chroot/etc/resolv.conf
+rm /tmp/debian-chroot/var/lib/apt/lists/lock
+rm /tmp/debian-chroot/var/lib/dpkg/available
+rm /tmp/debian-chroot/var/lib/dpkg/cmethopt
+rm /tmp/debian-chroot/var/lib/dpkg/status
+# the rest should be empty directories that we can rmdir recursively
+find /tmp/debian-chroot -depth -print0 | xargs -0 rmdir
+for f in /etc/resolv.conf /etc/hostname; do
+	chmod 755 "\$f"
+	[ "\$(stat --format=%A "\$f")" = "-rwxr-xr-x" ]
+done
+$CMD --variant=custom --mode=$defaultmode $DEFAULT_DIST /tmp/debian-chroot $mirror
+for f in /etc/resolv.conf /etc/hostname; do
+	[ "\$(stat --format=%A "/tmp/debian-chroot/\$f")" = "-rwxr-xr-x" ]
+done
+rm /tmp/debian-chroot/dev/console
+rm /tmp/debian-chroot/dev/fd
+rm /tmp/debian-chroot/dev/full
+rm /tmp/debian-chroot/dev/null
+rm /tmp/debian-chroot/dev/ptmx
+rm /tmp/debian-chroot/dev/random
+rm /tmp/debian-chroot/dev/stderr
+rm /tmp/debian-chroot/dev/stdin
+rm /tmp/debian-chroot/dev/stdout
+rm /tmp/debian-chroot/dev/tty
+rm /tmp/debian-chroot/dev/urandom
+rm /tmp/debian-chroot/dev/zero
+rm /tmp/debian-chroot/etc/apt/sources.list
+rm /tmp/debian-chroot/etc/fstab
+rm /tmp/debian-chroot/etc/hostname
+rm /tmp/debian-chroot/etc/resolv.conf
+rm /tmp/debian-chroot/var/lib/apt/lists/lock
+rm /tmp/debian-chroot/var/lib/dpkg/available
+rm /tmp/debian-chroot/var/lib/dpkg/cmethopt
+rm /tmp/debian-chroot/var/lib/dpkg/status
+# the rest should be empty directories that we can rmdir recursively
+find /tmp/debian-chroot -depth -print0 | xargs -0 rmdir
+for f in /etc/resolv.conf /etc/hostname; do
+	rm "\$f"
+	ln -s "\$f.bak" "\$f"
+	[ "\$(stat --format=%A "\$f")" = "lrwxrwxrwx" ]
+done
+$CMD --variant=custom --mode=$defaultmode $DEFAULT_DIST /tmp/debian-chroot $mirror
+for f in /etc/resolv.conf /etc/hostname; do
+	[ "\$(stat --format=%A "/tmp/debian-chroot/\$f")" = "-rw-r--r--" ]
+done
+rm /tmp/debian-chroot/dev/console
+rm /tmp/debian-chroot/dev/fd
+rm /tmp/debian-chroot/dev/full
+rm /tmp/debian-chroot/dev/null
+rm /tmp/debian-chroot/dev/ptmx
+rm /tmp/debian-chroot/dev/random
+rm /tmp/debian-chroot/dev/stderr
+rm /tmp/debian-chroot/dev/stdin
+rm /tmp/debian-chroot/dev/stdout
+rm /tmp/debian-chroot/dev/tty
+rm /tmp/debian-chroot/dev/urandom
+rm /tmp/debian-chroot/dev/zero
+rm /tmp/debian-chroot/etc/apt/sources.list
+rm /tmp/debian-chroot/etc/fstab
+rm /tmp/debian-chroot/etc/hostname
+rm /tmp/debian-chroot/etc/resolv.conf
+rm /tmp/debian-chroot/var/lib/apt/lists/lock
+rm /tmp/debian-chroot/var/lib/dpkg/available
+rm /tmp/debian-chroot/var/lib/dpkg/cmethopt
+rm /tmp/debian-chroot/var/lib/dpkg/status
+# the rest should be empty directories that we can rmdir recursively
+find /tmp/debian-chroot -depth -print0 | xargs -0 rmdir
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+	runtests=$((runtests+1))
+else
+	echo "HAVE_QEMU != yes -- Skipping test..." >&2
+	skipped=$((skipped+1))
+fi
+exit 0
 
 print_header "mode=$defaultmode,variant=essential: test not having to install apt in --include because a hook did it before"
 cat << END > shared/test.sh
