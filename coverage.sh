@@ -119,7 +119,7 @@ if [ ! -e shared/hooks/eatmydata/customize.sh ] || [ hooks/eatmydata/customize.s
 	fi
 fi
 starttime=
-total=166
+total=167
 skipped=0
 runtests=0
 i=1
@@ -1848,6 +1848,25 @@ rm /tmp/debian-chroot/var/lib/dpkg/info/tzdata.postinst
 rm /tmp/debian-chroot/var/lib/dpkg/info/tzdata.postrm
 rm /tmp/debian-chroot/var/lib/dpkg/info/tzdata.templates
 tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort | diff -u tar1.txt -
+rm -r /tmp/debian-chroot
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+	runtests=$((runtests+1))
+else
+	./run_null.sh SUDO
+	runtests=$((runtests+1))
+fi
+
+# This checks for https://bugs.debian.org/976166
+# Since $DEFAULT_DIST varies, we hardcode stable and unstable.
+print_header "mode=root,variant=apt: test --include with multiple apt sources"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+$CMD --mode=root --variant=minbase --include=doc-debian unstable /tmp/debian-chroot "deb $mirror unstable main" "deb $mirror stable main"
+chroot /tmp/debian-chroot dpkg-query --show doc-debian
 rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then

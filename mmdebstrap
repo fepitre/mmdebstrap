@@ -1959,7 +1959,7 @@ sub run_download() {
     ) {
         my %ess_pkgs;
         my %ess_pkgs_target;
-        my %pkgs_to_install_target;
+        my %pkgs_to_install_target = %pkgs_to_install;
         my $num_indices = 0;
         open(
             my $pipe_apt,
