@@ -1412,6 +1412,10 @@ cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
+if [ ! -e /mmdebstrap-testenv ]; then
+	echo "this test modifies the system and should only be run inside a container" >&2
+	exit 1
+fi
 echo "127.0.0.1 deb.debian.org" >> /etc/hosts
 $CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar
 tar -tf /tmp/debian-chroot.tar | sort | diff -u tar1.txt -
@@ -1420,12 +1424,9 @@ END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 	runtests=$((runtests+1))
-elif [ "$defaultmode" = "root" ]; then
-	./run_null.sh SUDO
-	runtests=$((runtests+1))
 else
-	./run_null.sh
-	runtests=$((runtests+1))
+	echo "HAVE_QEMU != yes -- Skipping test..." >&2
+	skipped=$((skipped+1))
 fi
 
 print_header "mode=$defaultmode,variant=apt: invalid mirror"
