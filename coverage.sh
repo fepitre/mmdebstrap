@@ -2588,7 +2588,6 @@ else
 	echo "HAVE_QEMU != yes -- Skipping test..." >&2
 	skipped=$((skipped+1))
 fi
-exit 0
 
 print_header "mode=$defaultmode,variant=essential: test not having to install apt in --include because a hook did it before"
 cat << END > shared/test.sh
