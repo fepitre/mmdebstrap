@@ -1960,7 +1960,8 @@ sub run_download() {
         my %ess_pkgs;
         my %ess_pkgs_target;
         my %pkgs_to_install_target = %pkgs_to_install;
-        my $num_indices = 0;
+        my $num_suite_matches      = 0;
+        my $num_suite_mismatch     = 0;
         open(
             my $pipe_apt,
             '-|',
@@ -1972,8 +1973,8 @@ sub run_download() {
         ) or error "cannot start apt-get indextargets: $!";
         while (my $line = <$pipe_apt>) {
             chomp $line;
-            $num_indices++;
             my ($codename, $suite, $fname) = split /\t/, $line, 3;
+            debug "processing indextarget output for $codename $suite $fname";
             my $suite_matches = 0;
             if (
                 defined $options->{suite}
@@ -1981,6 +1982,9 @@ sub run_download() {
                 ($options->{suite} eq $codename or $options->{suite} eq $suite)
             ) {
                 $suite_matches = 1;
+                $num_suite_matches++;
+            } else {
+                $num_suite_mismatch++;
             }
             open(my $pipe_cat, '-|', '/usr/lib/apt/apt-helper', 'cat-file',
                 $fname)
@@ -2076,9 +2080,20 @@ sub run_download() {
         close $pipe_apt;
         $? == 0 or error "apt-get indextargets failed: $?";
 
-        # comparing the size of both arrays is sufficient because items are
-        # either only added to one or to both
-        if (defined $options->{suite} and $num_indices > 1) {
+        # We now have two package sets, %pkgs_to_install and
+        # %pkgs_to_install_target, where the latter was only filled if the
+        # suite matched the codename or the suite name of one of the given
+        # apt indices.
+        # We only need to bother with this distinction if one or more of the
+        # indices matched and one or more of the indices mismatched. If either
+        # nothing matched or all matched, then we can just use %pkgs_to_install
+        if (    defined $options->{suite}
+            and $num_suite_matches > 0
+            and $num_suite_mismatch > 0) {
+            # Now we know that some matched and some didn't. But we only
+            # replace the results from all indices with the results from those
+            # indices that matched if the results are actually different and
+            # if there is more than zero packages from the indices that matched
             if (scalar keys %ess_pkgs_target > 0
                 and keys %ess_pkgs != %ess_pkgs_target) {
                 info(   "multiple sources defined, using those matching "
