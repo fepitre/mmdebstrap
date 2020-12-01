@@ -14,6 +14,8 @@ if [ -e /usr/share/debootstrap/functions ]; then
 	. /usr/share/debootstrap/functions
 	doing_variant () { [ $1 != "buildd" ]; }
 	MERGED_USR="yes"
+	# until https://salsa.debian.org/installer-team/debootstrap/-/merge_requests/48 gets merged
+	link_dir=""
 	setup_merged_usr
 else
 	link_dir=""
