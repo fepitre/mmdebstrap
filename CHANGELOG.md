@@ -1,4 +1,10 @@
+0.7.3 (2020-12-02)
+------------------
+
+ - bugfix release
+
 0.7.2 (2020-11-28)
+------------------
 
  - check whether tools like dpkg and apt are installed at startup
  - make it possible to seed /var/cache/apt/archives with deb packages
