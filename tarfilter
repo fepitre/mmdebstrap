@@ -21,14 +21,15 @@
 import tarfile
 import sys
 import argparse
-from fnmatch import fnmatch
+import fnmatch
 import re
 
 
 class FilterAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
         items = getattr(namespace, "filter", [])
-        items.append((self.dest, values))
+        regex = re.compile(fnmatch.translate(values))
+        items.append((self.dest, regex))
         setattr(namespace, "filter", items)
 
 
@@ -64,17 +65,17 @@ dpkg(1) for information on how these two options work in detail.
         skip = False
         if not args.filter:
             return False
-        for (t, f) in args.filter:
-            if fnmatch(member.name[1:], f):
+        for (t, r) in args.filter:
+            if r.match(member.name[1:]) is not None:
                 if t == "path_include":
                     skip = False
                 else:
                     skip = True
         if skip and (member.isdir() or member.issym()):
-            for (t, f) in args.filter:
+            for (t, r) in args.filter:
                 if t != "path_include":
                     continue
-                prefix = re.sub(r"^([^*?[\\]*).*", r"\1", f)
+                prefix = re.sub(r"^([^*?[\\]*).*", r"\1", r.pattern)
                 prefix = prefix.rstrip("/")
                 if member.name[1:].startswith(prefix):
                     if member.name == "./usr/share/doc/doc-debian":
