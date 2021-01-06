@@ -4312,6 +4312,11 @@ sub main() {
         error "invalid format. Choose from " . (join ', ', @valid_formats);
     }
 
+    if (!defined $ENV{PATH} || $ENV{PATH} eq "") {
+        ## no critic (Variables::RequireLocalizedPunctuationVars)
+        $ENV{PATH} = "/usr/sbin:/usr/bin:/sbin:/bin";
+    }
+
     foreach my $tool ('dpkg', 'dpkg-deb', 'apt-get', 'apt-cache', 'apt-config',
         'tar') {
         my $found = 0;
