@@ -30,7 +30,7 @@ Summary:
 
  - more than one mirror possible
  - security and updates mirror included for Debian stable chroots
- - 3-6 times faster
+ - twice as fast
  - chroot with apt in 11 seconds
  - gzipped tarball with apt is 27M small
  - bit-by-bit reproducible output
@@ -46,14 +46,17 @@ with debootstrap since 2009 (See #543819 and #762222). Since mmdebstrap uses
 apt internally, support for multiple mirrors comes for free and stable or
 oldstable **chroots will include security and updates mirrors**.
 
-A side-effect of using apt is being **3-6 times faster** than debootstrap. The
-timings were carried out on a laptop with an Intel Core i5-5200U.
+A side-effect of using apt is being twice as fast as debootstrap. The
+timings were carried out on a laptop with an Intel Core i5-5200U, using a
+mirror on localhost and a tmpfs.
 
-| variant | mmdebstrap | debootstrap  |
-| ------- | ---------- | ------------ |
-| minbase | 14.18 s    | 51.47 s      |
-| buildd  | 20.55 s    | 59.38 s      |
-| -       | 18.98 s    | 127.18 s     |
+| variant   | mmdebstrap | debootstrap  |
+| --------- | ---------- | ------------ |
+| essential | 9.52 s     | n.a          |
+| apt       | 10.98 s    | n.a          |
+| minbase   | 13.54 s    | 26.37 s      |
+| buildd    | 21.31 s    | 34.85 s      |
+| -         | 23.01 s    | 48.83 s      |
 
 Apt considers itself an `Essential: yes` package. This feature allows one to
 create a chroot containing just the `Essential: yes` packages and apt (and
