@@ -237,7 +237,7 @@ END
 		| grep-dctrl --no-field-names --show-field=Package --exact-match \
 			\( --field=Essential yes --or --field=Priority required \
 			--or --field=Priority important --or --field=Priority standard \
-			\) --and --not --field Package python )
+			\))
 
 	pkgs="$(echo $pkgs) build-essential busybox gpg eatmydata"
 

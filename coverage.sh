@@ -119,7 +119,7 @@ if [ ! -e shared/hooks/eatmydata/customize.sh ] || [ hooks/eatmydata/customize.s
 	fi
 fi
 starttime=
-total=167
+total=170
 skipped=0
 runtests=0
 i=1
@@ -162,11 +162,6 @@ mirror="http://127.0.0.1/debian"
 for dist in stable testing unstable; do
 	for variant in minbase buildd -; do
 		print_header "mode=$defaultmode,variant=$variant: check against debootstrap $dist"
-		if [ $dist != stable ] && [ $variant = - ]; then
-			echo "skipping test because of #963788" >&2
-			skipped=$((skipped+1))
-			continue
-		fi
 		cat << END > shared/test.sh
 #!/bin/sh
 set -eu
@@ -2657,10 +2652,11 @@ fi
 # into /var/cache/apt/archives/partial
 for variant in extract custom essential apt minbase buildd important standard; do
 	print_header "mode=$defaultmode,variant=$variant: compare output with pre-seeded /var/cache/apt/archives"
+	# fontconfig doesn't install reproducibly because differences
+	# in /var/cache/fontconfig/. See
+	# https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=864082
 	if [ "$variant" = "standard" ]; then
-		# python is priority:standard but uninstallable since
-		# August 03 2020, see Debian bug #968217
-		echo "skipping test because of #968217" >&2
+		echo "skipping test because of #864082" >&2
 		skipped=$((skipped+1))
 		continue
 	fi
@@ -2743,10 +2739,7 @@ rm /tmp/debian-chroot/var/lib/dpkg/status
 # the rest should be empty directories that we can rmdir recursively
 find /tmp/debian-chroot -depth -print0 | xargs -0 rmdir
 END
-if true; then
-	echo "skipping test because of #973305" >&2
-	skipped=$((skipped+1))
-elif [ "$HAVE_QEMU" = "yes" ]; then
+if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 	runtests=$((runtests+1))
 elif [ "$defaultmode" = "root" ]; then
@@ -2762,11 +2755,6 @@ fi
 for variant in extract custom essential apt; do
 	for mode in root unshare fakechroot proot chrootless; do
 		print_header "mode=$mode,variant=$variant: create tarball --dry-run"
-		if true; then
-			echo "skipping test because of #973305" >&2
-			skipped=$((skipped+1))
-			continue
-		fi
 		if [ "$mode" = "unshare" ] && [ "$HAVE_UNSHARE" != "yes" ]; then
 			echo "HAVE_UNSHARE != yes -- Skipping test..." >&2
 			skipped=$((skipped+1))
@@ -2827,13 +2815,6 @@ done
 
 for variant in essential apt required minbase buildd important debootstrap - standard; do
 	print_header "mode=root,variant=$variant: create tarball"
-	if [ "$variant" = standard ]; then
-		# python is priority:standard but uninstallable since August 03
-		# 2020, see Debian bug #968217
-		echo "skipping test because of #968217" >&2
-		skipped=$((skipped+1))
-		continue
-	fi
 	cat << END > shared/test.sh
 #!/bin/sh
 set -eu
@@ -3115,10 +3096,7 @@ prefix=
 [ "\$(id -u)" -eq 0 ] && prefix="runuser -u user --"
 \$prefix $CMD --mode=chrootless --variant=custom --include=bsdutils,coreutils,debianutils,diffutils,dpkg,findutils,grep,gzip,hostname,init-system-helpers,ncurses-base,ncurses-bin,perl-base,sed,tar $DEFAULT_DIST /dev/null $mirror
 END
-if true; then
-	echo "skipping test because of #973325" >&2
-	skipped=$((skipped+1))
-elif [ "$HAVE_QEMU" = "yes" ]; then
+if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 	runtests=$((runtests+1))
 else
