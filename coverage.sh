@@ -176,6 +176,7 @@ $CMD --variant=$variant --mode=$defaultmode $dist /tmp/debian-$dist-mm.tar $mirr
 
 mkdir /tmp/debian-$dist-mm
 tar --xattrs --xattrs-include='*' -C /tmp/debian-$dist-mm -xf /tmp/debian-$dist-mm.tar
+rm /tmp/debian-$dist-mm.tar
 
 mkdir /tmp/debian-$dist-debootstrap
 tar --xattrs --xattrs-include='*' -C /tmp/debian-$dist-debootstrap -xf "cache/debian-$dist-$variant.tar"
@@ -329,7 +330,6 @@ rm /tmp/root1.tar /tmp/root2.tar /tmp/root1.tar.list /tmp/root2.tar.list
 # we cannot use this (yet) because it cannot cope with paths that have [ or @ in them
 #fmtree -c -p /tmp/debian-$dist-debootstrap -k flags,gid,link,mode,size,time,uid | sudo fmtree -p /tmp/debian-$dist-mm
 
-rm /tmp/debian-$dist-mm.tar
 rm -r /tmp/debian-$dist-debootstrap /tmp/debian-$dist-mm
 END
 		if [ "$HAVE_QEMU" = "yes" ]; then
