@@ -268,14 +268,18 @@ if [ "$variant" = "-" ]; then
 	rm /tmp/debian-$dist-mm/var/lib/systemd/catalog/database
 
 	cap=\$(chroot /tmp/debian-$dist-debootstrap /sbin/getcap /bin/ping)
-	if [ "\$cap" != "/bin/ping = cap_net_raw+ep" ]; then
-		echo "expected bin/ping to have capabilities cap_net_raw+ep" >&2
+	expected="/bin/ping cap_net_raw=ep"
+	if [ "$dist" = stable ]; then
+		expected="/bin/ping = cap_net_raw+ep"
+	fi
+	if [ "\$cap" != "\$expected" ]; then
+		echo "expected bin/ping to have capabilities \$expected" >&2
 		echo "but debootstrap produced: \$cap" >&2
 		exit 1
 	fi
 	cap=\$(chroot /tmp/debian-$dist-mm /sbin/getcap /bin/ping)
-	if [ "\$cap" != "/bin/ping = cap_net_raw+ep" ]; then
-		echo "expected bin/ping to have capabilities cap_net_raw+ep" >&2
+	if [ "\$cap" != "\$expected" ]; then
+		echo "expected bin/ping to have capabilities \$expected" >&2
 		echo "but mmdebstrap produced: \$cap" >&2
 		exit 1
 	fi
