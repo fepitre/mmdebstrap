@@ -2644,9 +2644,8 @@ sub run_essential() {
                 sub {
                     run_dpkg_progress({
                             ARGV => [
-                                @{$chrootcmd},    'env',
-                                '--unset=TMPDIR', 'dpkg',
-                                '--install',      '--force-depends'
+                                @{$chrootcmd}, 'dpkg',
+                                '--install',   '--force-depends'
                             ],
                             PKGS => $essential_pkgs,
                         });
@@ -2852,9 +2851,8 @@ sub run_install() {
                           . (join ', ', @pkgs_to_install_from_outside) . "...";
                         run_dpkg_progress({
                                 ARGV => [
-                                    @{$chrootcmd},    'env',
-                                    '--unset=TMPDIR', 'dpkg',
-                                    '--install',      '--force-depends'
+                                    @{$chrootcmd}, 'dpkg',
+                                    '--install',   '--force-depends'
                                 ],
                                 PKGS => \@debs_to_install,
                             });
@@ -2878,10 +2876,8 @@ sub run_install() {
                           . " chroot...";
                         run_apt_progress({
                                 ARGV => [
-                                    @{$chrootcmd},        'env',
-                                    '--unset=APT_CONFIG', '--unset=TMPDIR',
-                                    'apt-get',            '--yes',
-                                    'install'
+                                    @{$chrootcmd}, 'apt-get',
+                                    '--yes',       'install'
                                 ],
                                 PKGS => $pkgs_to_install,
                             });
