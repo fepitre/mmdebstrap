@@ -1390,6 +1390,18 @@ sub run_setup() {
             $dpkgversion = undef;
         }
     }
+    my $aptversion;
+    {
+        my $pid = open my $fh, '-|', 'apt-get',
+          '--version' // error "failed to fork(): $!";
+        chomp(my $firstline = <$fh>);
+        close $fh;
+        if (    $? == 0
+            and $firstline =~ /^apt ([0-9]+\.[0-9]+\.[0-9]+) \([a-z0-9-]+\)$/)
+        {
+            $aptversion = version->new($1);
+        }
+    }
 
     {
         my @directories = (
@@ -1489,12 +1501,22 @@ sub run_setup() {
         # options.
         print $conf "pkgCacheGen::ForceEssential \",\";\n";
     }
-    if ($options->{dryrun}) {
+    if ($options->{dryrun}
+        and (not defined $aptversion or $aptversion < "2.1.16")) {
         # Without this option, apt will fail with:
         # E: Could not configure 'libc6:amd64'.
         # E: Could not perform immediate configuration on 'libgcc1:amd64'.
         #
         # See https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=953260
+        #
+        # For some while there were other immediate configuration problems
+        # which were fixed by changing the dependencies in src:glibc:
+        # https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=972552
+        #
+        # Immediate configuration only was fixed in apt later which then also
+        # fixed these bugs:
+        # https://bugs.debian.org/973325
+        # https://bugs.debian.org/973305
         print $conf "APT::Immediate-Configure false;\n";
     }
     close $conf;
