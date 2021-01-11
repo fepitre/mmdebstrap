@@ -119,7 +119,7 @@ if [ ! -e shared/hooks/eatmydata/customize.sh ] || [ hooks/eatmydata/customize.s
 	fi
 fi
 starttime=
-total=171
+total=186
 skipped=0
 runtests=0
 i=1
@@ -523,9 +523,33 @@ else
 	skipped=$((skipped+1))
 fi
 
-for format in tar squashfs ext2; do
-	print_header "mode=unshare/root,variant=debootstrap: check for bit-by-bit identical $format output"
-	cat << END > shared/test.sh
+for variant in essential apt minbase buildd important standard; do
+	for format in tar squashfs ext2; do
+		print_header "mode=unshare/root,variant=$variant: check for bit-by-bit identical $format output"
+		# fontconfig doesn't install reproducibly because differences
+		# in /var/cache/fontconfig/. See
+		# https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=864082
+		if [ "$variant" = "standard" ]; then
+			echo "skipping test because of #864082" >&2
+			skipped=$((skipped+1))
+			continue
+		fi
+		if [ "$variant" = "important" ] && [ "$DEFAULT_DIST" = "stable" ]; then
+			echo "skipping test on stable because /var/lib/systemd/catalog/database differs" >&2
+			skipped=$((skipped+1))
+			continue
+		fi
+		if [ "$format" = "squashfs" ] && [ "$DEFAULT_DIST" = "stable" ]; then
+			echo "skipping test on stable because squashfs-tools-ng is not available" >&2
+			skipped=$((skipped+1))
+			continue
+		fi
+		if [ "$format" = "ext2" ] && [ "$DEFAULT_DIST" = "stable" ]; then
+			echo "skipping test on stable because genext2fs does not support SOURCE_DATE_EPOCH" >&2
+			skipped=$((skipped+1))
+			continue
+		fi
+		cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
@@ -536,7 +560,7 @@ fi
 adduser --gecos user --disabled-password user
 sysctl -w kernel.unprivileged_userns_clone=1
 export SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH
-$CMD --mode=root --variant=debootstrap $DEFAULT_DIST /tmp/debian-chroot-root.$format $mirror
+$CMD --mode=root --variant=$variant $DEFAULT_DIST /tmp/debian-chroot-root.$format $mirror
 if [ "$format" = tar ]; then
 	printf 'ustar ' | cmp --bytes=6 --ignore-initial=257:0 /tmp/debian-chroot-root.tar -
 elif [ "$format" = squashfs ]; then
@@ -546,17 +570,18 @@ elif [ "$format" = ext2 ]; then
 else
 	echo "unknown format: $format" >&2
 fi
-runuser -u user -- $CMD --mode=unshare --variant=debootstrap $DEFAULT_DIST /tmp/debian-chroot-unshare.$format $mirror
+runuser -u user -- $CMD --mode=unshare --variant=$variant $DEFAULT_DIST /tmp/debian-chroot-unshare.$format $mirror
 cmp /tmp/debian-chroot-root.$format /tmp/debian-chroot-unshare.$format
 rm /tmp/debian-chroot-root.$format /tmp/debian-chroot-unshare.$format
 END
-	if [ "$HAVE_QEMU" = "yes" ]; then
-		./run_qemu.sh
-		runtests=$((runtests+1))
-	else
-		echo "HAVE_QEMU != yes -- Skipping test..." >&2
-		skipped=$((skipped+1))
-	fi
+		if [ "$HAVE_QEMU" = "yes" ]; then
+			./run_qemu.sh
+			runtests=$((runtests+1))
+		else
+			echo "HAVE_QEMU != yes -- Skipping test..." >&2
+			skipped=$((skipped+1))
+		fi
+	done
 done
 
 print_header "mode=unshare,variant=apt: test taridshift utility"
@@ -621,7 +646,10 @@ runuser -u user -- $CMD --unshare-helper /usr/sbin/chroot /tmp/debian-chroot get
 rm /tmp/debian-chroot.tar /tmp/debian-chroot-shifted.tar /tmp/debian-chroot.txt /tmp/debian-chroot-shiftedback.tar /tmp/expected
 rm -r /tmp/debian-chroot
 END
-if [ "$HAVE_QEMU" = "yes" ]; then
+if [ "$DEFAULT_DIST" = "stable" ]; then
+	echo "the python3 tarfile module in stable does not preserve xattrs -- Skipping test..." >&2
+	skipped=$((skipped+1))
+elif [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 	runtests=$((runtests+1))
 else
@@ -898,7 +926,10 @@ sqfs2tar --no-skip --root-becomes . /tmp/debian-chroot.squashfs | tar -t \
 	| sort | diff -u /tmp/tar1noslash.txt -
 rm /tmp/debian-chroot.squashfs /tmp/tar1noslash.txt
 END
-if [ "$HAVE_QEMU" = "yes" ]; then
+if [ "$DEFAULT_DIST" = "stable" ]; then
+	echo "skipping test on stable because squashfs-tools-ng is not available" >&2
+	skipped=$((skipped+1))
+elif [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 	runtests=$((runtests+1))
 elif [ "$defaultmode" = "root" ]; then
@@ -911,6 +942,11 @@ fi
 
 for mode in root unshare fakechroot proot; do
 	print_header "mode=$mode,variant=apt: test ext2 image"
+	if [ "$DEFAULT_DIST" = "stable" ]; then
+		echo "skipping test on stable because genext2fs does not support SOURCE_DATE_EPOCH" >&2
+		skipped=$((skipped+1))
+		continue
+	fi
 	if [ "$mode" = "unshare" ] && [ "$HAVE_UNSHARE" != "yes" ]; then
 		echo "HAVE_UNSHARE != yes -- Skipping test..." >&2
 		skipped=$((skipped+1))
@@ -1140,7 +1176,10 @@ if [ ! -e /mmdebstrap-testenv ]; then
 	echo "this test modifies the system and should only be run inside a container" >&2
 	exit 1
 fi
-echo "127.0.0.1 deb.debian.org" >> /etc/hosts
+cat << HOSTS >> /etc/hosts
+127.0.0.1 deb.debian.org
+127.0.0.1 security.debian.org
+HOSTS
 $CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST > /tmp/debian-chroot.tar
 tar -tf /tmp/debian-chroot.tar | sort | diff -u tar1.txt -
 rm /tmp/debian-chroot.tar
@@ -1207,7 +1246,7 @@ if [ ! -e /mmdebstrap-testenv ]; then
 	echo "this test requires the cache directory to be mounted on /mnt and should only be run inside a container" >&2
 	exit 1
 fi
-$CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar "deb copy:///mnt/cache/debian unstable main"
+$CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar "deb copy:///mnt/cache/debian $DEFAULT_DIST main"
 tar -tf /tmp/debian-chroot.tar | sort | diff -u tar1.txt -
 rm /tmp/debian-chroot.tar
 END
@@ -1415,7 +1454,10 @@ if [ ! -e /mmdebstrap-testenv ]; then
 	echo "this test modifies the system and should only be run inside a container" >&2
 	exit 1
 fi
-echo "127.0.0.1 deb.debian.org" >> /etc/hosts
+cat << HOSTS >> /etc/hosts
+127.0.0.1 deb.debian.org
+127.0.0.1 security.debian.org
+HOSTS
 $CMD --mode=$defaultmode --variant=apt $DEFAULT_DIST /tmp/debian-chroot.tar
 tar -tf /tmp/debian-chroot.tar | sort | diff -u tar1.txt -
 rm /tmp/debian-chroot.tar
@@ -2704,6 +2746,11 @@ for variant in extract custom essential apt minbase buildd important standard; d
 		skipped=$((skipped+1))
 		continue
 	fi
+	if [ "$variant" = "important" ] && [ "$DEFAULT_DIST" = "stable" ]; then
+		echo "skipping test on stable because /var/lib/systemd/catalog/database differs" >&2
+		skipped=$((skipped+1))
+		continue
+	fi
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
@@ -3140,7 +3187,10 @@ prefix=
 [ "\$(id -u)" -eq 0 ] && prefix="runuser -u user --"
 \$prefix $CMD --mode=chrootless --variant=custom --include=bsdutils,coreutils,debianutils,diffutils,dpkg,findutils,grep,gzip,hostname,init-system-helpers,ncurses-base,ncurses-bin,perl-base,sed,tar $DEFAULT_DIST /dev/null $mirror
 END
-if [ "$HAVE_QEMU" = "yes" ]; then
+if [ "$DEFAULT_DIST" = "stable" ]; then
+	echo "chrootless doesn't work in stable -- Skipping test..." >&2
+	skipped=$((skipped+1))
+elif [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 	runtests=$((runtests+1))
 else
