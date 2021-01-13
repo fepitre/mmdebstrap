@@ -119,7 +119,7 @@ if [ ! -e shared/hooks/eatmydata/customize.sh ] || [ hooks/eatmydata/customize.s
 	fi
 fi
 starttime=
-total=186
+total=189
 skipped=0
 runtests=0
 i=1
@@ -507,6 +507,76 @@ export LC_ALL=C.UTF-8
 $CMD --mode=unshare --variant=apt \
 	--customize-hook='chroot "\$1" sh -c "test -e /proc/self/fd"' \
 	$DEFAULT_DIST /tmp/debian-chroot.tar $mirror
+tar -tf /tmp/debian-chroot.tar | sort | diff -u tar1.txt -
+rm /tmp/debian-chroot.tar
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+	runtests=$((runtests+1))
+else
+	./run_null.sh SUDO
+	runtests=$((runtests+1))
+fi
+
+print_header "mode=root,variant=apt: fail with root without cap_sys_admin"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+ret=0
+capsh --drop=cap_sys_admin -- -c 'exec "\$@"' exec \
+	$CMD --mode=root --variant=apt $DEFAULT_DIST /tmp/debian-chroot $mirror || ret=\$?
+if [ "\$ret" = 0 ]; then
+	echo expected failure but got exit \$ret >&2
+	exit 1
+fi
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+	runtests=$((runtests+1))
+else
+	./run_null.sh SUDO
+	runtests=$((runtests+1))
+fi
+
+print_header "mode=root,variant=apt: fail without mounted /proc"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+# success with /proc mounted
+$CMD --mode=root --variant=apt \
+	--customize-hook='chroot "\$1" bash -c "test \\"\\\$(cat <(echo foobar))\\" = foobar"' \
+	$DEFAULT_DIST /dev/null $mirror
+# failure without /proc mounted (using --skip=check/canmount)
+ret=0
+$CMD --mode=root --variant=apt \
+	--customize-hook='chroot "\$1" bash -c "test \\"\\\$(cat <(echo foobar))\\" = foobar"' \
+	--skip=check/canmount $DEFAULT_DIST /tmp/debian-chroot $mirror || ret=\$?
+if [ "\$ret" = 0 ]; then
+	echo expected failure but got exit \$ret >&2
+	exit 1
+fi
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+	runtests=$((runtests+1))
+else
+	./run_null.sh SUDO
+	runtests=$((runtests+1))
+fi
+
+
+print_header "mode=unshare,variant=apt: root without cap_sys_admin but --skip=check/canmount"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+[ "\$(whoami)" = "root" ]
+capsh --drop=cap_sys_admin -- -c 'exec "\$@"' exec \
+	$CMD --mode=root --variant=apt \
+	--customize-hook='chroot "\$1" sh -c "test ! -e /proc/self/fd"' \
+	--skip=check/canmount $DEFAULT_DIST /tmp/debian-chroot.tar $mirror
 tar -tf /tmp/debian-chroot.tar | sort | diff -u tar1.txt -
 rm /tmp/debian-chroot.tar
 END

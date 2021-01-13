@@ -49,16 +49,17 @@ use version;
 # from sched.h
 # use typeglob constants because "use constant" has several drawback as
 # explained in the documentation for the Readonly CPAN module
-*CLONE_NEWNS   = \0x20000;
-*CLONE_NEWUTS  = \0x4000000;
-*CLONE_NEWIPC  = \0x8000000;
-*CLONE_NEWUSER = \0x10000000;
-*CLONE_NEWPID  = \0x20000000;
-*CLONE_NEWNET  = \0x40000000;
-our (
-    $CLONE_NEWNS,   $CLONE_NEWUTS, $CLONE_NEWIPC,
-    $CLONE_NEWUSER, $CLONE_NEWPID, $CLONE_NEWNET
-);
+*CLONE_NEWNS                 = \0x20000;       # mount namespace
+*CLONE_NEWUTS                = \0x4000000;     # utsname
+*CLONE_NEWIPC                = \0x8000000;     # ipc
+*CLONE_NEWUSER               = \0x10000000;    # user
+*CLONE_NEWPID                = \0x20000000;    # pid
+*CLONE_NEWNET                = \0x40000000;    # net
+*_LINUX_CAPABILITY_VERSION_3 = \0x20080522;
+*CAP_SYS_ADMIN               = \21;
+our ($CLONE_NEWNS, $CLONE_NEWUTS, $CLONE_NEWIPC,
+    $CLONE_NEWUSER, $CLONE_NEWPID, $CLONE_NEWNET,
+    $_LINUX_CAPABILITY_VERSION_3, $CAP_SYS_ADMIN);
 
 # type codes:
 #   0 -> normal file
@@ -943,7 +944,9 @@ sub run_chroot {
                     }
                 } elsif ($type == 3 or $type == 4) {
                     # character/block special
-                    if (!$options->{havemknod}) {
+                    if ($options->{mode} eq 'root' && !$options->{canmount}) {
+                        warning "skipping bind-mounting $fname";
+                    } elsif (!$options->{havemknod}) {
                         open my $fh, '>', "$options->{root}/$fname"
                           or error "cannot open $options->{root}/$fname: $!";
                         close $fh;
@@ -970,6 +973,10 @@ sub run_chroot {
                             "$options->{root}/$fname")
                           or error "mount $fname failed: $?";
                     }
+                } elsif ($type == 5
+                    && $options->{mode} eq 'root'
+                    && !$options->{canmount}) {
+                    warning "skipping bind-mounting $fname";
                 } elsif ($type == 5) {    # directory
                     if (!$options->{havemknod}) {
                         if (
@@ -1040,7 +1047,9 @@ sub run_chroot {
         # We can only mount /proc and /sys after extracting the essential
         # set because if we mount it before, then base-files will not be able
         # to extract those
-        if ($options->{mode} eq 'root') {
+        if ($options->{mode} eq 'root' && !$options->{canmount}) {
+            warning "skipping mount sysfs";
+        } elsif ($options->{mode} eq 'root') {
             push @cleanup_tasks, sub {
                 0 == system('umount', "$options->{root}/sys")
                   or warn "umount /sys failed: $?";
@@ -1080,7 +1089,9 @@ sub run_chroot {
         } else {
             error "unknown mode: $options->{mode}";
         }
-        if ($options->{mode} eq 'root') {
+        if ($options->{mode} eq 'root' && !$options->{canmount}) {
+            warning "skipping mount proc";
+        } elsif ($options->{mode} eq 'root') {
             push @cleanup_tasks, sub {
                 # some maintainer scripts mount additional stuff into /proc
                 # which we need to unmount beforehand
@@ -4500,6 +4511,47 @@ sub main() {
         error "unknown mode: $options->{mode}";
     }
 
+    # By default, mount is not used. This is so that mounting is skipped if the
+    # user supplies --skip=check/canmount. This only gets enabled if
+    # CAP_SYS_ADMIN and unshare --mount are available in root mode.
+    $options->{canmount} = 0;
+    if (any { $_ eq 'check/canmount' } @{ $options->{skip} }) {
+        info "skipping check/canmount as requested";
+    } elsif ($options->{mode} eq 'root') {
+        # It's possible to be root but not be able to mount anything.
+        # This is for example the case when running under docker.
+        # Mounting needs CAP_SYS_ADMIN which might not be available.
+        #
+        # We test for CAP_SYS_ADMIN using the capget syscall.
+        # We cannot use cap_get_proc from sys/capability.h because Perl.
+        # We don't use capsh because we don't want to depend on libcap2-bin
+        my $hdrp = pack(
+            "Li",                            # __u32 followed by int
+            $_LINUX_CAPABILITY_VERSION_3,    # available since Linux 2.6.26
+            0                                # caps of this process
+        );
+        my $datap = pack("LLLLLL", 0, 0, 0, 0, 0, 0);    # six __u32
+        0 == syscall &SYS_capget, $hdrp, $datap
+          or error "capget failed: $!";
+        my ($effective, undef) = unpack "LLLLLL", $datap;
+        if (($effective >> $CAP_SYS_ADMIN) & 1 == 1) {
+            # we have CAP_SYS_ADMIN, and thus can mount
+            $options->{canmount} = 1;
+        } else {
+            error "root mode requires mount which requires CAP_SYS_ADMIN";
+        }
+        # To test whether we can use mount without actually trying to mount
+        # something we try unsharing the mount namespace. If this is allowed,
+        # then we are also allowed to mount.
+        if (0 == system 'unshare --mount true 2>/dev/null') {
+            $options->{canmount} = 1;
+        } else {
+            # if we cannot unshare the mount namespace as root, then we also
+            # cannot mount
+            error "root mode requires mount but unshare --mount failed";
+        }
+    }
+
     my @architectures = ();
     foreach my $archs (@{ $options->{architectures} }) {
         foreach my $arch (split /[,\s]+/, $archs) {
@@ -6123,7 +6175,8 @@ the B<proot> mode is used if the proot binary exists.
 This mode directly executes chroot and is the same mode of operation as is
 used by debootstrap. It is the only mode that can directly create a directory
 chroot with the right permissions. If the chroot directory is not accessible
-by the _apt user, then apt sandboxing will be automatically disabled.
+by the _apt user, then apt sandboxing will be automatically disabled. This mode
+needs to be able to mount and thus requires C<SYS_CAP_ADMIN>.
 
 =item B<unshare>
 
@@ -6425,6 +6478,8 @@ Upon startup, several checks are carried out, like:
 =item * whether required utilities (apt, dpkg, tar) are installed
 
 =item * which mode to use and whether prerequisites are met
+
+=item * if you are root, check whether you have the ability to mount. This check requires the C<unshare> program from the C<util-linux> package and can be disabled by using B<--skip=check/canmount>.
 
 =item * whether the requested architecture can be executed (requires arch-test) using qemu binfmt_misc support. This requires arch-test and can be disabled using B<--skip=check/qemu>
 
