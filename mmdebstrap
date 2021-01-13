@@ -223,10 +223,10 @@ sub get_tar_compressor {
     return;
 }
 
-sub test_unshare {
+sub test_unshare_userns {
     my $verbose = shift;
     if ($EFFECTIVE_USER_ID == 0) {
-        my $msg = "cannot use unshare mode when executing as root";
+        my $msg = "cannot unshare user namespace when executing as root";
         if ($verbose) {
             warning $msg;
         } else {
@@ -401,9 +401,14 @@ sub get_unshare_cmd {
     my $cmd   = shift;
     my $idmap = shift;
 
+    # unsharing the mount namespace (NEWNS) requires CAP_SYS_ADMIN
     my $unshare_flags
-      = $CLONE_NEWUSER | $CLONE_NEWNS | $CLONE_NEWPID | $CLONE_NEWUTS
-      | $CLONE_NEWIPC;
+      = $CLONE_NEWNS | $CLONE_NEWPID | $CLONE_NEWUTS | $CLONE_NEWIPC;
+
+    # we only need to add CLONE_NEWUSER if we are not yet root
+    if ($EFFECTIVE_USER_ID != 0) {
+        $unshare_flags |= $CLONE_NEWUSER;
+    }
 
     if (0) {
         $unshare_flags |= $CLONE_NEWNET;
@@ -446,6 +451,11 @@ sub get_unshare_cmd {
             # Wait for the parent process to finish its unshare() call by
             # waiting for an EOF.
             0 == sysread $rfh, my $c, 1 or error "read() did not receive EOF";
+
+            # the process is already root, so no need for newuidmap/newgidmap
+            if ($EFFECTIVE_USER_ID == 0) {
+                exit 0;
+            }
 
             # The program's new[ug]idmap have to be used because they are
             # setuid root.  These privileges are needed to map the ids from
@@ -515,9 +525,11 @@ sub get_unshare_cmd {
         # want here, like checking /proc/sys/kernel/ngroups_max (which might
         # not exist). It would also also call setgroups() in a way that makes
         # the root user be part of the group unknown.
-        0 == syscall &SYS_setgid, 0 or error "setgid failed: $!";
-        0 == syscall &SYS_setuid, 0 or error "setuid failed: $!";
-        0 == syscall &SYS_setgroups, 0, 0 or error "setgroups failed: $!";
+        if ($EFFECTIVE_USER_ID != 0) {
+            0 == syscall &SYS_setgid, 0 or error "setgid failed: $!";
+            0 == syscall &SYS_setuid, 0 or error "setuid failed: $!";
+            0 == syscall &SYS_setgroups, 0, 0 or error "setgroups failed: $!";
+        }
 
         if (1) {
             # When the pid namespace is also unshared, then processes expect a
@@ -4134,7 +4146,7 @@ sub main() {
     # lxc-usernsexec -- lxc-unshare -s 'MOUNT|PID|UTSNAME|IPC' ...
     # but without needing lxc
     if ($ARGV[0] eq "--unshare-helper") {
-        if (!test_unshare(1)) {
+        if (!test_unshare_userns(1)) {
             exit 1;
         }
         my @idmap = read_subuid_subgid;
@@ -4408,9 +4420,9 @@ sub main() {
             # if mmdebstrap is executed as root, we assume the user wants root
             # mode
             $options->{mode} = 'root';
-        } elsif (test_unshare(0)) {
-            # otherwise, unshare mode is our best option if test_unshare()
-            # succeeds
+        } elsif (test_unshare_userns(0)) {
+            # if we are not root, unshare mode is our best option if
+            # test_unshare_userns() succeeds
             $options->{mode} = 'unshare';
         } elsif (system('fakechroot --version>/dev/null') == 0) {
             # the next fallback is fakechroot
@@ -4449,7 +4461,16 @@ sub main() {
             exec 'fakechroot', 'fakeroot', @prefix, $PROGRAM_NAME, @ARGVORIG;
         }
     } elsif ($options->{mode} eq 'unshare') {
-        if (!test_unshare(1)) {
+        # For unshare mode to work we either need to already be the root user
+        # and then we do not have to unshare the user namespace anymore but we
+        # need to be able to unshare the mount namespace...
+        if ($EFFECTIVE_USER_ID == 0
+            && 0 != system 'unshare --mount true 2>/dev/null') {
+            error "unable to unshare the mount namespace";
+        }
+        # ...or we are not root and then we need to be able to unshare the user
+        # namespace.
+        if ($EFFECTIVE_USER_ID != 0 && !test_unshare_userns(1)) {
             my $procfile = '/proc/sys/kernel/unprivileged_userns_clone';
             open(my $fh, '<', $procfile)
               or error "failed to open $procfile: $!";
@@ -6131,6 +6152,12 @@ available and you know your subuid/subgid offset (100000 in this example):
 
     $ sudo systemd-nspawn --private-users=100000 \
     > --directory=./debian-rootfs /bin/bash
+
+If this mode is used as the root user, the user namespace is not unshared (but
+the mount namespace and other still are) and created directories will have
+correct ownership information. This is also useful in cases where the root user
+wants the benefits of an unshared mount namespace to prevent accidentally
+messing up the system.
 
 =item B<fakeroot>, B<fakechroot>
 

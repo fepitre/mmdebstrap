@@ -498,29 +498,24 @@ else
 	runtests=$((runtests+1))
 fi
 
-print_header "mode=unshare,variant=apt: fail with unshare as root user"
+print_header "mode=unshare,variant=apt: unshare as root user"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
 export LC_ALL=C.UTF-8
-if [ ! -e /mmdebstrap-testenv ]; then
-	echo "this test modifies the system and should only be run inside a container" >&2
-	exit 1
-fi
-sysctl -w kernel.unprivileged_userns_clone=1
-ret=0
-$CMD --mode=unshare --variant=apt $DEFAULT_DIST /tmp/debian-chroot $mirror || ret=\$?
-if [ "\$ret" = 0 ]; then
-	echo expected failure but got exit \$ret >&2
-	exit 1
-fi
+[ "\$(whoami)" = "root" ]
+$CMD --mode=unshare --variant=apt \
+	--customize-hook='chroot "\$1" sh -c "test -e /proc/self/fd"' \
+	$DEFAULT_DIST /tmp/debian-chroot.tar $mirror
+tar -tf /tmp/debian-chroot.tar | sort | diff -u tar1.txt -
+rm /tmp/debian-chroot.tar
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 	runtests=$((runtests+1))
 else
-	echo "HAVE_QEMU != yes -- Skipping test..." >&2
-	skipped=$((skipped+1))
+	./run_null.sh SUDO
+	runtests=$((runtests+1))
 fi
 
 for variant in essential apt minbase buildd important standard; do
