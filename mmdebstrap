@@ -6690,6 +6690,14 @@ inside the chroot.
         --customize-hook='sync-out /var/cache/apt/archives ./cache' \
         unstable /dev/null
 
+Create a system that can be used with docker:
+
+    $ mmdebstrap unstable | sudo docker import - debian
+    [...]
+    $ sudo docker run -it --rm debian whoami
+    root
+    $ sudo docker rmi debian
+
 =head1 ENVIRONMENT VARIABLES
 
 =over 8
