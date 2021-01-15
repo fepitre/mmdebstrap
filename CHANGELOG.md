@@ -1,3 +1,14 @@
+0.7.4 (2021-01-16)
+------------------
+
+ - Optimize mmtarfilter to handle many path exclusions
+ - Set MMDEBSTRAP_APT_CONFIG, MMDEBSTRAP_MODE and MMDEBSTRAP_HOOKSOCK for hook
+   scripts
+ - Do not run an additional env command inside the chroot
+ - Allow unshare mode as root user
+ - Additional checks whether root has the necessary privileges to mount
+ - Make most features work on Debian 10 Buster
+
 0.7.3 (2020-12-02)
 ------------------
 
