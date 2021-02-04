@@ -6657,12 +6657,6 @@ translated manual packages (but not the untranslated ones), and documentation
         --dpkgopt='path-include=/usr/share/doc/*/changelog.Debian.*' \
         unstable debian-unstable.tar
 
-Use as debootstrap replacement in sbuild-createchroot:
-
-    $ sbuild-createchroot --debootstrap=mmdebstrap \
-        --make-sbuild-tarball ~/.cache/sbuild/unstable-amd64.tar.gz \
-        unstable $(mktemp -d)
-
 Create a bootable USB Stick that boots into a full Debian desktop:
 
     $ mmdebstrap --aptopt='Apt::Install-Recommends "true"' --customize-hook \
