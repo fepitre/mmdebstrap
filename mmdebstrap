@@ -1212,10 +1212,16 @@ sub run_hooks {
     }
 
     my @env_opts = ();
-    # There is no need to unset TMPDIR because we already have set it ourselves
-    # to "$options->{root}/tmp" in run_setup(). This is to have a writable
-    # TMPDIR even in unshare mode.
-    #
+    # At this point TMPDIR is set to "$options->{root}/tmp". This is to have a
+    # writable TMPDIR even in unshare mode. But if TMPDIR is still set when
+    # running hooks, then every hook script calling chroot, will have to wrap
+    # that into an "env --unset=TMPDIR". To avoid this, we unset TMPDIR here.
+    # If the hook script needs a writable TMPDIR, then it can always use /tmp
+    # inside the chroot. This is also why we do not set a new MMDEBSTRAP_TMPDIR
+    # environment variable.
+    if (defined $ENV{TMPDIR} && $ENV{TMPDIR} ne "") {
+        push @env_opts, '--unset=TMPDIR';
+    }
     # The APT_CONFIG variable, if set, will confuse any manual calls to
     # apt-get. If you want to use the same config used by mmdebstrap, the
     # original value is stored in MMDEBSTRAP_APT_CONFIG.
