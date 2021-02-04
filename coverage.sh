@@ -2854,7 +2854,7 @@ $CMD \$include --mode=$defaultmode --variant=$variant --skip=download/empty \
 	--setup-hook='chmod 0755 "\$1"/var/cache/apt/archives/' \
 	$DEFAULT_DIST - $mirror > test2.tar
 cmp orig.tar test2.tar
-rm "\$tmpdir"/*.deb
+rm "\$tmpdir"/*.deb orig.tar test1.tar test2.tar
 rmdir "\$tmpdir"
 END
 	if [ "$HAVE_QEMU" = "yes" ]; then
@@ -3637,4 +3637,4 @@ if [ "$((skipped+runtests))" -ne "$total" ]; then
 	exit 1
 fi
 
-rm shared/test.sh shared/tar1.txt shared/tar2.txt shared/pkglist.txt shared/doc-debian.tar.list shared/mmdebstrap shared/taridshift
+rm shared/test.sh shared/tar1.txt shared/tar2.txt shared/pkglist.txt shared/doc-debian.tar.list shared/mmdebstrap shared/taridshift shared/tarfilter shared/proxysolver
