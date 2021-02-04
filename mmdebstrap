@@ -1392,7 +1392,7 @@ sub setup {
 sub run_setup() {
     my $options = shift;
 
-    my $dpkgversion;
+    my $dpkgversion = version->new(0);
     {
         my $pid = open my $fh, '-|' // error "failed to fork(): $!";
         if ($pid == 0) {
@@ -1403,17 +1403,18 @@ sub run_setup() {
             exec 'dpkg', '--robot', '--version';
         }
         chomp(
-            $dpkgversion = do { local $/; <$fh> }
+            my $content = do { local $/; <$fh> }
         );
         close $fh;
-        if ($? == 0 and $dpkgversion =~ /^([0-9]+\.[0-9]+\.[0-9]+) \(\S+\)$/) {
+        # the --robot option was introduced in 1.20.0 but until 1.20.2 the
+        # output contained a string after the version, separated by a
+        # whitespace -- since then, it's only the version
+        if ($? == 0 and $content =~ /^([0-9.]+)( .*)?$/) {
             # dpkg is new enough for the --robot option
             $dpkgversion = version->new($1);
-        } else {
-            $dpkgversion = undef;
         }
     }
-    my $aptversion;
+    my $aptversion = version->new(0);
     {
         my $pid = open my $fh, '-|', 'apt-get',
           '--version' // error "failed to fork(): $!";
@@ -1437,7 +1438,6 @@ sub run_setup() {
         # since we do not know the dpkg version inside the chroot at this
         # point, we can only omit it in chrootless mode
         if (   $options->{mode} ne 'chrootless'
-            or not defined $dpkgversion
             or $dpkgversion < "1.20.0") {
             push @directories, '/etc/dpkg/dpkg.cfg.d/';
         }
@@ -1449,7 +1449,6 @@ sub run_setup() {
             # since we do not know the dpkg version inside the chroot at this
             # point, we can only omit it in chrootless mode
             if (   $options->{mode} ne 'chrootless'
-                or not defined $dpkgversion
                 or $dpkgversion < "1.20.0") {
                 push @directories, '/var/lib/dpkg/triggers',
                   '/var/lib/dpkg/info', '/var/lib/dpkg/alternatives',
@@ -1525,7 +1524,7 @@ sub run_setup() {
         print $conf "pkgCacheGen::ForceEssential \",\";\n";
     }
     if ($options->{dryrun}
-        and (not defined $aptversion or $aptversion < "2.1.16")) {
+        and ($aptversion < "2.1.16")) {
         # Without this option, apt will fail with:
         # E: Could not configure 'libc6:amd64'.
         # E: Could not perform immediate configuration on 'libgcc1:amd64'.
@@ -1569,7 +1568,6 @@ sub run_setup() {
     # since we do not know the dpkg version inside the chroot at this point, we
     # can only omit it in chrootless mode
     if (   $options->{mode} ne 'chrootless'
-        or not defined $dpkgversion
         or $dpkgversion < "1.20.0") {
         open my $fh, '>', "$options->{root}/var/lib/dpkg/available"
           or error "failed to open(): $!";
@@ -1581,7 +1579,6 @@ sub run_setup() {
     # since we do not know the dpkg version inside the chroot at this point, we
     # can only omit it in chrootless mode
     if (   $options->{mode} ne 'chrootless'
-        or not defined $dpkgversion
         or $dpkgversion < "1.20.0") {
         open my $fh, '>', "$options->{root}/var/lib/dpkg/cmethopt"
           or error "failed to open(): $!";
