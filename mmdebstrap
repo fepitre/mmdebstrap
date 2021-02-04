@@ -4619,6 +4619,8 @@ sub main() {
             info "skipping check/qemu as requested";
         } elsif ($options->{mode} eq "chrootless") {
             info "skipping emulation check in chrootless mode";
+        } elsif ($options->{variant} eq "extract") {
+            info "skipping emulation check for extract variant";
         } elsif ($hostarch ne $options->{nativearch}) {
             if (system('arch-test --version>/dev/null') != 0) {
                 error "install arch-test for foreign architecture support";
