@@ -1,4 +1,33 @@
 #!/bin/sh
+#
+# mmdebstrap does have a --merged-usr option but only as a no-op for
+# debootstrap compatibility
+#
+# Using this hook script, you can emulate what debootstrap does to set up
+# merged /usr via directory symlinks, even using the exact same shell function
+# that debootstrap uses.
+#
+# mmdebstrap will not include this functionality via a --merged-usr option
+# because there are many reasons against implementing merged-/usr that way:
+#
+# https://wiki.debian.org/Teams/Dpkg/MergedUsr
+# https://wiki.debian.org/Teams/Dpkg/FAQ#Q:_Does_dpkg_support_merged-.2Fusr-via-aliased-dirs.3F
+# https://lists.debian.org/20190219044924.GB21901@gaara.hadrons.org
+# https://lists.debian.org/YAkLOMIocggdprSQ@thunder.hadrons.org
+# https://lists.debian.org/20181223030614.GA8788@gaara.hadrons.org
+#
+# In addition, the merged-/usr-via-aliased-dirs approach violates an important
+# principle of component based software engineering one of the core design
+# ideas/goals of mmdebstrap: All the information to create a chroot of a Debian
+# based distribution should be included in its packages and their metadata.
+# Using directory symlinks as used by debootstrap contradicts this principle.
+# The information whether a distribution uses this approach to merged-/usr or
+# not is not anymore contained in its packages but in a tool from the outside.
+#
+# The problem is not the idea of merged-/usr but the problem is the way how it
+# got implemented in debootstrap via directory symlinks. That way of rolling
+# out merged-/usr is bad from the dpkg point-of-view and completely opposite of
+# the vision with which in mind I wrote mmdebstrap.
 
 set -exu
 
