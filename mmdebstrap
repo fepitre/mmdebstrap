@@ -3821,7 +3821,7 @@ sub get_suite_by_vendor {
     }
     foreach my $suite (
         'unstable', 'stable',   'oldstable', 'stretch',
-        'buster',   'bullseye', 'bookworm'
+        'buster',   'bullseye', 'bookworm',  'trixie'
     ) {
         $suite_by_vendor{'debian'}->{$suite} = 0;
     }
@@ -4059,7 +4059,7 @@ sub get_sourceslist_by_suite {
             }
         } else {
             # neither libdistro-info-perl nor distro-info-data is installed
-            if (any { $_ eq $suite } ('bullseye', 'bookworm')) {
+            if (any { $_ eq $suite } ('bullseye', 'bookworm', 'trixie')) {
                 $bullseye_or_later = 1;
             }
         }
