@@ -1,3 +1,12 @@
+0.7.5 (2021-02-06)
+------------------
+
+ - skip emulation check for extract variant
+ - add new suite name trixie
+ - unset TMPDIR in hooks because there is no value that works inside as well as
+   outside the chroot
+ - expose hook name to hooks via MMDEBSTRAP_HOOK environment variable
+
 0.7.4 (2021-01-16)
 ------------------
 
