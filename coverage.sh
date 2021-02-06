@@ -568,6 +568,7 @@ if [ "\$ret" = 0 ]; then
 	echo expected failure but got exit \$ret >&2
 	exit 1
 fi
+rm -r /tmp/debian-chroot
 END
 if [ "$CONTAINER" = "lxc" ]; then
 	# see https://stackoverflow.com/questions/65748254/
@@ -599,6 +600,7 @@ if [ "\$ret" = 0 ]; then
 	echo expected failure but got exit \$ret >&2
 	exit 1
 fi
+rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
