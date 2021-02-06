@@ -119,7 +119,7 @@ if [ ! -e shared/hooks/eatmydata/customize.sh ] || [ hooks/eatmydata/customize.s
 	fi
 fi
 starttime=
-total=189
+total=190
 skipped=0
 runtests=0
 i=1
@@ -509,6 +509,43 @@ $CMD --mode=unshare --variant=apt \
 	$DEFAULT_DIST /tmp/debian-chroot.tar $mirror
 tar -tf /tmp/debian-chroot.tar | sort | diff -u tar1.txt -
 rm /tmp/debian-chroot.tar
+END
+if [ "$HAVE_QEMU" = "yes" ]; then
+	./run_qemu.sh
+	runtests=$((runtests+1))
+else
+	./run_null.sh SUDO
+	runtests=$((runtests+1))
+fi
+
+# Before running unshare mode as root, we run "unshare --mount" but that fails
+# if mmdebstrap itself is executed from within a chroot:
+# unshare: cannot change root filesystem propagation: Invalid argument
+# This test tests the workaround in mmdebstrap using --propagation unchanged
+print_header "mode=root,variant=apt: unshare as root user inside chroot"
+cat << END > shared/test.sh
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+[ "\$(whoami)" = "root" ]
+cat << 'SCRIPT' > script.sh
+#!/bin/sh
+set -eu
+rootfs="\$1"
+mkdir -p "\$rootfs/mnt"
+[ -e /usr/bin/mmdebstrap ] && cp -aT /usr/bin/mmdebstrap "\$rootfs/usr/bin/mmdebstrap"
+[ -e ./mmdebstrap ] && cp -aT ./mmdebstrap "\$rootfs/mnt/mmdebstrap"
+chroot "\$rootfs" env --chdir=/mnt \
+	$CMD --mode=unshare --variant=apt \
+	$DEFAULT_DIST /tmp/debian-chroot.tar $mirror
+SCRIPT
+chmod +x script.sh
+$CMD --mode=root --variant=apt --include=perl,mount \
+	--customize-hook=./script.sh \
+	--customize-hook="download /tmp/debian-chroot.tar /tmp/debian-chroot.tar" \
+	$DEFAULT_DIST /dev/null $mirror
+tar -tf /tmp/debian-chroot.tar | sort | diff -u tar1.txt -
+rm /tmp/debian-chroot.tar script.sh
 END
 if [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh

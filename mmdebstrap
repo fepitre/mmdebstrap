@@ -4482,8 +4482,13 @@ sub main() {
         # For unshare mode to work we either need to already be the root user
         # and then we do not have to unshare the user namespace anymore but we
         # need to be able to unshare the mount namespace...
+        #
+        # We need to call unshare with "--propagation unchanged" or otherwise
+        # we get 'cannot change root filesystem propagation' when running
+        # mmdebstrap inside a chroot for which the root of the chroot is not
+        # its own mount point.
         if ($EFFECTIVE_USER_ID == 0
-            && 0 != system 'unshare --mount true 2>/dev/null') {
+            && 0 != system 'unshare --mount --propagation unchanged -- true') {
             error "unable to unshare the mount namespace";
         }
         # ...or we are not root and then we need to be able to unshare the user
