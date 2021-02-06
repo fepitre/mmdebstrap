@@ -2295,7 +2295,7 @@ else
 	runtests=$((runtests+1))
 fi
 
-print_header "mode=root,variant=apt: test special hooks using helpers"
+print_header "mode=root,variant=apt: test special hooks using helpers and env vars"
 cat << END > shared/test.sh
 #!/bin/sh
 set -eu
@@ -2304,31 +2304,29 @@ cat << 'SCRIPT' > /tmp/script.sh
 #!/bin/sh
 set -eu
 echo "MMDEBSTRAP_APT_CONFIG \$MMDEBSTRAP_APT_CONFIG"
+echo "\$MMDEBSTRAP_HOOK" >> /tmp/hooks
 [ "\$MMDEBSTRAP_MODE" = "root" ]
-echo test-content \$2 > test
-$CMD --hook-helper "\$1" "\$MMDEBSTRAP_MODE" "\$2" env 1 upload test /test <&\$MMDEBSTRAP_HOOKSOCK >&\$MMDEBSTRAP_HOOKSOCK
+echo test-content \$MMDEBSTRAP_HOOK > test
+$CMD --hook-helper "\$1" "\$MMDEBSTRAP_MODE" "\$MMDEBSTRAP_HOOK" env 1 upload test /test <&\$MMDEBSTRAP_HOOKSOCK >&\$MMDEBSTRAP_HOOKSOCK
 rm test
 echo "content inside chroot:"
 cat "\$1/test"
-[ "test-content \$2" = "\$(cat "\$1/test")" ]
-$CMD --hook-helper "\$1" "\$MMDEBSTRAP_MODE" "\$2" env 1 download /test test <&\$MMDEBSTRAP_HOOKSOCK >&\$MMDEBSTRAP_HOOKSOCK
+[ "test-content \$MMDEBSTRAP_HOOK" = "\$(cat "\$1/test")" ]
+$CMD --hook-helper "\$1" "\$MMDEBSTRAP_MODE" "\$MMDEBSTRAP_HOOK" env 1 download /test test <&\$MMDEBSTRAP_HOOKSOCK >&\$MMDEBSTRAP_HOOKSOCK
 echo "content outside chroot:"
 cat test
-[ "test-content \$2" = "\$(cat test)" ]
+[ "test-content \$MMDEBSTRAP_HOOK" = "\$(cat test)" ]
 rm test
 SCRIPT
 chmod +x /tmp/script.sh
-for h in setup extract essential customize; do
-	printf '#!/bin/sh\nset -eu\nexec /tmp/script.sh "\$1" "'"\$h"'"' > "/tmp/\$h.sh"
-	chmod +x "/tmp/\$h.sh"
-done
 $CMD --mode=root --variant=apt \
-	--setup-hook=/tmp/setup.sh \
-	--extract-hook=/tmp/extract.sh \
-	--essential-hook=/tmp/essential.sh \
-	--customize-hook=/tmp/customize.sh \
+	--setup-hook=/tmp/script.sh \
+	--extract-hook=/tmp/script.sh \
+	--essential-hook=/tmp/script.sh \
+	--customize-hook=/tmp/script.sh \
 	$DEFAULT_DIST /tmp/debian-chroot $mirror
-rm /tmp/script.sh /tmp/setup.sh /tmp/extract.sh /tmp/essential.sh /tmp/customize.sh
+printf "setup\nextract\nessential\ncustomize\n" | diff -u - /tmp/hooks
+rm /tmp/script.sh /tmp/hooks
 rm -r /tmp/debian-chroot
 END
 if [ "$HAVE_QEMU" = "yes" ]; then

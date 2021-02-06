@@ -1235,6 +1235,10 @@ sub run_hooks {
     # their behavior depending on the mode. It's also important for when the
     # hook wants to use the mmdebstrap --hook-helper.
     push @env_opts, "MMDEBSTRAP_MODE=$options->{mode}";
+    # Storing the hook name is important for hook scripts to potentially change
+    # their behavior depending on the hook. It's also important for when the
+    # hook wants to use the mmdebstrap --hook-helper.
+    push @env_opts, "MMDEBSTRAP_HOOK=$name";
     # This is the file descriptor of the socket that the mmdebstrap
     # --hook-helper can write to and read from to communicate with the outside.
     push @env_opts, ("MMDEBSTRAP_HOOKSOCK=" . fileno($options->{hooksock}));
