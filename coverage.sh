@@ -38,6 +38,7 @@ rm -f shared/cover_db.img
 : "${HAVE_QEMU:=yes}"
 : "${RUN_MA_SAME_TESTS:=yes}"
 : "${ONLINE:=no}"
+: "${CONTAINER:=no}"
 
 HOSTARCH=$(dpkg --print-architecture)
 
@@ -568,7 +569,11 @@ if [ "\$ret" = 0 ]; then
 	exit 1
 fi
 END
-if [ "$HAVE_QEMU" = "yes" ]; then
+if [ "$CONTAINER" = "lxc" ]; then
+	# see https://stackoverflow.com/questions/65748254/
+	echo "cannot run under lxc -- Skipping test..." >&2
+	skipped=$((skipped+1))
+elif [ "$HAVE_QEMU" = "yes" ]; then
 	./run_qemu.sh
 	runtests=$((runtests+1))
 else
