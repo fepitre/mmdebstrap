@@ -61,6 +61,7 @@ dpkg(1) for information on how these two options work in detail.
         exit()
 
     # same logic as in dpkg/src/filters.c/filter_should_skip()
+    prefix_prog = re.compile(r"^([^*?[\\]*).*")
     def filter_should_skip(member):
         skip = False
         if not args.filter:
@@ -75,7 +76,7 @@ dpkg(1) for information on how these two options work in detail.
             for (t, r) in args.filter:
                 if t != "path_include":
                     continue
-                prefix = re.sub(r"^([^*?[\\]*).*", r"\1", r.pattern)
+                prefix = prefix_prog.sub(r"\1", r.pattern)
                 prefix = prefix.rstrip("/")
                 if member.name[1:].startswith(prefix):
                     if member.name == "./usr/share/doc/doc-debian":
