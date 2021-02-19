@@ -4555,7 +4555,12 @@ sub main() {
         # To test whether we can use mount without actually trying to mount
         # something we try unsharing the mount namespace. If this is allowed,
         # then we are also allowed to mount.
-        if (0 == system 'unshare --mount true 2>/dev/null') {
+        #
+        # We need to call unshare with "--propagation unchanged" or otherwise
+        # we get 'cannot change root filesystem propagation' when running
+        # mmdebstrap inside a chroot for which the root of the chroot is not
+        # its own mount point.
+        if (0 == system 'unshare --mount --propagation unchanged -- true') {
             $options->{canmount} = 1;
         } else {
             # if we cannot unshare the mount namespace as root, then we also
