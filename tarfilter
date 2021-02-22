@@ -62,6 +62,7 @@ dpkg(1) for information on how these two options work in detail.
 
     # same logic as in dpkg/src/filters.c/filter_should_skip()
     prefix_prog = re.compile(r"^([^*?[\\]*).*")
+
     def filter_should_skip(member):
         skip = False
         if not args.filter:
