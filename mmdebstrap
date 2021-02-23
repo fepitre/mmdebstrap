@@ -1448,7 +1448,8 @@ sub run_setup() {
         # since we do not know the dpkg version inside the chroot at this
         # point, we can only omit it in chrootless mode
         if (   $options->{mode} ne 'chrootless'
-            or $dpkgversion < "1.20.0") {
+            or $dpkgversion < "1.20.0"
+            or scalar @{ $options->{dpkgopts} } > 0) {
             push @directories, '/etc/dpkg/dpkg.cfg.d/';
         }
         # if dpkg and apt operate from the outside we need some more
