@@ -1644,7 +1644,11 @@ sub run_setup() {
 
     if (scalar @{ $options->{dpkgopts} } > 0) {
         # FIXME: in chrootless mode, dpkg will only read the configuration
-        # from the host
+        # from the host -- see #808203
+        if ($options->{mode} eq 'chrootless') {
+            warning('dpkg is unable to read an alternative configuration in'
+                  . 'chrootless mode -- see Debian bug #808203');
+        }
         open my $fh, '>', "$options->{root}/etc/dpkg/dpkg.cfg.d/99mmdebstrap"
           or error "cannot open /etc/dpkg/dpkg.cfg.d/99mmdebstrap: $!";
         foreach my $opt (@{ $options->{dpkgopts} }) {
