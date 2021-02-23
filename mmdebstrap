@@ -6264,11 +6264,14 @@ Uses the dpkg option C<--force-script-chrootless> to install packages into
 I<TARGET> without dpkg and apt inside I<TARGET> but using apt and dpkg from the
 machine running B<mmdebstrap>. Maintainer scripts are run without chrooting
 into I<TARGET> and rely on their dependencies being installed on the machine
-running B<mmdebstrap>. Unless B<mmdebstrap> was run inside fakeroot, the
-I<TARGET> directory will be owned by the user running B<mmdebstrap>.
-B<WARNING>: if this option is used carelessly with packages that do not support
-C<DPKG_ROOT>, this mode can result in undesired changes to the system running
-B<mmdebstrap> because maintainer-scripts will be run without B<chroot(1)>.
+running B<mmdebstrap>. Only very few packages support this mode. Namely, as of
+2021, not all essential packages support it, mainly due to missing support in
+debconf. See https://wiki.debian.org/Teams/Dpkg/Spec/InstallBootstrap or the
+dpkg-root-support usertag of debian-dpkg@lists.debian.org in the Debian bug
+tracking system. B<WARNING>: if this option is used carelessly with packages
+that do not support C<DPKG_ROOT>, this mode can result in undesired changes to
+the system running B<mmdebstrap> because maintainer-scripts will be run without
+B<chroot(1)>.
 
 =for TODO
 =item B<qemu>
