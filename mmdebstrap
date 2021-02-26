@@ -971,7 +971,7 @@ sub run_chroot {
                         }
                         0 == system('mount', '-o', 'bind', "/$fname",
                             "$options->{root}/$fname")
-                          or error "mount $fname failed: $?";
+                          or warn "mount $fname failed: $?";
                     }
                 } elsif ($type == 5
                     && $options->{mode} eq 'root'
